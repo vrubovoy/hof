@@ -302,7 +302,6 @@ describe('founding', () => {
 
   test('a failed transaction leaves no user, no session, and the key still works', async (t) => {
     const { app, key } = await boot(t);
-    t.mock.method(console, 'error', () => undefined);
     try {
       await pool.query('ALTER TABLE sessions RENAME TO sessions_away');
       const res = await post(app, '/setup', setupFields(key));
@@ -399,11 +398,23 @@ describe('after founding', () => {
     assert.equal(res.headers.get('location'), '/login?next=%2F');
   });
 
-  test('an unknown path is 404 with or without a session', async (t) => {
+  test('the common 404 page: unknown paths with or without a session, GET /logout, GET /setup', async (t) => {
     const { app, cookie } = await found(t);
-    assert.equal((await get(app, '/nope')).status, 404);
-    assert.equal((await post(app, '/nope', { a: '1' })).status, 404);
-    assert.equal((await get(app, '/nope', { cookie })).status, 404);
+    for (const [name, res] of [
+      ['GET /nope', await get(app, '/nope')],
+      ['POST /nope', await post(app, '/nope', { a: '1' })],
+      ['GET /nope with a session', await get(app, '/nope', { cookie })],
+      ['GET /logout', await get(app, '/logout')],
+      ['GET /logout with a session', await get(app, '/logout', { cookie })],
+      ['GET /setup after founding', await get(app, '/setup')],
+      ['GET /account/password with a session', await get(app, '/account/password', { cookie })],
+    ] as const) {
+      assert.equal(res.status, 404, name);
+      assert.equal(res.headers.get('cache-control'), 'no-store', name);
+      const page = await res.text();
+      assert.ok(page.includes('<h1>Такой тропы во дворе нет</h1>'), name);
+      assert.ok(page.includes('<a href="/">Во двор</a>'), name);
+    }
   });
 });
 
@@ -533,7 +544,6 @@ describe('sign-in', () => {
 
   test('a failed transaction: 500, no session, no cookie', async (t) => {
     const { app } = await found(t);
-    t.mock.method(console, 'error', () => undefined);
     try {
       await pool.query('ALTER TABLE sessions RENAME TO sessions_away');
       const res = await signIn(app, 'owner', PASSWORD);
@@ -947,7 +957,6 @@ describe('change of my password', () => {
   test('a failed transaction keeps the old hash and the old sessions', async (t) => {
     const { app, token, cookie } = await found(t);
     const phone = await addSession(1);
-    t.mock.method(console, 'error', () => undefined);
     // New sessions cannot be written: the transaction fails after the new hash is written and
     // the old sessions are deleted, before COMMIT.
     await pool.query('ALTER TABLE sessions ADD CONSTRAINT no_new_sessions CHECK (false) NOT VALID');
@@ -1015,56 +1024,66 @@ describe('change of my password racing a reset or a disable', () => {
   });
 });
 
-test('no password, session token, hash, typed gate key or unknown login in the log', async (t) => {
-  const { app, key, lines } = await boot(t);
-  const errors: string[] = [];
-  t.mock.method(console, 'error', (...args: unknown[]) => errors.push(args.map(String).join(' ')));
-  const wrongKey = 'ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ';
-  await post(app, '/setup', setupFields(wrongKey));
-  await post(app, '/setup', { ...setupFields(key), password: 'too short' });
-  const res = await post(app, '/setup', setupFields(key));
-  const token = COOKIE.exec(res.headers.get('set-cookie') ?? '')?.[1];
-  assert.ok(token);
-  await get(app, '/', { cookie: `__Host-hof=${token}` });
-  await get(app, '/');
+describe('log audit, M2–M3', () => {
+  test('setup, sign-in, failed sign-in, password change, sign-out: no secret in any line', async (t) => {
+    const { app, key, lines } = await boot(t);
+    const secrets: string[] = [];
+    const remember = (...values: string[]) => secrets.push(...values);
+    const tokenOf = (res: Response) => {
+      const token = COOKIE.exec(res.headers.get('set-cookie') ?? '')?.[1];
+      assert.ok(token, 'no session cookie');
+      remember(token, hashSessionToken(token).toString('hex'));
+      return token;
+    };
+    // A stored hash and its parts: the whole PHC string, the salt, the hash.
+    const rememberHash = async () => {
+      const phc = await hashOf(1);
+      remember(phc, ...phc.split('$').slice(-2));
+    };
 
-  // Sign-in and sign-out: an unknown login typed as a password, a wrong password, a success.
-  const unknown = 'secret-typed-as-login';
-  await signIn(app, unknown, 'any password at all');
-  await signIn(app, 'owner', 'a wrong password, long enough');
-  const signedIn = await signIn(app, 'owner', PASSWORD, { cookie: `__Host-hof=${token}` });
-  const fresh = COOKIE.exec(signedIn.headers.get('set-cookie') ?? '')?.[1];
-  assert.ok(fresh);
-  const changed = await changePassword(
-    app,
-    `__Host-hof=${fresh}`,
-    passwordFields(PASSWORD, NEW_PASSWORD),
-  );
-  const afterChange = COOKIE.exec(changed.headers.get('set-cookie') ?? '')?.[1];
-  assert.ok(afterChange);
-  await post(app, '/logout', {}, { cookie: `__Host-hof=${afterChange}` });
+    // The gate key: the right one, a wrong one, both as typed and without hyphens.
+    const wrongKey = 'ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ';
+    remember(key, key.replaceAll('-', ''), wrongKey, wrongKey.replaceAll('-', ''));
+    // Logins that look like secrets: people type passwords into the login field.
+    const unknownLogins = ['s3cr3t.typed-as-login', 'My Secret Pass Phrase'];
+    const typed = ['too short', 'any password at all', 'a wrong password, long enough'];
+    remember(PASSWORD, NEW_PASSWORD, ...unknownLogins, ...typed);
 
-  // lines[0] is the startup line that announces the key; that is its only place.
-  const written = [...lines.slice(1), ...errors].join('\n');
-  for (const secret of [
-    PASSWORD,
-    'too short',
-    token,
-    key,
-    key.replaceAll('-', ''),
-    wrongKey,
-    wrongKey.replaceAll('-', ''),
-    unknown,
-    'any password at all',
-    'a wrong password, long enough',
-    fresh,
-    afterChange,
-    NEW_PASSWORD,
-    '$argon2id',
-  ]) {
-    assert.ok(!written.includes(secret), `log contains ${secret}`);
-  }
-  for (const event of ['court_founded', 'login_failed', 'info login', 'password_changed']) {
-    assert.ok(written.includes(event), event);
-  }
+    // Setup: a wrong key, a short password, then the founding.
+    await post(app, '/setup', setupFields(wrongKey));
+    await post(app, '/setup', { ...setupFields(key), password: typed[0]!, password2: typed[0]! });
+    const founded = tokenOf(await post(app, '/setup', setupFields(key)));
+    await rememberHash();
+    // Sign-in: unknown logins, a wrong password, then a success replacing the founding session.
+    for (const login of unknownLogins) await signIn(app, login, typed[1]!);
+    await signIn(app, 'owner', typed[2]!);
+    const signedIn = tokenOf(
+      await signIn(app, 'owner', PASSWORD, { cookie: `__Host-hof=${founded}` }),
+    );
+    // Password change, then sign-out.
+    const changed = tokenOf(
+      await changePassword(app, `__Host-hof=${signedIn}`, passwordFields(PASSWORD, NEW_PASSWORD)),
+    );
+    await rememberHash();
+    await post(app, '/logout', {}, { cookie: `__Host-hof=${changed}` });
+
+    // The key appears in one place only: the line that announces it at startup.
+    assert.equal(lines[0], `info gate_key key=${key}`);
+    // Every other line, exactly: identifiers of the existing user are allowed, nothing else.
+    assert.deepEqual(lines.slice(1), [
+      'warn gate_key_rejected ip=-',
+      'info court_founded user_id=1 username=owner ip=-',
+      'warn login_failed reason=unknown_user ip=-',
+      'warn login_failed reason=unknown_user ip=-',
+      'warn login_failed user_id=1 username=owner ip=- reason=wrong_password',
+      'info login user_id=1 username=owner ip=-',
+      'info password_changed user_id=1 username=owner ip=-',
+    ]);
+    for (const line of lines.slice(1)) {
+      for (const secret of secrets) {
+        assert.ok(!line.includes(secret), `log line «${line}» contains ${secret}`);
+      }
+      assert.ok(!line.includes('$argon2id'), line);
+    }
+  });
 });
