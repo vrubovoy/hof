@@ -27,6 +27,7 @@ const HOST = 'localhost:3000';
 const ORIGIN = 'http://localhost:3000';
 const FORM = 'application/x-www-form-urlencoded';
 const PASSWORD = 'correct horse battery staple';
+const NEW_PASSWORD = 'a brand new password for the court';
 const COOKIE =
   /^__Host-hof=([A-Za-z0-9_-]{43}); Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=2592000$/;
 // Copied from ARCHITECTURE.md §4.2 on purpose: the test must not share the value with the code.
@@ -78,6 +79,22 @@ async function found(t: TestContext) {
   return { ...booted, token, cookie: `__Host-hof=${token}` };
 }
 
+async function hashOf(userId: number): Promise<string> {
+  const { rows } = await pool.query<{ password_hash: string }>(
+    'SELECT password_hash FROM users WHERE id = $1',
+    [userId],
+  );
+  return rows[0]!.password_hash;
+}
+
+function passwordFields(current: string, password: string) {
+  return { current, password, password2: password };
+}
+
+function changePassword(app: App, cookie: string, fields: Record<string, string>, headers = {}) {
+  return post(app, '/account/password', fields, { cookie, ...headers });
+}
+
 // A user written straight into the table: there is no page for adding people before M4.
 async function addUser(username: string, passwordHash = PASSWORD_HASH, disabled = false) {
   const { rows } = await pool.query<{ id: number }>(
@@ -121,23 +138,30 @@ async function waitForLock(): Promise<void> {
   assert.fail('no query started waiting for the lock');
 }
 
-// Counts the Argon2 computations started while `action` runs. node:crypto starts each one as an
-// async resource of type ARGON2REQUEST; tests run one at a time, so every one of them belongs
-// to the action. This shows which refusals pay for Argon2 without measuring time.
+// Counts the Argon2 computations started from now until stop(). node:crypto starts each one as
+// an async resource of type ARGON2REQUEST; tests run one at a time, so every one of them belongs
+// to the request under test. This shows which requests pay for Argon2, and when, without
+// measuring time.
+function argon2Counter() {
+  let started = 0;
+  const hook = createHook({
+    init(_id, type) {
+      if (type === 'ARGON2REQUEST') started += 1;
+    },
+  }).enable();
+  return { started: () => started, stop: () => void hook.disable() };
+}
+
+// The Argon2 computations started while `action` runs.
 async function countArgon2<T>(
   action: () => T | Promise<T>,
 ): Promise<{ result: T; argon2: number }> {
-  let argon2 = 0;
-  const hook = createHook({
-    init(_id, type) {
-      if (type === 'ARGON2REQUEST') argon2 += 1;
-    },
-  }).enable();
+  const counter = argon2Counter();
   try {
     const result = await action();
-    return { result, argon2 };
+    return { result, argon2: counter.started() };
   } finally {
-    hook.disable();
+    counter.stop();
   }
 }
 
@@ -730,6 +754,267 @@ describe('sign-out', () => {
   });
 });
 
+describe('my chambers', () => {
+  test('need a session: GET keeps the way back, POST goes to /login', async (t) => {
+    const { app } = await found(t);
+    const page = await get(app, '/account');
+    assert.equal(page.status, 303);
+    assert.equal(page.headers.get('location'), '/login?next=%2Faccount');
+    const change = await post(app, '/account/password', passwordFields(PASSWORD, NEW_PASSWORD));
+    assert.equal(change.status, 303);
+    assert.equal(change.headers.get('location'), '/login');
+    assert.equal(change.headers.get('set-cookie'), null);
+    assert.equal(await verifyPassword(PASSWORD, await hashOf(1)), 'valid');
+  });
+
+  test('the administrator: login · хозяин двора, the form, the way out and back', async (t) => {
+    const { app, cookie } = await found(t);
+    const res = await get(app, '/account', { cookie });
+    assert.equal(res.status, 200);
+    const page = await res.text();
+    for (const text of [
+      '<a href="/">Двор</a>',
+      'Мои покои',
+      'owner · хозяин двора',
+      'Сменить пароль',
+      '<form method="post" action="/account/password">',
+      'Текущий пароль',
+      'name="current"',
+      'Новый пароль',
+      'name="password"',
+      'Ещё раз',
+      'name="password2"',
+      'Не короче 15 символов. На других устройствах вы выйдете со двора.',
+      '<form method="post" action="/logout">',
+      'Покинуть двор',
+      'на этом устройстве; всё во дворе останется на месте',
+    ]) {
+      assert.ok(page.includes(text), text);
+    }
+    assert.ok(!page.includes('Пароль сменён.'));
+  });
+
+  test('anyone else: only the login', async (t) => {
+    const { app } = await found(t);
+    const anna = await addSession(await addUser('anna'));
+    const page = await (await get(app, '/account', { cookie: `__Host-hof=${anna}` })).text();
+    assert.ok(page.includes('<p>anna</p>'));
+    assert.ok(!page.includes('хозяин двора'));
+  });
+
+  test('done=password shows the message; any other done is ignored', async (t) => {
+    const { app, cookie } = await found(t);
+    const done = await (await get(app, '/account?done=password', { cookie })).text();
+    assert.ok(done.includes('Пароль сменён.'));
+    for (const path of ['/account?done=x', '/account?done=Password', '/account?created=1']) {
+      const page = await (await get(app, path, { cookie })).text();
+      assert.ok(!page.includes('Пароль сменён.'), path);
+    }
+  });
+
+  test('the courtyard leads to my chambers', async (t) => {
+    const { app, cookie } = await found(t);
+    const page = await (await get(app, '/', { cookie })).text();
+    assert.ok(page.includes('<a href="/account">Мои покои</a>'));
+  });
+});
+
+describe('change of my password', () => {
+  test('new hash, every old session ended, a new one for this browser', async (t) => {
+    const { app, token, cookie, lines } = await found(t);
+    const phone = await addSession(1);
+    const anna = await addSession(await addUser('anna'));
+    const { result: res, argon2 } = await countArgon2(() =>
+      changePassword(app, cookie, passwordFields(PASSWORD, NEW_PASSWORD), {
+        'x-real-ip': '203.0.113.7',
+      }),
+    );
+    // One to check the current password, one to hash the new one.
+    assert.equal(argon2, 2);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/account?done=password');
+    const fresh = COOKIE.exec(res.headers.get('set-cookie') ?? '')?.[1];
+    assert.ok(fresh);
+    assert.notEqual(fresh, token);
+    assert.deepEqual(await sessionTokens(token, phone, anna, fresh), {
+      known: [anna, fresh],
+      other: 0,
+    });
+    assert.equal(lines.at(-1), 'info password_changed user_id=1 username=owner ip=203.0.113.7');
+
+    // This browser stays in with the new session; the old ones are gone.
+    assert.equal((await get(app, '/account', { cookie: `__Host-hof=${fresh}` })).status, 200);
+    for (const old of [token, phone]) {
+      const res = await get(app, '/account', { cookie: `__Host-hof=${old}` });
+      assert.equal(res.headers.get('location'), '/login?next=%2Faccount');
+    }
+    assert.equal((await get(app, '/', { cookie: `__Host-hof=${anna}` })).status, 200);
+
+    // The old password no longer opens the gate, the new one does.
+    assert.equal(await verifyPassword(PASSWORD, await hashOf(1)), 'wrong');
+    assert.equal(await verifyPassword(NEW_PASSWORD, await hashOf(1)), 'valid');
+    assert.equal((await signIn(app, 'owner', PASSWORD)).status, 400);
+    assert.equal((await signIn(app, 'owner', NEW_PASSWORD)).status, 303);
+  });
+
+  test('a repeat typed in another Unicode form is the same password', async (t) => {
+    const { app, cookie } = await found(t);
+    const nfc = 'новый пароль: ёлка, йогурт и чай'.normalize('NFC');
+    const res = await changePassword(app, cookie, {
+      current: PASSWORD,
+      password: nfc,
+      password2: nfc.normalize('NFD'),
+    });
+    assert.equal(res.status, 303);
+    assert.equal(await verifyPassword(nfc, await hashOf(1)), 'valid');
+  });
+
+  const refusals: [string, Record<string, string>, string, string, number][] = [
+    // name, fields, field with the error, message, Argon2 computations
+    [
+      'wrong current password',
+      passwordFields('a wrong password, long enough', NEW_PASSWORD),
+      'current',
+      'Текущий пароль не подходит.',
+      1,
+    ],
+    [
+      'current password over 256',
+      passwordFields('x'.repeat(257), NEW_PASSWORD),
+      'current',
+      'Текущий пароль не подходит.',
+      0,
+    ],
+    [
+      'new password shorter than 15',
+      passwordFields(PASSWORD, 'a'.repeat(14)),
+      'password',
+      'Пароль — от 15 до 256 символов.',
+      0,
+    ],
+    [
+      'new password over 256',
+      passwordFields(PASSWORD, 'a'.repeat(257)),
+      'password',
+      'Пароль — от 15 до 256 символов.',
+      0,
+    ],
+    [
+      'repeat does not match',
+      { current: PASSWORD, password: NEW_PASSWORD, password2: NEW_PASSWORD + '!' },
+      'password2',
+      'Пароли не совпадают.',
+      0,
+    ],
+  ];
+  for (const [name, fields, field, message, expectedArgon2] of refusals) {
+    test(`${name}: 400 at «${field}», no password shown, nothing changed`, async (t) => {
+      const { app, token, cookie } = await found(t);
+      const phone = await addSession(1);
+      const before = await hashOf(1);
+      const { result: res, argon2 } = await countArgon2(() => changePassword(app, cookie, fields));
+      assert.equal(argon2, expectedArgon2);
+      assert.equal(res.status, 400);
+      assert.equal(res.headers.get('set-cookie'), null);
+      const page = await res.text();
+      assert.ok(page.includes(`<p id="${field}-error">${message}</p>`), message);
+      assert.match(page, new RegExp(`name="${field}"[^>]*aria-invalid="true"`));
+      assert.equal((page.match(/aria-invalid/g) ?? []).length, 1);
+      for (const typed of Object.values(fields)) {
+        assert.ok(!page.includes(typed), `page shows ${typed}`);
+      }
+      assert.equal(await hashOf(1), before);
+      assert.deepEqual(await sessionTokens(token, phone), { known: [token, phone], other: 0 });
+    });
+  }
+
+  test('an unreadable current hash: the same 400, the event in the log without the hash', async (t) => {
+    const { app, token, cookie, lines } = await found(t);
+    await pool.query("UPDATE users SET password_hash = 'not an argon2 hash' WHERE id = 1");
+    const logged = lines.length;
+    const { result: res, argon2 } = await countArgon2(() =>
+      changePassword(app, cookie, passwordFields(PASSWORD, NEW_PASSWORD)),
+    );
+    // The stored string is refused before Argon2, and no new hash is made.
+    assert.equal(argon2, 0);
+    assert.equal(res.status, 400);
+    assert.ok((await res.text()).includes('<p id="current-error">Текущий пароль не подходит.</p>'));
+    assert.deepEqual(lines.slice(logged), ['error password_hash_unreadable user_id=1']);
+    assert.equal(await hashOf(1), 'not an argon2 hash');
+    assert.deepEqual(await sessionTokens(token), { known: [token], other: 0 });
+  });
+
+  test('a failed transaction keeps the old hash and the old sessions', async (t) => {
+    const { app, token, cookie } = await found(t);
+    const phone = await addSession(1);
+    t.mock.method(console, 'error', () => undefined);
+    // New sessions cannot be written: the transaction fails after the new hash is written and
+    // the old sessions are deleted, before COMMIT.
+    await pool.query('ALTER TABLE sessions ADD CONSTRAINT no_new_sessions CHECK (false) NOT VALID');
+    try {
+      const res = await changePassword(app, cookie, passwordFields(PASSWORD, NEW_PASSWORD));
+      assert.equal(res.status, 500);
+      assert.equal(res.headers.get('set-cookie'), null);
+    } finally {
+      await pool.query('ALTER TABLE sessions DROP CONSTRAINT IF EXISTS no_new_sessions');
+    }
+    assert.equal(await verifyPassword(PASSWORD, await hashOf(1)), 'valid');
+    assert.deepEqual(await sessionTokens(token, phone), { known: [token, phone], other: 0 });
+    assert.equal((await get(app, '/account', { cookie })).status, 200);
+  });
+});
+
+describe('change of my password racing a reset or a disable', () => {
+  // The rival changes the row and holds the lock; the change has already checked the current
+  // password and made the new hash, and waits on FOR UPDATE until the rival commits.
+  async function race(t: TestContext, change: string) {
+    const { app, token: ownerSession } = await found(t);
+    const anna = await addUser('anna');
+    const browser = await addSession(anna);
+    const phone = await addSession(anna);
+    const rival = await pool.connect();
+    const counter = argon2Counter();
+    try {
+      await rival.query('BEGIN');
+      await rival.query(change, [anna]);
+      const pending = changePassword(
+        app,
+        `__Host-hof=${browser}`,
+        passwordFields(PASSWORD, NEW_PASSWORD),
+      );
+      await waitForLock();
+      // Both Argon2 computations are done before the transaction waits for the row.
+      assert.equal(counter.started(), 2);
+      await rival.query('COMMIT');
+      const res = await pending;
+      assert.equal(counter.started(), 2);
+      assert.equal(res.status, 303);
+      assert.equal(res.headers.get('location'), '/login');
+      assert.equal(res.headers.get('set-cookie'), null);
+    } finally {
+      counter.stop();
+      rival.release();
+    }
+    // ROLLBACK: the sessions are not this request's to delete, and no new one was made.
+    assert.deepEqual(await sessionTokens(ownerSession, browser, phone), {
+      known: [ownerSession, browser, phone],
+      other: 0,
+    });
+    return anna;
+  }
+
+  test('the hash changed: /login, the rival’s hash stays', async (t) => {
+    const otherHash = await hashPassword('another password for anna');
+    const anna = await race(t, `UPDATE users SET password_hash = '${otherHash}' WHERE id = $1`);
+    assert.equal(await hashOf(anna), otherHash);
+  });
+
+  test('the user was disabled: /login, the password unchanged', async (t) => {
+    const anna = await race(t, 'UPDATE users SET is_disabled = true WHERE id = $1');
+    assert.equal(await hashOf(anna), PASSWORD_HASH);
+  });
+});
+
 test('no password, session token, hash, typed gate key or unknown login in the log', async (t) => {
   const { app, key, lines } = await boot(t);
   const errors: string[] = [];
@@ -750,7 +1035,14 @@ test('no password, session token, hash, typed gate key or unknown login in the l
   const signedIn = await signIn(app, 'owner', PASSWORD, { cookie: `__Host-hof=${token}` });
   const fresh = COOKIE.exec(signedIn.headers.get('set-cookie') ?? '')?.[1];
   assert.ok(fresh);
-  await post(app, '/logout', {}, { cookie: `__Host-hof=${fresh}` });
+  const changed = await changePassword(
+    app,
+    `__Host-hof=${fresh}`,
+    passwordFields(PASSWORD, NEW_PASSWORD),
+  );
+  const afterChange = COOKIE.exec(changed.headers.get('set-cookie') ?? '')?.[1];
+  assert.ok(afterChange);
+  await post(app, '/logout', {}, { cookie: `__Host-hof=${afterChange}` });
 
   // lines[0] is the startup line that announces the key; that is its only place.
   const written = [...lines.slice(1), ...errors].join('\n');
@@ -766,11 +1058,13 @@ test('no password, session token, hash, typed gate key or unknown login in the l
     'any password at all',
     'a wrong password, long enough',
     fresh,
+    afterChange,
+    NEW_PASSWORD,
     '$argon2id',
   ]) {
     assert.ok(!written.includes(secret), `log contains ${secret}`);
   }
-  for (const event of ['court_founded', 'login_failed', 'info login']) {
+  for (const event of ['court_founded', 'login_failed', 'info login', 'password_changed']) {
     assert.ok(written.includes(event), event);
   }
 });

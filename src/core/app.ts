@@ -1,4 +1,5 @@
-// Core routes (ARCHITECTURE.md §4.1): founding the court, signing in and out, the courtyard.
+// Core routes (ARCHITECTURE.md §4.1): founding the court, signing in and out, the courtyard,
+// my chambers and the change of one's own password.
 //
 // Order inside Core, after the common checks and the first-run gate in main.ts:
 //   1. /setup has its own rules before and after founding;
@@ -42,13 +43,20 @@ type CoreEnv = { Variables: { user: CurrentUser } };
 
 // Core paths that need a signed-in user, for every method. /login and /logout are public and
 // not here.
-const PROTECTED_PATHS = ['/'];
+const PROTECTED_PATHS = ['/', '/account', '/account/password'];
 
 type SetupField = 'code' | 'username' | 'password' | 'password2';
 
 interface SetupForm {
   username: string;
   error?: { field: SetupField; text: string };
+}
+
+type PasswordField = 'current' | 'password' | 'password2';
+
+interface AccountForm {
+  done: boolean;
+  error?: { field: PasswordField; text: string };
 }
 
 interface LoginForm {
@@ -195,7 +203,8 @@ function loginPage(form: LoginForm) {
 function courtyardPage(user: CurrentUser, services: readonly Service[]) {
   return page(
     'Hof — двор',
-    html`<h1>Двор</h1>
+    html`<nav><a href="/account">Мои покои</a></nav>
+      <h1>Двор</h1>
       <p>${user.username}</p>
       <h2>Службы двора</h2>
       <ul>
@@ -204,6 +213,74 @@ function courtyardPage(user: CurrentUser, services: readonly Service[]) {
       <form method="post" action="/logout">
         <button type="submit">Покинуть двор</button>
       </form>`,
+  );
+}
+
+// Texts from design/preview/Account.html: who is signed in, the change of the password, the way
+// out. The «Звуки и движение» block comes with the effects (M10). No password is ever written
+// back into the page.
+function accountPage(user: CurrentUser, form: AccountForm) {
+  const describedBy = (field: PasswordField, hint?: string) => {
+    const ids = [hint, form.error?.field === field ? `${field}-error` : undefined].filter(Boolean);
+    const invalid = form.error?.field === field ? html`aria-invalid="true"` : '';
+    return ids.length > 0 ? html`${invalid} aria-describedby="${ids.join(' ')}"` : invalid;
+  };
+  const error = (field: PasswordField) =>
+    form.error?.field === field ? html`<p id="${field}-error">${form.error.text}</p>` : '';
+
+  return page(
+    'Hof — мои покои',
+    html`<nav><a href="/">Двор</a></nav>
+      <h1>Мои покои</h1>
+      <p>${user.isAdmin ? `${user.username} · хозяин двора` : user.username}</p>
+      ${form.done ? html`<p>Пароль сменён.</p>` : ''}
+      <h2>Сменить пароль</h2>
+      <form method="post" action="/account/password">
+        <p>
+          <label for="current">Текущий пароль</label>
+          <input
+            id="current"
+            name="current"
+            type="password"
+            autocomplete="current-password"
+            required
+            ${describedBy('current')}
+          />
+        </p>
+        ${error('current')}
+        <p>
+          <label for="password">Новый пароль</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="new-password"
+            required
+            ${describedBy('password', 'password-hint')}
+          />
+        </p>
+        ${error('password')}
+        <p>
+          <label for="password2">Ещё раз</label>
+          <input
+            id="password2"
+            name="password2"
+            type="password"
+            autocomplete="new-password"
+            required
+            ${describedBy('password2', 'password-hint')}
+          />
+        </p>
+        ${error('password2')}
+        <p id="password-hint">
+          Не короче ${PASSWORD_MIN_LENGTH} символов. На других устройствах вы выйдете со двора.
+        </p>
+        <button type="submit">Сменить пароль</button>
+      </form>
+      <form method="post" action="/logout">
+        <button type="submit" aria-describedby="logout-hint">Покинуть двор</button>
+      </form>
+      <p id="logout-hint">на этом устройстве; всё во дворе останется на месте</p>`,
   );
 }
 
@@ -463,6 +540,99 @@ export function createCoreApp(
   }
 
   core.get('/', (c) => c.html(courtyardPage(c.get('user'), services)));
+
+  // Мои покои. `done` is a flag from a fixed list; anything else is ignored (§4.1).
+  core.get('/account', (c) =>
+    c.html(accountPage(c.get('user'), { done: c.req.query('done') === 'password' })),
+  );
+
+  // Change of one's own password (§4.2, §4.3, §4.8). Every Argon2 runs before the transaction;
+  // inside it the new hash, the end of every old session and the new session of this browser
+  // are written together or not at all.
+  core.post('/account/password', async (c) => {
+    const user = c.get('user');
+    const form = await c.req.parseBody();
+    const text = (name: PasswordField) => {
+      const value = form[name];
+      return typeof value === 'string' ? value : '';
+    };
+    const refuse = (field: PasswordField, message: string) =>
+      c.html(accountPage(user, { done: false, error: { field, text: message } }), 400);
+    const wrongCurrent = () => refuse('current', 'Текущий пароль не подходит.');
+
+    // The form first, without Argon2. Like at sign-in, only the maximum applies to the current
+    // password: no stored password is longer, so a longer one matches nothing.
+    const current = text('current');
+    if (passwordLength(current) > PASSWORD_MAX_LENGTH) return wrongCurrent();
+    const password = text('password');
+    const passwordError = newPasswordError(password);
+    if (passwordError !== null) return refuse('password', `${passwordError}.`);
+    // Compared as one password, after NFKC: two Unicode forms of "й" are the same password.
+    if (normalizePassword(password) !== normalizePassword(text('password2'))) {
+      return refuse('password2', 'Пароли не совпадают.');
+    }
+
+    // The current password is checked against the hash read here, without a lock.
+    const { rows } = await pool.query<{ password_hash: string }>(
+      'SELECT password_hash FROM users WHERE id = $1',
+      [user.id],
+    );
+    // Users are never deleted (§5.2), so the row is there.
+    const checkedHash = rows[0]!.password_hash;
+    const check = await verifyPassword(current, checkedHash);
+    if (check === 'unreadable') {
+      // Not a 500, and the hash itself is not logged; access comes back with a reset (§4.3).
+      log('error', 'password_hash_unreadable', { user_id: user.id });
+      return wrongCurrent();
+    }
+    if (check === 'wrong') return wrongCurrent();
+
+    // Only after the current password is confirmed, and still before the transaction.
+    const passwordHash = await hashPassword(password);
+
+    // The checked hash must still be the user's hash, and the user still allowed in. A reset,
+    // a disable or a change from another device in between has already ended this user's
+    // sessions; it is not overwritten, and this request is left without a session.
+    let token: string | null = null;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query<{ password_hash: string; is_disabled: boolean }>(
+        'SELECT password_hash, is_disabled FROM users WHERE id = $1 FOR UPDATE',
+        [user.id],
+      );
+      const latest = locked.rows[0]!;
+      if (latest.is_disabled || latest.password_hash !== checkedHash) {
+        // Nothing has been written: the password, the sessions and the cookie stay as they are.
+        await client.query('ROLLBACK');
+      } else {
+        // The hash first, then every session of the user — the one of this browser included —
+        // then the new session of this browser.
+        await client.query('UPDATE users SET password_hash = $1 WHERE id = $2', [
+          passwordHash,
+          user.id,
+        ]);
+        await client.query('DELETE FROM sessions WHERE user_id = $1', [user.id]);
+        token = await createSession(client, user.id);
+        await client.query('COMMIT');
+      }
+    } catch (error) {
+      // The connection may already be broken; the original error matters more.
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+    if (token === null) return c.redirect('/login', 303);
+
+    c.header('Set-Cookie', sessionCookie(token));
+    log('info', 'password_changed', {
+      user_id: user.id,
+      username: user.username,
+      ip: c.req.header('X-Real-IP') ?? '-',
+    });
+    return c.redirect('/account?done=password', 303);
+  });
 
   return core;
 }

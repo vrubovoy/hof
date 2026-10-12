@@ -101,7 +101,14 @@ describe('currentUser', () => {
   test('a valid session gives its user', async () => {
     const id = await insertUser('anna');
     const token = await signIn(id);
-    assert.deepEqual(await currentUser(pool, token), { id, username: 'anna' });
+    assert.deepEqual(await currentUser(pool, token), { id, username: 'anna', isAdmin: false });
+  });
+
+  test('the administrator is marked as such', async () => {
+    const id = await insertUser('owner');
+    await pool.query('UPDATE users SET is_admin = true WHERE id = $1', [id]);
+    const token = await signIn(id);
+    assert.deepEqual(await currentUser(pool, token), { id, username: 'owner', isAdmin: true });
   });
 
   test('only the hash is stored, not the token', async () => {
@@ -127,7 +134,7 @@ describe('currentUser', () => {
     await pool.query('UPDATE users SET is_disabled = true WHERE id = $1', [id]);
     assert.equal(await currentUser(pool, token), null);
     await pool.query('UPDATE users SET is_disabled = false WHERE id = $1', [id]);
-    assert.deepEqual(await currentUser(pool, token), { id, username: 'anna' });
+    assert.deepEqual(await currentUser(pool, token), { id, username: 'anna', isAdmin: false });
   });
 });
 

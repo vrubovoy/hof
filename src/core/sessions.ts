@@ -18,6 +18,8 @@ const TOKEN_FORMAT = /^[A-Za-z0-9_-]{43}$/;
 export interface CurrentUser {
   id: number;
   username: string;
+  // The administrator, Хозяин (§4.6).
+  isAdmin: boolean;
 }
 
 export function newSessionToken(): string {
@@ -68,7 +70,7 @@ export async function currentUser(
 ): Promise<CurrentUser | null> {
   if (token === undefined || !TOKEN_FORMAT.test(token)) return null;
   const { rows } = await pool.query<CurrentUser>(
-    `SELECT users.id, users.username
+    `SELECT users.id, users.username, users.is_admin AS "isAdmin"
        FROM sessions
        JOIN users ON users.id = sessions.user_id
       WHERE sessions.token_hash = $1
