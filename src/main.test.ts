@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { describe, test, type TestContext } from 'node:test';
+import { Pool } from 'pg';
+import type { FirstRun } from './core/gate-key.ts';
 import { createApp } from './main.ts';
 
 const HOST = 'hof.example';
@@ -14,8 +16,17 @@ const FORM = 'application/x-www-form-urlencoded';
 const CSP =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; media-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 
+// The common checks need no database: the court counts as founded, and /anything is not a Core
+// route, so a request that passes every check ends in the common 404. The pool is never used.
+const founded: FirstRun = {
+  isFounded: () => Promise.resolve(true),
+  keyMatches: () => false,
+  markFounded: () => undefined,
+};
+const unusedPool = new Pool();
+
 function request(method: string, headers: Record<string, string>, body?: string) {
-  return createApp().request('/anything', { method, headers, body });
+  return createApp(unusedPool, founded).request('/anything', { method, headers, body });
 }
 
 // Silences log lines during the test and returns what was written.

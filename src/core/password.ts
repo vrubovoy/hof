@@ -30,14 +30,14 @@ const runArgon2id = promisify(argon2);
 
 // The same password typed on different devices may arrive in different Unicode forms:
 // "й" as one code point or as "и" plus a combining mark. NFKC makes them one string.
-function normalize(password: string): string {
+export function normalizePassword(password: string): string {
   return password.normalize('NFKC');
 }
 
 // Length in code points, like char_length in PostgreSQL: "😀" is one character,
 // although it takes two UTF-16 units in a JavaScript string.
 export function passwordLength(password: string): number {
-  return [...normalize(password)].length;
+  return [...normalizePassword(password)].length;
 }
 
 // Rule for every new password: first run, own change, initial, reset, CLI.
@@ -66,7 +66,7 @@ function decodeBase64(text: string): Buffer | null {
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(SALT_BYTES);
   const hash = await runArgon2id('argon2id', {
-    message: Buffer.from(normalize(password)),
+    message: Buffer.from(normalizePassword(password)),
     nonce: salt,
     memory: MEMORY_KIB,
     passes: PASSES,
@@ -98,7 +98,7 @@ export async function verifyPassword(password: string, stored: string): Promise<
   let actual: Buffer;
   try {
     actual = await runArgon2id('argon2id', {
-      message: Buffer.from(normalize(password)),
+      message: Buffer.from(normalizePassword(password)),
       nonce: salt,
       memory,
       passes,

@@ -7,7 +7,8 @@ import { bodyLimit } from 'hono/body-limit';
 import { html } from 'hono/html';
 import { join } from 'node:path';
 import { Pool } from 'pg';
-import { startFirstRun } from './core/gate-key.ts';
+import { createCoreApp, type Service } from './core/app.ts';
+import { startFirstRun, type FirstRun } from './core/gate-key.ts';
 import { log } from './log.ts';
 import { migrate } from './migrate.ts';
 
@@ -15,6 +16,10 @@ const PORT = 3000;
 const BODY_LIMIT_BYTES = 16 * 1024;
 const DATABASE = 'hof';
 const CORE_MIGRATIONS = join(import.meta.dirname, 'core', 'migrations');
+
+// The applications of this installation, for «Службы двора» (§2). This is not a registry,
+// just the list; it is empty until the first application is added.
+const SERVICES: readonly Service[] = [];
 
 // §4.9: explicit header values, not Hono's secureHeaders preset.
 const CONTENT_SECURITY_POLICY =
@@ -46,7 +51,9 @@ function isFormContentType(contentType: string | undefined): boolean {
   return mediaType === 'application/x-www-form-urlencoded';
 }
 
-export function createApp(): Hono {
+// Request order: response headers, Origin, POST body (common checks below), then the first-run
+// gate, then the modules' own routes, and finally the common 404.
+export function createApp(corePool: Pool, firstRun: FirstRun): Hono {
   const app = new Hono();
 
   // Response headers go on every response, including the rejections below.
@@ -90,6 +97,15 @@ export function createApp(): Hono {
     return limitBody(c, next);
   });
 
+  // First run (§4.1, §4.4): until the court is founded, every path leads to /setup, for every
+  // module. /setup itself decides what it does before and after founding.
+  app.use(async (c, next) => {
+    if (c.req.path === '/setup' || (await firstRun.isFounded())) return next();
+    return c.redirect('/setup', 303);
+  });
+
+  app.route('/', createCoreApp(corePool, firstRun, SERVICES));
+
   // Unknown paths and methods (§4.1).
   app.notFound((c) => c.html(NOT_FOUND_PAGE, 404));
 
@@ -120,10 +136,11 @@ async function start(): Promise<void> {
   const corePool = new Pool({ database: DATABASE, user: 'hof_core', password: corePassword });
 
   let applied: string[];
+  let firstRun: FirstRun;
   try {
     applied = await migrate(corePool, CORE_MIGRATIONS);
     // Until the court is founded, this writes the gate key to the log.
-    await startFirstRun(corePool);
+    firstRun = await startFirstRun(corePool);
   } catch (error) {
     log('error', 'startup_failed', { error: describeError(error) });
     await corePool.end();
@@ -131,7 +148,7 @@ async function start(): Promise<void> {
     return;
   }
 
-  serve({ fetch: createApp().fetch, port: PORT }, (info) => {
+  serve({ fetch: createApp(corePool, firstRun).fetch, port: PORT }, (info) => {
     log('info', 'start', { port: info.port, migrations: applied.join(',') || 'none' });
   });
 }
