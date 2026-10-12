@@ -5,10 +5,12 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { html } from 'hono/html';
+import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { Pool } from 'pg';
 import { createCoreApp, type Service } from './core/app.ts';
 import { startFirstRun, type FirstRun } from './core/gate-key.ts';
+import { hashPassword } from './core/password.ts';
 import { log } from './log.ts';
 import { migrate } from './migrate.ts';
 
@@ -51,9 +53,16 @@ function isFormContentType(contentType: string | undefined): boolean {
   return mediaType === 'application/x-www-form-urlencoded';
 }
 
+// §4.3: for an unknown login Argon2 runs against this hash, so the answer takes as long as for
+// an existing one. Made once at startup with the current profile, from a random password nobody
+// knows, so no typed password can match it.
+export function newDummyPasswordHash(): Promise<string> {
+  return hashPassword(randomBytes(32).toString('base64url'));
+}
+
 // Request order: response headers, Origin, POST body (common checks below), then the first-run
 // gate, then the modules' own routes, and finally the common 404.
-export function createApp(corePool: Pool, firstRun: FirstRun): Hono {
+export function createApp(corePool: Pool, firstRun: FirstRun, dummyPasswordHash: string): Hono {
   const app = new Hono();
 
   // Response headers go on every response, including the rejections below.
@@ -104,7 +113,7 @@ export function createApp(corePool: Pool, firstRun: FirstRun): Hono {
     return c.redirect('/setup', 303);
   });
 
-  app.route('/', createCoreApp(corePool, firstRun, SERVICES));
+  app.route('/', createCoreApp(corePool, firstRun, dummyPasswordHash, SERVICES));
 
   // Unknown paths and methods (§4.1).
   app.notFound((c) => c.html(NOT_FOUND_PAGE, 404));
@@ -121,7 +130,8 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-// Startup order: configuration, migrations, first-run state, and only then the HTTP port.
+// Startup order: configuration, migrations, first-run state, the dummy password hash, and only
+// then the HTTP port.
 // Any failure before listen is logged and ends the process with exit code 1.
 async function start(): Promise<void> {
   const corePassword = process.env.HOF_CORE_DB_PASSWORD;
@@ -137,10 +147,12 @@ async function start(): Promise<void> {
 
   let applied: string[];
   let firstRun: FirstRun;
+  let dummyPasswordHash: string;
   try {
     applied = await migrate(corePool, CORE_MIGRATIONS);
     // Until the court is founded, this writes the gate key to the log.
     firstRun = await startFirstRun(corePool);
+    dummyPasswordHash = await newDummyPasswordHash();
   } catch (error) {
     log('error', 'startup_failed', { error: describeError(error) });
     await corePool.end();
@@ -148,7 +160,7 @@ async function start(): Promise<void> {
     return;
   }
 
-  serve({ fetch: createApp(corePool, firstRun).fetch, port: PORT }, (info) => {
+  serve({ fetch: createApp(corePool, firstRun, dummyPasswordHash).fetch, port: PORT }, (info) => {
     log('info', 'start', { port: info.port, migrations: applied.join(',') || 'none' });
   });
 }
