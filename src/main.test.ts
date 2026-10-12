@@ -1,11 +1,12 @@
-// main.ts: common request checks — Origin (§4.6), POST body (§4.7), response headers (§4.9) —
-// and the failures that stop the server before it opens the HTTP port.
+// main.ts: common request checks — Origin (§4.6), POST body (§4.7), response headers (§4.9) —,
+// the common 404 and 500 pages with the unexpected_error log line (§4.1, §4.10), and the failures
+// that stop the server before it opens the HTTP port.
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { describe, test, type TestContext } from 'node:test';
-import { Pool } from 'pg';
+import { after, describe, test, type TestContext } from 'node:test';
+import { DatabaseError, Pool } from 'pg';
 import type { FirstRun } from './core/gate-key.ts';
 import { createApp } from './main.ts';
 
@@ -154,6 +155,148 @@ describe('response headers', () => {
     assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(res.headers.get('referrer-policy'), 'same-origin');
     assert.equal(res.headers.get('cache-control'), null);
+  });
+});
+
+describe('404 page', () => {
+  test('an unknown path, GET or POST: the page and the way to the courtyard', async () => {
+    for (const res of [
+      await request('GET', { host: HOST }),
+      await request('POST', { host: HOST, origin: `https://${HOST}`, 'content-type': FORM }, 'a=1'),
+    ]) {
+      assert.equal(res.status, 404);
+      assert.equal(res.headers.get('cache-control'), 'no-store');
+      const page = await res.text();
+      assert.ok(page.includes('<h1>Такой тропы во дворе нет</h1>'));
+      assert.ok(page.includes('Возможно, ссылка устарела или в адресе опечатка.'));
+      assert.ok(page.includes('<a href="/">Во двор</a>'));
+    }
+  });
+});
+
+describe('500 page and the unexpected_error line', () => {
+  // The first-run gate of main.ts fails: the error comes before any module.
+  function failingGate(error: Error): FirstRun {
+    return {
+      isFounded: () => Promise.reject(error),
+      keyMatches: () => false,
+      markFounded: () => undefined,
+    };
+  }
+  // Values the request carries that must not reach the page or the log.
+  const COOKIE_TOKEN = 'C'.repeat(43);
+  const secrets = [COOKIE_TOKEN, 'query-secret', 'body-secret'];
+
+  function failing(method: string, error: Error) {
+    return createApp(unusedPool, failingGate(error), 'unused').request('/x?token=query-secret', {
+      method,
+      headers: {
+        host: HOST,
+        origin: `https://${HOST}`,
+        'content-type': FORM,
+        cookie: `__Host-hof=${COOKIE_TOKEN}`,
+      },
+      body: method === 'POST' ? 'password=body-secret' : undefined,
+    });
+  }
+
+  test('GET: the page with «Попробовать ещё раз», no details; one log line', async (t) => {
+    const lines = captureLog(t);
+    const error = new Error('first line\nsecond "line"\rthird');
+    const res = await failing('GET', error);
+    assert.equal(res.status, 500);
+    assert.match(res.headers.get('content-type') ?? '', /^text\/html/);
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    assert.equal(res.headers.get('content-security-policy'), CSP);
+    const page = await res.text();
+    for (const text of [
+      '<h1>Во дворе что-то стряслось</h1>',
+      'Мы уже прибираемся. Попробуйте ещё раз через минуту — записанное раньше на месте.',
+      '<a href="">Попробовать ещё раз</a>',
+      '<a href="/">Во двор</a>',
+    ]) {
+      assert.ok(page.includes(text), text);
+    }
+    for (const detail of ['first line', 'third', 'Error', 'main.test.ts', '/x', ...secrets]) {
+      assert.ok(!page.includes(detail), `page shows ${detail}`);
+    }
+
+    // One event, one physical line: the line breaks and quotes are escaped inside JSON strings.
+    assert.equal(lines.length, 1);
+    const line = lines[0] ?? '';
+    assert.doesNotMatch(line, /[\n\r]/);
+    const message = JSON.stringify(error.message);
+    assert.ok(
+      line.startsWith(`error unexpected_error method=GET path=/x error=${message} stack="Error: `),
+      line,
+    );
+    assert.ok(line.endsWith(`stack=${JSON.stringify(error.stack)}`), line);
+    assert.ok(line.includes('main.test.ts'), 'the stack has the frames');
+    for (const secret of secrets) assert.ok(!line.includes(secret), `log contains ${secret}`);
+  });
+
+  test('HEAD: the same status and headers, no body', async (t) => {
+    const lines = captureLog(t);
+    const res = await failing('HEAD', new Error('boom'));
+    assert.equal(res.status, 500);
+    assert.match(res.headers.get('content-type') ?? '', /^text\/html/);
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    assert.equal(res.headers.get('content-security-policy'), CSP);
+    assert.equal(await res.text(), '');
+    assert.equal(lines.length, 1);
+    assert.match(lines[0] ?? '', /^error unexpected_error method=HEAD path=\/x error=boom stack=/);
+  });
+
+  test('POST: no «Попробовать ещё раз», only the way to the courtyard', async (t) => {
+    const lines = captureLog(t);
+    const res = await failing('POST', new Error('boom'));
+    assert.equal(res.status, 500);
+    const page = await res.text();
+    assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'));
+    assert.ok(!page.includes('Попробовать ещё раз'));
+    assert.ok(page.includes('<a href="/">Во двор</a>'));
+    assert.equal(lines.length, 1);
+    assert.match(lines[0] ?? '', /^error unexpected_error method=POST path=\/x error=boom stack=/);
+    for (const secret of secrets) assert.ok(!lines[0]!.includes(secret), `log contains ${secret}`);
+  });
+
+  test('a DatabaseError: its message only, none of its extra fields', async (t) => {
+    const lines = captureLog(t);
+    const error = new DatabaseError('duplicate key value violates unique constraint', 100, 'error');
+    error.detail = 'Key (username)=(detail-secret) already exists.';
+    error.hint = 'hint-secret';
+    error.where = 'where-secret';
+    error.internalQuery = 'internal-query-secret';
+    error.schema = 'core';
+    error.table = 'table-secret';
+    error.constraint = 'constraint-secret';
+    assert.equal((await failing('GET', error)).status, 500);
+    assert.equal(lines.length, 1);
+    assert.match(lines[0] ?? '', /error="duplicate key value violates unique constraint"/);
+    for (const extra of ['detail-secret', 'hint-secret', 'where-secret', 'internal-query-secret']) {
+      assert.ok(!lines[0]!.includes(extra), `log contains ${extra}`);
+    }
+    assert.ok(!lines[0]!.includes('table-secret') && !lines[0]!.includes('constraint-secret'));
+  });
+
+  test('an error in a module route: the database is down when / looks for the session', async (t) => {
+    const lines = captureLog(t);
+    // Nothing listens on port 1: the session query of Core fails to connect.
+    const deadPool = new Pool({ host: '127.0.0.1', port: 1 });
+    after(() => deadPool.end());
+    const res = await createApp(deadPool, founded, 'unused').request('/', {
+      headers: { host: HOST, cookie: `__Host-hof=${COOKIE_TOKEN}` },
+    });
+    assert.equal(res.status, 500);
+    const page = await res.text();
+    assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'));
+    assert.ok(!page.includes('ECONNREFUSED'));
+    assert.equal(lines.length, 1);
+    assert.match(
+      lines[0] ?? '',
+      /^error unexpected_error method=GET path=\/ error="connect ECONNREFUSED 127.0.0.1:1" stack=/,
+    );
+    assert.ok(!lines[0]!.includes(COOKIE_TOKEN));
   });
 });
 
