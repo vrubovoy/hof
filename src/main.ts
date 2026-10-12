@@ -7,6 +7,8 @@ import { bodyLimit } from 'hono/body-limit';
 import { html } from 'hono/html';
 import { join } from 'node:path';
 import { Pool } from 'pg';
+import { startFirstRun } from './core/gate-key.ts';
+import { log } from './log.ts';
 import { migrate } from './migrate.ts';
 
 const PORT = 3000;
@@ -29,21 +31,6 @@ const NOT_FOUND_PAGE = html`<!doctype html>
       <h1>Такой тропы во дворе нет</h1>
     </body>
   </html>`;
-
-type LogLevel = 'info' | 'warn' | 'error';
-
-// §4.10: one line per event on stdout: `level event key=value ...`.
-// A value with spaces, quotes or non-ASCII characters is written as a JSON string,
-// so no value can break the line.
-function log(level: LogLevel, event: string, fields: Record<string, string | number> = {}): void {
-  const pairs = Object.entries(fields).map(([key, value]) => `${key}=${formatLogValue(value)}`);
-  console.log([level, event, ...pairs].join(' '));
-}
-
-function formatLogValue(value: string | number): string {
-  const text = String(value);
-  return /^[!-~]+$/.test(text) && !text.includes('"') ? text : JSON.stringify(text);
-}
 
 // §4.6: Origin must be exactly https://<Host>. For localhost (development)
 // http://<Host> is accepted as well. No header, `null`, another scheme, host or port — rejected.
@@ -118,7 +105,7 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-// Startup order: configuration, then migrations, and only then the HTTP port.
+// Startup order: configuration, migrations, first-run state, and only then the HTTP port.
 // Any failure before listen is logged and ends the process with exit code 1.
 async function start(): Promise<void> {
   const corePassword = process.env.HOF_CORE_DB_PASSWORD;
@@ -135,6 +122,8 @@ async function start(): Promise<void> {
   let applied: string[];
   try {
     applied = await migrate(corePool, CORE_MIGRATIONS);
+    // Until the court is founded, this writes the gate key to the log.
+    await startFirstRun(corePool);
   } catch (error) {
     log('error', 'startup_failed', { error: describeError(error) });
     await corePool.end();
