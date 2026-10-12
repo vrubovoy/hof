@@ -1,16 +1,19 @@
-// Founding the court, the courtyard and the gates (ARCHITECTURE.md §4.1, §4.4, §4.6), through the
-// whole application: the common checks of main.ts, the first-run gate and the Core routes.
-// Database: hof_test as hof_core; the first-run state is the real one, its key read from the log.
+// Founding the court, signing in and out, the courtyard and the gates (ARCHITECTURE.md §4.1–4.4,
+// §4.6, §4.8), through the whole application: the common checks of main.ts, the first-run gate
+// and the Core routes. Database: hof_test as hof_core; the first-run state is the real one, its
+// key read from the log.
 
 import assert from 'node:assert/strict';
+import { createHook } from 'node:async_hooks';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, test, type TestContext } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { Pool } from 'pg';
-import { createApp } from '../main.ts';
+import { createApp, newDummyPasswordHash } from '../main.ts';
 import { migrate } from '../migrate.ts';
 import { startFirstRun } from './gate-key.ts';
-import { hashSessionToken, sessionCookie } from './sessions.ts';
+import { hashPassword, verifyPassword } from './password.ts';
+import { hashSessionToken, newSessionToken, sessionCookie } from './sessions.ts';
 
 const password = process.env.HOF_CORE_DB_PASSWORD;
 assert.ok(password, 'HOF_CORE_DB_PASSWORD is not set: create .env from .env.example');
@@ -26,6 +29,12 @@ const FORM = 'application/x-www-form-urlencoded';
 const PASSWORD = 'correct horse battery staple';
 const COOKIE =
   /^__Host-hof=([A-Za-z0-9_-]{43}); Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=2592000$/;
+// Copied from ARCHITECTURE.md §4.2 on purpose: the test must not share the value with the code.
+const CLEARED_COOKIE = '__Host-hof=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0';
+
+// Made once: every Argon2 takes tens of milliseconds.
+const DUMMY_HASH = await newDummyPasswordHash();
+const PASSWORD_HASH = await hashPassword(PASSWORD);
 
 type App = ReturnType<typeof createApp>;
 
@@ -36,7 +45,7 @@ async function boot(t: TestContext) {
   t.mock.method(console, 'log', (line: string) => lines.push(line));
   const firstRun = await startFirstRun(pool);
   const key = /^info gate_key key=(\S+)$/.exec(lines[0] ?? '')?.[1] ?? '';
-  return { app: createApp(pool, firstRun), key, lines };
+  return { app: createApp(pool, firstRun, DUMMY_HASH), key, lines };
 }
 
 function get(app: App, path: string, headers: Record<string, string> = {}) {
@@ -67,6 +76,69 @@ async function found(t: TestContext) {
   const token = COOKIE.exec(res.headers.get('set-cookie') ?? '')?.[1];
   assert.ok(token, 'founding gave no session cookie');
   return { ...booted, token, cookie: `__Host-hof=${token}` };
+}
+
+// A user written straight into the table: there is no page for adding people before M4.
+async function addUser(username: string, passwordHash = PASSWORD_HASH, disabled = false) {
+  const { rows } = await pool.query<{ id: number }>(
+    'INSERT INTO users (username, password_hash, is_disabled) VALUES ($1, $2, $3) RETURNING id',
+    [username, passwordHash, disabled],
+  );
+  return rows[0]!.id;
+}
+
+// A session row written straight into the table; returns its cookie token.
+async function addSession(userId: number, expired = false): Promise<string> {
+  const token = newSessionToken();
+  await pool.query(
+    "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, now() + $3 * interval '1 day')",
+    [hashSessionToken(token), userId, expired ? -1 : 30],
+  );
+  return token;
+}
+
+// The sessions as their cookie tokens, out of the given ones (rows of other tokens count too).
+async function sessionTokens(...tokens: string[]): Promise<{ known: string[]; other: number }> {
+  const { rows } = await pool.query<{ token_hash: Buffer }>('SELECT token_hash FROM sessions');
+  const hashes = rows.map((row) => row.token_hash.toString('hex'));
+  const known = tokens.filter((token) => hashes.includes(hashSessionToken(token).toString('hex')));
+  return { known, other: hashes.length - known.length };
+}
+
+function signIn(app: App, username: string, typed: string, headers = {}, next = '') {
+  return post(app, '/login', { username, password: typed, next }, headers);
+}
+
+// Resolves once some query of hof_test waits for a lock held by another transaction.
+async function waitForLock(): Promise<void> {
+  for (let i = 0; i < 200; i++) {
+    const { rows } = await pool.query<{ waiting: number }>(
+      "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = 'hof_test' AND wait_event_type = 'Lock'",
+    );
+    if (rows[0]!.waiting > 0) return;
+    await sleep(10);
+  }
+  assert.fail('no query started waiting for the lock');
+}
+
+// Counts the Argon2 computations started while `action` runs. node:crypto starts each one as an
+// async resource of type ARGON2REQUEST; tests run one at a time, so every one of them belongs
+// to the action. This shows which refusals pay for Argon2 without measuring time.
+async function countArgon2<T>(
+  action: () => T | Promise<T>,
+): Promise<{ result: T; argon2: number }> {
+  let argon2 = 0;
+  const hook = createHook({
+    init(_id, type) {
+      if (type === 'ARGON2REQUEST') argon2 += 1;
+    },
+  }).enable();
+  try {
+    const result = await action();
+    return { result, argon2 };
+  } finally {
+    hook.disable();
+  }
 }
 
 describe('before founding', () => {
@@ -251,13 +323,7 @@ describe('founding', () => {
       );
       // This submission passes every check, then waits on the unique index.
       const pending = post(app, '/setup', setupFields(key));
-      for (let i = 0; i < 200; i++) {
-        const { rows } = await pool.query<{ waiting: number }>(
-          "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = 'hof_test' AND wait_event_type = 'Lock'",
-        );
-        if (rows[0]!.waiting > 0) break;
-        await sleep(10);
-      }
+      await waitForLock();
       await rival.query('COMMIT');
       const res = await pending;
       assert.equal(res.status, 303);
@@ -284,15 +350,6 @@ describe('after founding', () => {
     }
     assert.equal(await count('users'), 1);
     assert.equal(await count('sessions'), 1);
-  });
-
-  test('/login is public: a plain 404, no redirect loop', async (t) => {
-    const { app } = await found(t);
-    for (const path of ['/login', '/login?next=%2F']) {
-      const res = await get(app, path);
-      assert.equal(res.status, 404, path);
-      assert.equal(res.headers.get('location'), null, path);
-    }
   });
 
   test('/ needs a session: GET keeps the address in next, POST goes to /login', async (t) => {
@@ -326,7 +383,354 @@ describe('after founding', () => {
   });
 });
 
-test('no password, session token or typed gate key in the log', async (t) => {
+describe('sign-in page', () => {
+  test('GET /login: the form, with next only if it is safe', async (t) => {
+    const { app } = await found(t);
+    const res = await get(app, `/login?next=${encodeURIComponent('/saeckel/history?page=2')}`);
+    assert.equal(res.status, 200);
+    const page = await res.text();
+    for (const text of [
+      'С возвращением во двор!',
+      '<form method="post" action="/login">',
+      '<input type="hidden" name="next" value="/saeckel/history?page=2" />',
+      'name="username"',
+      'name="password"',
+      'Войти во двор',
+      'Нет ключа или забыли пароль? Обратитесь к хозяину двора.',
+    ]) {
+      assert.ok(page.includes(text), text);
+    }
+    assert.ok(!page.includes('Неверный логин или пароль'));
+    const unsafe = await get(app, `/login?next=${encodeURIComponent('//evil.example')}`);
+    assert.ok((await unsafe.text()).includes('name="next" value="/"'));
+  });
+
+  // The one rule (§4.6), seen through GET /login with a live session, which goes straight on.
+  const accepted = ['/', '/account', '/saeckel/history?page=2', '/%2F%2Fx', '/' + 'a'.repeat(511)];
+  const rejected = [
+    '//evil.example',
+    '/\\evil.example',
+    'https://evil.example',
+    'javascript:alert(1)',
+    'evil',
+    '',
+    '/a b',
+    '/a\tb',
+    '/a\x7fb',
+    '/ä',
+    '/a\\b',
+    '/' + 'a'.repeat(512),
+  ];
+  test('next: a local path of printable ASCII up to 512 characters, anything else is /', async (t) => {
+    const { app, cookie } = await found(t);
+    const cases: [string, string][] = [
+      ...accepted.map((next): [string, string] => [next, next]),
+      ...rejected.map((next): [string, string] => [next, '/']),
+    ];
+    for (const [next, expected] of cases) {
+      const res = await get(app, `/login?next=${encodeURIComponent(next)}`, { cookie });
+      assert.equal(res.status, 303, JSON.stringify(next));
+      assert.equal(res.headers.get('location'), expected, JSON.stringify(next));
+    }
+    const without = await get(app, '/login', { cookie });
+    assert.equal(without.headers.get('location'), '/');
+  });
+
+  test('the way back from a protected page leads there after sign-in', async (t) => {
+    const { app } = await found(t);
+    const away = await get(app, '/?a=1');
+    const location = away.headers.get('location') ?? '';
+    assert.equal(location, '/login?next=%2F%3Fa%3D1');
+    const page = await (await get(app, location)).text();
+    assert.ok(page.includes('name="next" value="/?a=1"'));
+    const res = await signIn(app, 'owner', PASSWORD, {}, '/?a=1');
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/?a=1');
+  });
+});
+
+describe('sign-in', () => {
+  test('a new session, the cookie, the log line, then on to next', async (t) => {
+    const { app, token, lines } = await found(t);
+    const { result: res, argon2 } = await countArgon2(() =>
+      signIn(app, ' Owner ', PASSWORD, { 'x-real-ip': '203.0.113.7' }, '/x?y=1'),
+    );
+    assert.equal(argon2, 1);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/x?y=1');
+    const setCookie = res.headers.get('set-cookie') ?? '';
+    const fresh = COOKIE.exec(setCookie)?.[1];
+    assert.ok(fresh, setCookie);
+    assert.notEqual(fresh, token);
+    // The session from founding was in another "browser": it stays.
+    assert.deepEqual(await sessionTokens(token, fresh), { known: [token, fresh], other: 0 });
+    assert.equal(lines.at(-1), 'info login user_id=1 username=owner ip=203.0.113.7');
+    assert.equal((await get(app, '/', { cookie: `__Host-hof=${fresh}` })).status, 200);
+  });
+
+  test('POST takes next through the same rule', async (t) => {
+    const { app } = await found(t);
+    for (const [next, expected] of [
+      ['//evil.example', '/'],
+      ['/\\evil.example', '/'],
+      ['/account', '/account'],
+    ]) {
+      const res = await signIn(app, 'owner', PASSWORD, {}, next);
+      assert.equal(res.headers.get('location'), expected, next);
+    }
+  });
+
+  test('a password typed in another Unicode form is the same password', async (t) => {
+    const { app } = await found(t);
+    const nfc = 'пароль для двора ёлка и чай'.normalize('NFC');
+    await addUser('anna', await hashPassword(nfc));
+    const res = await signIn(app, 'anna', nfc.normalize('NFD'));
+    assert.equal(res.status, 303);
+    assert.match(res.headers.get('set-cookie') ?? '', COOKIE);
+  });
+
+  test('a successful sign-in deletes expired sessions and this browser’s old one only', async (t) => {
+    const { app, token: ownerSession } = await found(t);
+    const anna = await addUser('anna');
+    const browser = await addSession(anna);
+    const phone = await addSession(anna);
+    const annaExpired = await addSession(anna, true);
+    const ownerExpired = await addSession(1, true);
+    const res = await signIn(app, 'anna', PASSWORD, { cookie: `__Host-hof=${browser}` });
+    assert.equal(res.status, 303);
+    const fresh = COOKIE.exec(res.headers.get('set-cookie') ?? '')?.[1];
+    assert.ok(fresh);
+    const all = [ownerSession, browser, phone, annaExpired, ownerExpired, fresh];
+    assert.deepEqual(await sessionTokens(...all), {
+      known: [ownerSession, phone, fresh],
+      other: 0,
+    });
+  });
+
+  test('a failed transaction: 500, no session, no cookie', async (t) => {
+    const { app } = await found(t);
+    t.mock.method(console, 'error', () => undefined);
+    try {
+      await pool.query('ALTER TABLE sessions RENAME TO sessions_away');
+      const res = await signIn(app, 'owner', PASSWORD);
+      assert.equal(res.status, 500);
+      assert.equal(res.headers.get('set-cookie'), null);
+    } finally {
+      await pool.query('ALTER TABLE IF EXISTS sessions_away RENAME TO sessions');
+    }
+    assert.equal(await count('sessions'), 1);
+  });
+});
+
+describe('refused sign-in', () => {
+  // owner (1) from founding; anna (2) may enter; bors (3) is disabled; vera (4) has a stored
+  // hash that cannot be read. All four-letter logins, so the pages differ in nothing else.
+  async function court(t: TestContext) {
+    const founded = await found(t);
+    await addUser('anna');
+    await addUser('bors', PASSWORD_HASH, true);
+    await addUser('vera', 'not an argon2 hash');
+    return founded;
+  }
+
+  const long = 'x'.repeat(257);
+  const cases: [string, string, string, string, number][] = [
+    // name, login, password, log line, Argon2 computations
+    [
+      'wrong password',
+      'anna',
+      'a wrong password, long enough',
+      'warn login_failed user_id=2 username=anna ip=- reason=wrong_password',
+      1,
+    ],
+    ['unknown login', 'nemo', PASSWORD, 'warn login_failed reason=unknown_user ip=-', 1],
+    ['login of the wrong form', '-nemo', PASSWORD, 'warn login_failed reason=unknown_user ip=-', 0],
+    [
+      'password over 256, known login',
+      'anna',
+      long,
+      'warn login_failed user_id=2 username=anna ip=- reason=wrong_password',
+      0,
+    ],
+    [
+      'password over 256, unknown login',
+      'nemo',
+      long,
+      'warn login_failed reason=unknown_user ip=-',
+      0,
+    ],
+    [
+      'disabled user, right password',
+      'bors',
+      PASSWORD,
+      'warn login_failed user_id=3 username=bors ip=- reason=disabled',
+      1,
+    ],
+    ['unreadable stored hash', 'vera', PASSWORD, 'error password_hash_unreadable user_id=4', 1],
+  ];
+  for (const [name, username, typed, logLine, expectedArgon2] of cases) {
+    test(`${name}: 400, the common error, nothing written, ${expectedArgon2} Argon2`, async (t) => {
+      const { app, lines } = await court(t);
+      const before = await pool.query('SELECT * FROM users ORDER BY id');
+      const logged = lines.length;
+      const { result: res, argon2 } = await countArgon2(() => signIn(app, username, typed));
+      assert.equal(argon2, expectedArgon2);
+      assert.equal(res.status, 400);
+      assert.equal(res.headers.get('set-cookie'), null);
+      const page = await res.text();
+      assert.ok(page.includes('Неверный логин или пароль.'));
+      assert.ok(page.includes(`value="${username}"`));
+      assert.ok(!page.includes(typed));
+      assert.deepEqual(lines.slice(logged), [logLine]);
+      assert.equal(await count('sessions'), 1);
+      assert.deepEqual((await pool.query('SELECT * FROM users ORDER BY id')).rows, before.rows);
+    });
+  }
+
+  test('unknown login, wrong password, disabled, unreadable: one and the same answer', async (t) => {
+    const { app } = await court(t);
+    const answers = await Promise.all(
+      [
+        ['anna', 'a wrong password, long enough'],
+        ['nemo', PASSWORD],
+        ['bors', PASSWORD],
+        ['vera', PASSWORD],
+      ].map(async ([username, typed]) => {
+        const res = await signIn(app, username!, typed!);
+        return {
+          status: res.status,
+          headers: [...res.headers].sort(),
+          page: (await res.text()).replace(`value="${username}"`, 'value="…"'),
+        };
+      }),
+    );
+    for (const answer of answers.slice(1)) assert.deepEqual(answer, answers[0]);
+  });
+
+  test('the unknown login is not written to the log', async (t) => {
+    const { app, lines } = await court(t);
+    const typed = 'my.secret.pass';
+    await signIn(app, typed, PASSWORD);
+    assert.ok(!lines.join('\n').includes(typed));
+    assert.equal(lines.at(-1), 'warn login_failed reason=unknown_user ip=-');
+  });
+});
+
+describe('dummy password hash', () => {
+  test('the Argon2 counter sees one computation per hash', async () => {
+    assert.equal((await countArgon2(() => hashPassword(PASSWORD))).argon2, 1);
+  });
+
+  test('the profile of a real hash, and no password matches it', async () => {
+    const phc = /^\$argon2id\$v=19\$(m=\d+,t=\d+,p=\d+)\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$/;
+    const dummy = phc.exec(await newDummyPasswordHash());
+    const real = phc.exec(await hashPassword(PASSWORD));
+    assert.ok(dummy && real);
+    assert.equal(dummy[1], 'm=19456,t=2,p=1');
+    assert.equal(dummy[1], real[1]);
+    assert.equal(Buffer.from(dummy[2]!, 'base64').length, 16);
+    assert.equal(Buffer.from(dummy[3]!, 'base64').length, 32);
+    for (const typed of [PASSWORD, '', 'x'.repeat(256)]) {
+      assert.equal(await verifyPassword(typed, DUMMY_HASH), 'wrong');
+    }
+    assert.notEqual(await newDummyPasswordHash(), DUMMY_HASH);
+  });
+});
+
+describe('sign-in racing a password reset or a disable', () => {
+  // The rival changes anna's row and holds the lock; sign-in has already checked the old
+  // password with Argon2 and waits on FOR UPDATE until the rival commits.
+  async function race(t: TestContext, change: string) {
+    const { app, token: ownerSession, lines } = await found(t);
+    const anna = await addUser('anna');
+    const browser = await addSession(anna);
+    const expired = await addSession(anna, true);
+    const rival = await pool.connect();
+    try {
+      await rival.query('BEGIN');
+      await rival.query(change, [anna]);
+      const pending = signIn(app, 'anna', PASSWORD, { cookie: `__Host-hof=${browser}` });
+      await waitForLock();
+      await rival.query('COMMIT');
+      const res = await pending;
+      assert.equal(res.status, 400);
+      assert.equal(res.headers.get('set-cookie'), null);
+      assert.ok((await res.text()).includes('Неверный логин или пароль.'));
+    } finally {
+      rival.release();
+    }
+    // ROLLBACK: neither the expired session nor this browser's old one was deleted, and no new
+    // session was made.
+    assert.deepEqual(await sessionTokens(ownerSession, browser, expired), {
+      known: [ownerSession, browser, expired],
+      other: 0,
+    });
+    return lines;
+  }
+
+  test('the password changed: 400, nothing deleted, no session', async (t) => {
+    const otherHash = await hashPassword('another password for anna');
+    const lines = await race(t, `UPDATE users SET password_hash = '${otherHash}' WHERE id = $1`);
+    assert.equal(
+      lines.at(-1),
+      'warn login_failed user_id=2 username=anna ip=- reason=password_changed',
+    );
+  });
+
+  test('the user was disabled: 400, nothing deleted, no session', async (t) => {
+    const lines = await race(t, 'UPDATE users SET is_disabled = true WHERE id = $1');
+    assert.equal(lines.at(-1), 'warn login_failed user_id=2 username=anna ip=- reason=disabled');
+  });
+});
+
+describe('sign-out', () => {
+  test('the courtyard has the way out', async (t) => {
+    const { app, cookie } = await found(t);
+    const page = await (await get(app, '/', { cookie })).text();
+    assert.ok(page.includes('<form method="post" action="/logout">'));
+    assert.ok(page.includes('Покинуть двор'));
+  });
+
+  test('ends the session of this browser only and clears the cookie', async (t) => {
+    const { app, token, cookie } = await found(t);
+    const phone = await addSession(1);
+    const res = await post(app, '/logout', {}, { cookie });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/login');
+    assert.equal(res.headers.get('set-cookie'), CLEARED_COOKIE);
+    assert.deepEqual(await sessionTokens(token, phone), { known: [phone], other: 0 });
+    const after = await get(app, '/', { cookie });
+    assert.equal(after.headers.get('location'), '/login?next=%2F');
+    assert.equal((await get(app, '/', { cookie: `__Host-hof=${phone}` })).status, 200);
+  });
+
+  test('needs no session: the same answer without one, nothing deleted', async (t) => {
+    const { app } = await found(t);
+    for (const headers of [
+      {},
+      { cookie: '__Host-hof=not-a-token' },
+      { cookie: `__Host-hof=${newSessionToken()}` },
+    ]) {
+      const res = await post(app, '/logout', {}, headers);
+      assert.equal(res.status, 303);
+      assert.equal(res.headers.get('location'), '/login');
+      assert.equal(res.headers.get('set-cookie'), CLEARED_COOKIE);
+    }
+    assert.equal(await count('sessions'), 1);
+  });
+
+  test('needs Origin like every POST', async (t) => {
+    const { app, cookie } = await found(t);
+    const res = await app.request('/logout', {
+      method: 'POST',
+      headers: { host: HOST, 'content-type': FORM, cookie },
+    });
+    assert.equal(res.status, 403);
+    assert.equal(await count('sessions'), 1);
+  });
+});
+
+test('no password, session token, hash, typed gate key or unknown login in the log', async (t) => {
   const { app, key, lines } = await boot(t);
   const errors: string[] = [];
   t.mock.method(console, 'error', (...args: unknown[]) => errors.push(args.map(String).join(' ')));
@@ -339,6 +743,15 @@ test('no password, session token or typed gate key in the log', async (t) => {
   await get(app, '/', { cookie: `__Host-hof=${token}` });
   await get(app, '/');
 
+  // Sign-in and sign-out: an unknown login typed as a password, a wrong password, a success.
+  const unknown = 'secret-typed-as-login';
+  await signIn(app, unknown, 'any password at all');
+  await signIn(app, 'owner', 'a wrong password, long enough');
+  const signedIn = await signIn(app, 'owner', PASSWORD, { cookie: `__Host-hof=${token}` });
+  const fresh = COOKIE.exec(signedIn.headers.get('set-cookie') ?? '')?.[1];
+  assert.ok(fresh);
+  await post(app, '/logout', {}, { cookie: `__Host-hof=${fresh}` });
+
   // lines[0] is the startup line that announces the key; that is its only place.
   const written = [...lines.slice(1), ...errors].join('\n');
   for (const secret of [
@@ -349,8 +762,15 @@ test('no password, session token or typed gate key in the log', async (t) => {
     key.replaceAll('-', ''),
     wrongKey,
     wrongKey.replaceAll('-', ''),
+    unknown,
+    'any password at all',
+    'a wrong password, long enough',
+    fresh,
+    '$argon2id',
   ]) {
     assert.ok(!written.includes(secret), `log contains ${secret}`);
   }
-  assert.ok(written.includes('court_founded'));
+  for (const event of ['court_founded', 'login_failed', 'info login']) {
+    assert.ok(written.includes(event), event);
+  }
 });

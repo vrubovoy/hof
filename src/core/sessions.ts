@@ -34,6 +34,10 @@ export function sessionCookie(token: string): string {
   return `${SESSION_COOKIE}=${token}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${SESSION_SECONDS}`;
 }
 
+// Value of the Set-Cookie header that removes the session cookie: the same name and attributes,
+// an empty value and Max-Age=0.
+export const CLEARED_SESSION_COOKIE = `${SESSION_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0`;
+
 // Creates a session row inside the caller's open transaction and returns the cookie token.
 // No BEGIN or COMMIT here: the caller commits the session together with the rest of its work.
 export async function createSession(client: PoolClient, userId: number): Promise<string> {
@@ -43,6 +47,17 @@ export async function createSession(client: PoolClient, userId: number): Promise
     [hashSessionToken(token), userId, SESSION_SECONDS],
   );
   return token;
+}
+
+// Deletes the session of this cookie value, if there is one: on sign-out, and inside the sign-in
+// transaction for the session the browser had before. A value of the wrong form is no session
+// at all: the database is not asked.
+export async function deleteSession(
+  db: Pool | PoolClient,
+  token: string | undefined,
+): Promise<void> {
+  if (token === undefined || !TOKEN_FORMAT.test(token)) return;
+  await db.query('DELETE FROM sessions WHERE token_hash = $1', [hashSessionToken(token)]);
 }
 
 // The user of the session cookie, or null. `token` is the cookie value, if the request has one.
