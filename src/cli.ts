@@ -16,8 +16,9 @@ import {
   PASSWORD_MIN_LENGTH,
 } from './core/password.ts';
 import { parseUsername } from './core/username.ts';
-import { log } from './log.ts';
-import { CORE_DB_ROLE, DATABASE, describeError } from './main.ts';
+import { describeError, log } from './log.ts';
+import { CORE_DB_ROLE, DATABASE } from './main.ts';
+import { handleConnectionErrors } from './postgres.ts';
 
 const USAGE = 'Использование: node src/cli.ts reset-password <логин>';
 
@@ -160,6 +161,8 @@ async function main(args: string[]): Promise<number> {
   }
 
   const pool = new Pool({ database: DATABASE, user: CORE_DB_ROLE, password: dbPassword, max: 1 });
+  // Before the first connection: the user lookup leaves one idle while the password is typed.
+  handleConnectionErrors(pool);
   try {
     return await resetPasswordCommand(pool, typedUsername, askNewPassword);
   } catch (error) {
