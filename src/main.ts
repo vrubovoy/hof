@@ -12,8 +12,9 @@ import { Pool } from 'pg';
 import { createCoreApp, type Service } from './core/app.ts';
 import { startFirstRun, type FirstRun } from './core/gate-key.ts';
 import { hashPassword } from './core/password.ts';
-import { log } from './log.ts';
+import { describeError, log } from './log.ts';
 import { migrate } from './migrate.ts';
+import { handleConnectionErrors } from './postgres.ts';
 
 const PORT = 3000;
 const BODY_LIMIT_BYTES = 16 * 1024;
@@ -162,15 +163,6 @@ export function createApp(corePool: Pool, firstRun: FirstRun, dummyPasswordHash:
   return app;
 }
 
-// A refused connection to every address of `localhost` (::1 and 127.0.0.1) arrives as an
-// AggregateError with an empty message; its inner errors say what happened.
-export function describeError(error: unknown): string {
-  if (error instanceof AggregateError && !error.message) {
-    return error.errors.map((inner: unknown) => describeError(inner)).join('; ');
-  }
-  return error instanceof Error ? error.message : String(error);
-}
-
 // Startup order: configuration, migrations, first-run state, the dummy password hash, and only
 // then the HTTP port.
 // Any failure before listen is logged and ends the process with exit code 1.
@@ -185,6 +177,8 @@ async function start(): Promise<void> {
   // Host and port come from the standard PGHOST and PGPORT that the pg driver reads itself;
   // without them it connects to localhost:5432.
   const corePool = new Pool({ database: DATABASE, user: CORE_DB_ROLE, password: corePassword });
+  // Before the first connection: a broken one must not end the process (§4.10).
+  handleConnectionErrors(corePool);
 
   let applied: string[];
   let firstRun: FirstRun;
