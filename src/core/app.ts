@@ -13,7 +13,12 @@ import type { HtmlEscapedString } from 'hono/utils/html';
 import { DatabaseError, type Pool } from 'pg';
 import { log } from '../log.ts';
 import type { FirstRun } from './gate-key.ts';
-import { hashPassword, newPasswordError, PASSWORD_MIN_LENGTH } from './password.ts';
+import {
+  hashPassword,
+  newPasswordError,
+  normalizePassword,
+  PASSWORD_MIN_LENGTH,
+} from './password.ts';
 import {
   createSession,
   currentUser,
@@ -203,7 +208,10 @@ export function createCoreApp(
     const password = text('password');
     const passwordError = newPasswordError(password);
     if (passwordError !== null) return refuse('password', `${passwordError}.`);
-    if (password !== text('password2')) return refuse('password2', 'Пароли не совпадают.');
+    // Compared as one password, after NFKC: two Unicode forms of "й" are the same password.
+    if (normalizePassword(password) !== normalizePassword(text('password2'))) {
+      return refuse('password2', 'Пароли не совпадают.');
+    }
 
     // Argon2 takes tens of milliseconds: it runs before the transaction, so no row lock
     // and no connection are held while it computes.

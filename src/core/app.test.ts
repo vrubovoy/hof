@@ -193,6 +193,17 @@ describe('founding', () => {
     for (const text of ['Двор', 'Службы двора', 'owner']) assert.ok(page.includes(text), text);
   });
 
+  test('a repeat typed in another Unicode form is the same password', async (t) => {
+    const { app, key } = await boot(t);
+    const nfc = 'пароль для двора ёлка и чай'.normalize('NFC');
+    const nfd = nfc.normalize('NFD');
+    assert.notEqual(nfc, nfd);
+    const res = await post(app, '/setup', { ...setupFields(key), password: nfc, password2: nfd });
+    assert.equal(res.status, 303);
+    assert.match(res.headers.get('set-cookie') ?? '', COOKIE);
+    assert.equal(await count('users'), 1);
+  });
+
   test('a failed transaction leaves no user, no session, and the key still works', async (t) => {
     const { app, key } = await boot(t);
     t.mock.method(console, 'error', () => undefined);
