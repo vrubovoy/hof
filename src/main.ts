@@ -16,7 +16,9 @@ import { migrate } from './migrate.ts';
 
 const PORT = 3000;
 const BODY_LIMIT_BYTES = 16 * 1024;
-const DATABASE = 'hof';
+// The database and the role of Core; the maintenance CLI uses the same.
+export const DATABASE = 'hof';
+export const CORE_DB_ROLE = 'hof_core';
 const CORE_MIGRATIONS = join(import.meta.dirname, 'core', 'migrations');
 
 // The applications of this installation, for «Службы двора» (§2). This is not a registry,
@@ -123,7 +125,7 @@ export function createApp(corePool: Pool, firstRun: FirstRun, dummyPasswordHash:
 
 // A refused connection to every address of `localhost` (::1 and 127.0.0.1) arrives as an
 // AggregateError with an empty message; its inner errors say what happened.
-function describeError(error: unknown): string {
+export function describeError(error: unknown): string {
   if (error instanceof AggregateError && !error.message) {
     return error.errors.map((inner: unknown) => describeError(inner)).join('; ');
   }
@@ -143,7 +145,7 @@ async function start(): Promise<void> {
 
   // Host and port come from the standard PGHOST and PGPORT that the pg driver reads itself;
   // without them it connects to localhost:5432.
-  const corePool = new Pool({ database: DATABASE, user: 'hof_core', password: corePassword });
+  const corePool = new Pool({ database: DATABASE, user: CORE_DB_ROLE, password: corePassword });
 
   let applied: string[];
   let firstRun: FirstRun;
