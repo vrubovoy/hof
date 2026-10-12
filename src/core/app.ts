@@ -32,6 +32,7 @@ import {
   sessionCookie,
   type CurrentUser,
 } from './sessions.ts';
+import { parseUsername } from './username.ts';
 
 // One entry of «Службы двора» on the courtyard.
 export interface Service {
@@ -282,13 +283,6 @@ function accountPage(user: CurrentUser, form: AccountForm) {
       </form>
       <p id="logout-hint">на этом устройстве; всё во дворе останется на месте</p>`,
   );
-}
-
-// §4.7: trimmed and lower-cased; a letter or digit first, then letters, digits, ".", "_", "-";
-// at most 32 characters. The same rule as the CHECK on users.username.
-function parseUsername(input: string): string | null {
-  const username = input.trim().toLowerCase();
-  return /^[a-z0-9][a-z0-9._-]{0,31}$/.test(username) ? username : null;
 }
 
 // §4.6: the only addresses sign-in sends a person back to — a local path. "/" first; then not
