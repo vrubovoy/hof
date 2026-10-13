@@ -51,7 +51,13 @@ const PROTECTED_PATHS = ['/', '/account', '/account/password'];
 // Core paths of the administrator, for every method. Only these: any other /admin/… address is
 // not a route and ends in the common 404, for a guest, a user and the administrator alike. A
 // path with a wrong :id is one of these: it gets the same checks, and the 404 only after them.
-const ADMIN_PATHS = ['/admin/users', '/admin/users/:id', '/admin/users/:id/password'];
+const ADMIN_PATHS = [
+  '/admin/users',
+  '/admin/users/:id',
+  '/admin/users/:id/password',
+  '/admin/users/:id/disable',
+  '/admin/users/:id/enable',
+];
 
 // §4.7: the largest id of a PostgreSQL integer.
 const MAX_ID = 2_147_483_647;
@@ -462,7 +468,25 @@ function memberPage(user: CurrentUser, member: Member, form: ResetForm) {
           ${member.username} выйдет со двора на всех устройствах. Передайте новый пароль лично.
         </p>
         <button type="submit">Сбросить пароль</button>
-      </form>`,
+      </form>
+      <h2>Ключ от двора</h2>
+      ${
+        member.is_disabled
+          ? html`<p>
+                Ключ у ${member.username} забран: вход закрыт, мешки и записи на месте. Если вернуть
+                ключ, ${member.username} войдёт со своим паролем.
+              </p>
+              <form method="post" action="/admin/users/${member.id}/enable">
+                <button type="submit">Вернуть ключ</button>
+              </form>`
+          : html`<p>
+                У ${member.username} есть ключ от двора. Если забрать ключ, вход закроется сразу, а
+                мешки и записи останутся. Вернуть ключ можно в любой момент.
+              </p>
+              <form method="post" action="/admin/users/${member.id}/disable">
+                <button type="submit">Забрать ключ</button>
+              </form>`
+      }`,
   );
 }
 
@@ -957,6 +981,77 @@ export function createCoreApp(
       ip: c.req.header('X-Real-IP') ?? '-',
     });
     return c.redirect(`/admin/users/${member.id}?done=password`, 303);
+  });
+
+  // «Забрать ключ» (§4.2, §4.8): the person loses access at once. The flag first, then every
+  // session of the person, in one transaction. UPDATE takes the row lock of the person; a
+  // sign-in holds that lock with FOR UPDATE from its check to its COMMIT, so it either commits
+  // first and its new session is deleted here, or waits and then finds the person disabled.
+  // The other way round, DELETE would not see the session of a sign-in that has not committed
+  // yet. A person already disabled goes through the same steps: the sessions are deleted all
+  // the same, so a disabled person never keeps one.
+  core.post('/admin/users/:id/disable', async (c) => {
+    const administrator = c.get('user');
+    const id = parseId(c.req.param('id'));
+    if (id === null) return c.notFound();
+
+    let username: string | undefined;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query<{ username: string }>(
+        'UPDATE users SET is_disabled = true WHERE id = $1 AND NOT is_admin RETURNING username',
+        [id],
+      );
+      username = rows[0]?.username;
+      if (username === undefined) {
+        // Nobody, or the administrator: nothing was written.
+        await client.query('ROLLBACK');
+      } else {
+        await client.query('DELETE FROM sessions WHERE user_id = $1', [id]);
+        await client.query('COMMIT');
+      }
+    } catch (error) {
+      // The connection may already be broken; the original error matters more.
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+    if (username === undefined) return c.notFound();
+
+    log('info', 'user_disabled', {
+      user_id: id,
+      username,
+      admin_id: administrator.id,
+      ip: c.req.header('X-Real-IP') ?? '-',
+    });
+    return c.redirect(`/admin/users/${id}`, 303);
+  });
+
+  // «Вернуть ключ»: the person may sign in again with their own password. One statement, so no
+  // transaction of our own. Sessions are not touched: a disabled person has none, and none is
+  // made here.
+  core.post('/admin/users/:id/enable', async (c) => {
+    const administrator = c.get('user');
+    const id = parseId(c.req.param('id'));
+    if (id === null) return c.notFound();
+
+    const { rows } = await pool.query<{ username: string }>(
+      'UPDATE users SET is_disabled = false WHERE id = $1 AND NOT is_admin RETURNING username',
+      [id],
+    );
+    const username = rows[0]?.username;
+    // Nobody, or the administrator.
+    if (username === undefined) return c.notFound();
+
+    log('info', 'user_enabled', {
+      user_id: id,
+      username,
+      admin_id: administrator.id,
+      ip: c.req.header('X-Real-IP') ?? '-',
+    });
+    return c.redirect(`/admin/users/${id}`, 303);
   });
 
   return core;
