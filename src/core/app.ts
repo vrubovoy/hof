@@ -551,6 +551,12 @@ function sessionToken(cookieHeader: string | undefined): string | undefined {
   return cookieHeader === undefined ? undefined : parseCookies(cookieHeader)[SESSION_COOKIE];
 }
 
+// The signed-in user of a request, or null: what main.ts hands on to the applications of the
+// court (ARCHITECTURE.md §2). The same session check as for the pages of Core.
+export function requestUser(pool: Pool, request: Request): Promise<CurrentUser | null> {
+  return currentUser(pool, sessionToken(request.headers.get('Cookie') ?? undefined));
+}
+
 // dummyPasswordHash: made at startup with the current profile from a password nobody knows;
 // an unknown login is checked against it (§4.3).
 export function createCoreApp(

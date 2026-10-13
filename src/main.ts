@@ -9,12 +9,13 @@ import type { HtmlEscapedString } from 'hono/utils/html';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { Pool } from 'pg';
-import { createCoreApp, type Service } from './core/app.ts';
+import { createCoreApp, requestUser, type Service } from './core/app.ts';
 import { startFirstRun, type FirstRun } from './core/gate-key.ts';
 import { hashPassword } from './core/password.ts';
 import { describeError, log } from './log.ts';
 import { migrate } from './migrate.ts';
 import { handleConnectionErrors } from './postgres.ts';
+import { createSaeckelApp, type CurrentUser } from './saeckel/app.ts';
 
 const PORT = 3000;
 const BODY_LIMIT_BYTES = 16 * 1024;
@@ -22,10 +23,13 @@ const BODY_LIMIT_BYTES = 16 * 1024;
 export const DATABASE = 'hof';
 export const CORE_DB_ROLE = 'hof_core';
 const CORE_MIGRATIONS = join(import.meta.dirname, 'core', 'migrations');
+// The role of Säckel, in the same database (§5).
+const SAECKEL_DB_ROLE = 'hof_saeckel';
+const SAECKEL_MIGRATIONS = join(import.meta.dirname, 'saeckel', 'migrations');
 
 // The applications of this installation, for «Службы двора» (§2). This is not a registry,
-// just the list; it is empty until the first application is added.
-const SERVICES: readonly Service[] = [];
+// just the list.
+const SERVICES: readonly Service[] = [{ name: 'Säckel', path: '/saeckel/' }];
 
 // §4.9: explicit header values, not Hono's secureHeaders preset.
 const CONTENT_SECURITY_POLICY =
@@ -86,9 +90,23 @@ export function newDummyPasswordHash(): Promise<string> {
   return hashPassword(randomBytes(32).toString('base64url'));
 }
 
+// §2: the one thing an application gets from Core — who is signed in, as { id, username }. Not
+// the role: the administrator has no rights over anybody's budget.
+export function applicationUser(corePool: Pool): CurrentUser {
+  return async (request) => {
+    const user = await requestUser(corePool, request);
+    return user === null ? null : { id: user.id, username: user.username };
+  };
+}
+
 // Request order: response headers, Origin, POST body (common checks below), then the first-run
 // gate, then the modules' own routes, and finally the common 404.
-export function createApp(corePool: Pool, firstRun: FirstRun, dummyPasswordHash: string): Hono {
+export function createApp(
+  corePool: Pool,
+  saeckelPool: Pool,
+  firstRun: FirstRun,
+  dummyPasswordHash: string,
+): Hono {
   const app = new Hono();
 
   // Response headers go on every response, including the rejections below.
@@ -140,6 +158,7 @@ export function createApp(corePool: Pool, firstRun: FirstRun, dummyPasswordHash:
   });
 
   app.route('/', createCoreApp(corePool, firstRun, dummyPasswordHash, SERVICES));
+  app.route('/', createSaeckelApp(saeckelPool, applicationUser(corePool)));
 
   // Unknown paths and methods (§4.1).
   app.notFound((c) => c.html(NOT_FOUND_PAGE, 404));
@@ -163,39 +182,56 @@ export function createApp(corePool: Pool, firstRun: FirstRun, dummyPasswordHash:
   return app;
 }
 
-// Startup order: configuration, migrations, first-run state, the dummy password hash, and only
-// then the HTTP port.
+// Startup order: configuration, migrations of Core and then of Säckel, first-run state, the
+// dummy password hash, and only then the HTTP port.
 // Any failure before listen is logged and ends the process with exit code 1.
 async function start(): Promise<void> {
   const corePassword = process.env.HOF_CORE_DB_PASSWORD;
-  if (!corePassword) {
-    log('error', 'startup_failed', { error: 'HOF_CORE_DB_PASSWORD is not set (see .env.example)' });
-    process.exitCode = 1;
-    return;
+  const saeckelPassword = process.env.HOF_SAECKEL_DB_PASSWORD;
+  for (const [name, value] of [
+    ['HOF_CORE_DB_PASSWORD', corePassword],
+    ['HOF_SAECKEL_DB_PASSWORD', saeckelPassword],
+  ] as const) {
+    if (!value) {
+      log('error', 'startup_failed', { error: `${name} is not set (see .env.example)` });
+      process.exitCode = 1;
+      return;
+    }
   }
 
   // Host and port come from the standard PGHOST and PGPORT that the pg driver reads itself;
-  // without them it connects to localhost:5432.
+  // without them it connects to localhost:5432. Each module has its own pool under its own
+  // role (§2, §5).
   const corePool = new Pool({ database: DATABASE, user: CORE_DB_ROLE, password: corePassword });
+  const saeckelPool = new Pool({
+    database: DATABASE,
+    user: SAECKEL_DB_ROLE,
+    password: saeckelPassword,
+  });
   // Before the first connection: a broken one must not end the process (§4.10).
   handleConnectionErrors(corePool);
+  handleConnectionErrors(saeckelPool);
 
   let applied: string[];
   let firstRun: FirstRun;
   let dummyPasswordHash: string;
   try {
-    applied = await migrate(corePool, CORE_MIGRATIONS);
+    // Each module's migrations under its own role; the file names say which module they are.
+    const core = await migrate(corePool, CORE_MIGRATIONS);
+    const saeckel = await migrate(saeckelPool, SAECKEL_MIGRATIONS);
+    applied = [...core.map((name) => `core/${name}`), ...saeckel.map((name) => `saeckel/${name}`)];
     // Until the court is founded, this writes the gate key to the log.
     firstRun = await startFirstRun(corePool);
     dummyPasswordHash = await newDummyPasswordHash();
   } catch (error) {
     log('error', 'startup_failed', { error: describeError(error) });
-    await corePool.end();
+    await Promise.all([corePool.end(), saeckelPool.end()]);
     process.exitCode = 1;
     return;
   }
 
-  serve({ fetch: createApp(corePool, firstRun, dummyPasswordHash).fetch, port: PORT }, (info) => {
+  const app = createApp(corePool, saeckelPool, firstRun, dummyPasswordHash);
+  serve({ fetch: app.fetch, port: PORT }, (info) => {
     log('info', 'start', { port: info.port, migrations: applied.join(',') || 'none' });
   });
 }
