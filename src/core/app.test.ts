@@ -13,7 +13,7 @@ import { createApp, newDummyPasswordHash } from '../main.ts';
 import { migrate } from '../migrate.ts';
 import { startFirstRun } from './gate-key.ts';
 import { hashPassword, verifyPassword } from './password.ts';
-import { hashSessionToken, newSessionToken, sessionCookie } from './sessions.ts';
+import { createSession, hashSessionToken, newSessionToken, sessionCookie } from './sessions.ts';
 
 const password = process.env.HOF_CORE_DB_PASSWORD;
 assert.ok(password, 'HOF_CORE_DB_PASSWORD is not set: create .env from .env.example');
@@ -127,13 +127,13 @@ function signIn(app: App, username: string, typed: string, headers = {}, next = 
   return post(app, '/login', { username, password: typed, next }, headers);
 }
 
-// Resolves once some query of hof_test waits for a lock held by another transaction.
-async function waitForLock(): Promise<void> {
+// Resolves once `count` queries of hof_test wait for locks held by other transactions.
+async function waitForLock(count = 1): Promise<void> {
   for (let i = 0; i < 200; i++) {
     const { rows } = await pool.query<{ waiting: number }>(
       "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = 'hof_test' AND wait_event_type = 'Lock'",
     );
-    if (rows[0]!.waiting > 0) return;
+    if (rows[0]!.waiting >= count) return;
     await sleep(10);
   }
   assert.fail('no query started waiting for the lock');
@@ -1287,14 +1287,14 @@ describe('Приближённые', () => {
     const items = [...page.matchAll(/<li>\s*([\s\S]*?)\s*<\/li>/g)].map((m) =>
       m[1]!.replace(/\s+/g, ' '),
     );
+    // Each person has a way to their card; the administrator has none.
     assert.deepEqual(items, [
       'owner · хозяин, это вы',
-      'anna · Ключ взят',
-      'boris · С ключом',
-      'zoe · С ключом',
+      'anna · Ключ взят <a href="/admin/users/3">Открыть ›</a>',
+      'boris · С ключом <a href="/admin/users/4">Открыть ›</a>',
+      'zoe · С ключом <a href="/admin/users/2">Открыть ›</a>',
     ]);
-    // No way to a user yet (M4.2), and no way to the administrator ever.
-    assert.ok(!/href="\/admin\/users\/\d/.test(page));
+    assert.ok(!page.includes('href="/admin/users/1"'));
     assert.ok(!page.includes('Пока у двора только хозяин'));
   });
 });
@@ -1473,5 +1473,421 @@ describe('Принять ко двору', () => {
       }
     }
     assert.equal(await count('users'), 1);
+  });
+});
+
+// The card of a person (M4.2): the reset form, sent as the administrator types it.
+function resetFor(
+  app: App,
+  cookie: string,
+  id: number | string,
+  typed: string,
+  headers: Record<string, string> = {},
+) {
+  return post(app, `/admin/users/${id}/password`, { password: typed }, { cookie, ...headers });
+}
+
+// The query of hof_test that waits for a lock, once there is one.
+async function waitingQuery(): Promise<string> {
+  await waitForLock();
+  const { rows } = await pool.query<{ query: string }>(
+    "SELECT query FROM pg_stat_activity WHERE datname = 'hof_test' AND wait_event_type = 'Lock'",
+  );
+  assert.equal(rows.length, 1);
+  return rows[0]!.query;
+}
+
+const RESET_MESSAGE = '<p>Пароль для anna сброшен. Передайте новый пароль лично.</p>';
+
+describe('the card of a person: who gets in', () => {
+  test('no session: GET keeps the way back, POST goes to /login, nothing changed, no Argon2', async (t) => {
+    const { app } = await found(t);
+    const anna = await addUser('anna');
+    const annaSession = await addSession(anna);
+    // A wrong :id is still the address of a known route: the session is asked for first.
+    for (const path of [
+      '/admin/users/2',
+      '/admin/users/1',
+      '/admin/users/abc',
+      '/admin/users/99',
+    ]) {
+      const res = await get(app, path);
+      assert.equal(res.status, 303, path);
+      assert.equal(res.headers.get('location'), `/login?next=${encodeURIComponent(path)}`);
+    }
+    for (const id of ['2', 'abc']) {
+      const { result: res, argon2 } = await countArgon2(() =>
+        post(app, `/admin/users/${id}/password`, { password: NEW_PASSWORD }),
+      );
+      assert.equal(argon2, 0, id);
+      assert.equal(res.status, 303, id);
+      assert.equal(res.headers.get('location'), '/login', id);
+    }
+    assert.equal(await hashOf(anna), PASSWORD_HASH);
+    // anna's session and the administrator's from the founding.
+    assert.deepEqual(await sessionTokens(annaSession), { known: [annaSession], other: 1 });
+  });
+
+  test('a user who is not the administrator: one and the same 403 for any id, no Argon2', async (t) => {
+    const { app } = await found(t);
+    const anna = await addUser('anna');
+    const annaSession = await addSession(anna);
+    const boris = `__Host-hof=${await addSession(await addUser('boris'))}`;
+    const forbidden = await (await get(app, '/admin/users', { cookie: boris })).text();
+    assert.ok(forbidden.includes(FORBIDDEN_H1));
+    // anna, boris himself, the administrator, nobody, and ids of the wrong form: the answer does
+    // not tell which of them exists.
+    for (const id of ['2', '3', '1', '99', '0', '01', 'abc', '2147483648']) {
+      const page = await get(app, `/admin/users/${id}`, { cookie: boris });
+      assert.equal(page.status, 403, id);
+      assert.equal(await page.text(), forbidden, id);
+      const { result: reset, argon2 } = await countArgon2(() =>
+        resetFor(app, boris, id, NEW_PASSWORD),
+      );
+      assert.equal(argon2, 0, id);
+      assert.equal(reset.status, 403, id);
+      assert.equal(await reset.text(), forbidden, id);
+    }
+    assert.equal(await hashOf(anna), PASSWORD_HASH);
+    assert.deepEqual(await sessionTokens(annaSession), { known: [annaSession], other: 2 });
+  });
+
+  test('other addresses around a card: the common 404 for a guest, a user and the administrator', async (t) => {
+    const { app, cookie } = await found(t);
+    await addUser('anna');
+    const boris = `__Host-hof=${await addSession(await addUser('boris'))}`;
+    for (const [who, headers] of [
+      ['guest', {}],
+      ['user', { cookie: boris }],
+      ['administrator', { cookie }],
+    ] as const) {
+      for (const path of ['/admin/users/2/', '/admin/users/2/foo', '/admin/users/2/password/x']) {
+        for (const res of [
+          await get(app, path, headers),
+          await post(app, path, { password: NEW_PASSWORD }, headers),
+        ]) {
+          assert.equal(res.status, 404, `${who} ${path}`);
+          assert.ok((await res.text()).includes(NOT_FOUND_H1), `${who} ${path}`);
+        }
+      }
+    }
+    // The administrator on a known address with a method it does not have.
+    for (const res of [
+      await get(app, '/admin/users/2/password', { cookie }),
+      await post(app, '/admin/users/2', { password: NEW_PASSWORD }, { cookie }),
+    ]) {
+      assert.equal(res.status, 404);
+    }
+    assert.equal(await hashOf(2), PASSWORD_HASH);
+  });
+});
+
+describe('the card of a person', () => {
+  test('the person, their key, the reset form, the way back', async (t) => {
+    const { app, cookie } = await found(t);
+    await addUser('anna');
+    const res = await get(app, '/admin/users/2', { cookie });
+    assert.equal(res.status, 200);
+    const page = await res.text();
+    for (const text of [
+      '<title>Hof — anna</title>',
+      '<a href="/">Двор</a>',
+      '<a href="/account">Мои покои</a>',
+      '<p><a href="/admin/users">Приближённые</a></p>',
+      '<h1>anna</h1>',
+      '<p>С ключом</p>',
+      '<h2>Сбросить пароль</h2>',
+      '<form method="post" action="/admin/users/2/password">',
+      '<label for="password">Новый начальный пароль</label>',
+      'anna выйдет со двора на всех устройствах. Передайте новый пароль лично.',
+      '<button type="submit">Сбросить пароль</button>',
+    ]) {
+      assert.ok(page.includes(text), text);
+    }
+    // Plain text without autofill: the administrator sees what is typed. No repeat field.
+    assert.match(page, /name="password"\s+type="text"\s+autocomplete="off"/);
+    assert.equal((page.match(/<input/g) ?? []).length, 1);
+    assert.ok(!page.includes('сброшен'));
+    // Only the reset for now: the key block comes with M4.3.
+    assert.ok(!page.includes('Забрать ключ'));
+  });
+
+  test('a disabled person: «Ключ взят»', async (t) => {
+    const { app, cookie } = await found(t);
+    await addUser('anna', PASSWORD_HASH, true);
+    const page = await (await get(app, '/admin/users/2', { cookie })).text();
+    assert.ok(page.includes('<p>Ключ взят</p>'));
+    assert.ok(!page.includes('С ключом'));
+  });
+
+  test('done=password shows the message; any other done is ignored', async (t) => {
+    const { app, cookie } = await found(t);
+    await addUser('anna');
+    const done = await (await get(app, '/admin/users/2?done=password', { cookie })).text();
+    assert.ok(done.includes(RESET_MESSAGE));
+    for (const query of ['?done=x', '?done=Password', '?created=2', '']) {
+      const page = await (await get(app, `/admin/users/2${query}`, { cookie })).text();
+      assert.ok(!page.includes('сброшен'), query);
+    }
+  });
+
+  test('a wrong id, nobody, or the administrator: the common 404, no Argon2, nothing changed', async (t) => {
+    const { app, cookie } = await found(t);
+    const anna = await addUser('anna');
+    const annaSession = await addSession(anna);
+    const owner = await hashOf(1);
+    for (const id of [
+      '0',
+      '-1',
+      '01',
+      '02',
+      '2.0',
+      '+2',
+      '0x2',
+      'abc',
+      '%20',
+      '2147483648',
+      '9999999999',
+      '99999999999',
+      '2147483647',
+      '99',
+      '1',
+    ]) {
+      const page = await get(app, `/admin/users/${id}`, { cookie });
+      assert.equal(page.status, 404, id);
+      assert.ok((await page.text()).includes(NOT_FOUND_H1), id);
+      const { result: reset, argon2 } = await countArgon2(() =>
+        resetFor(app, cookie, id, NEW_PASSWORD),
+      );
+      assert.equal(reset.status, 404, id);
+      assert.equal(argon2, 0, id);
+    }
+    assert.equal(await hashOf(anna), PASSWORD_HASH);
+    assert.equal(await hashOf(1), owner);
+    assert.deepEqual(await sessionTokens(annaSession), { known: [annaSession], other: 1 });
+  });
+
+  test('a login is escaped wherever it is shown', async (t) => {
+    const { app, cookie } = await found(t);
+    const login = '<i>x</i>&amp;';
+    // The CHECK on users.username lets no markup in; it is dropped for this test only.
+    await pool.query('ALTER TABLE users DROP CONSTRAINT users_username_format');
+    try {
+      const id = await addUser(login);
+      for (const res of [
+        await get(app, `/admin/users/${id}`, { cookie }),
+        await get(app, `/admin/users/${id}?done=password`, { cookie }),
+        await resetFor(app, cookie, id, 'too short'),
+        await get(app, '/admin/users', { cookie }),
+      ]) {
+        const page = await res.text();
+        assert.ok(page.includes('&lt;i&gt;x&lt;/i&gt;&amp;amp;'), page);
+        assert.ok(!page.includes('<i>'), page);
+      }
+    } finally {
+      await pool.query("DELETE FROM users WHERE username !~ '^[a-z0-9][a-z0-9._-]{0,31}$'");
+      await pool.query(
+        "ALTER TABLE users ADD CONSTRAINT users_username_format CHECK (username ~ '^[a-z0-9][a-z0-9._-]{0,31}$')",
+      );
+    }
+  });
+});
+
+describe('reset of a password by the administrator', () => {
+  test('a new hash, every session of the person ended and no new one, the others stay', async (t) => {
+    const { app, token: ownerSession, cookie, lines } = await found(t);
+    const anna = await addUser('anna');
+    const boris = await addUser('boris');
+    const annaBrowser = await addSession(anna);
+    const annaPhone = await addSession(anna);
+    const borisSession = await addSession(boris);
+    const logged = lines.length;
+
+    const { result: res, argon2 } = await countArgon2(() =>
+      resetFor(app, cookie, anna, NEW_PASSWORD, { 'x-real-ip': '203.0.113.7' }),
+    );
+    assert.equal(argon2, 1);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/admin/users/2?done=password');
+    assert.equal(res.headers.get('set-cookie'), null);
+    assert.deepEqual(lines.slice(logged), [
+      'info password_reset user_id=2 username=anna by=admin admin_id=1 ip=203.0.113.7',
+    ]);
+
+    // Both sessions of anna are gone and none was made for her; the administrator and boris
+    // keep theirs.
+    assert.deepEqual(await sessionTokens(ownerSession, annaBrowser, annaPhone, borisSession), {
+      known: [ownerSession, borisSession],
+      other: 0,
+    });
+    for (const old of [annaBrowser, annaPhone]) {
+      const away = await get(app, '/', { cookie: `__Host-hof=${old}` });
+      assert.equal(away.headers.get('location'), '/login?next=%2F');
+    }
+    assert.equal((await get(app, '/', { cookie: `__Host-hof=${borisSession}` })).status, 200);
+    assert.equal((await get(app, '/admin/users', { cookie })).status, 200);
+
+    // The new password opens the gate, the old one does not; nothing else of anna changed.
+    const [row] = await userRow('anna');
+    assert.ok(row);
+    assert.equal(row.is_disabled, false);
+    assert.equal(row.is_admin, false);
+    assert.equal(await verifyPassword(NEW_PASSWORD, row.password_hash), 'valid');
+    assert.equal(await verifyPassword(PASSWORD, row.password_hash), 'wrong');
+    assert.equal(await hashOf(boris), PASSWORD_HASH);
+
+    // After the redirect: the message, once more only as a page.
+    const page = await (await get(app, res.headers.get('location')!, { cookie })).text();
+    assert.ok(page.includes(RESET_MESSAGE));
+    assert.equal(await hashOf(anna), row.password_hash);
+
+    assert.equal((await signIn(app, 'anna', PASSWORD)).status, 400);
+    assert.equal((await signIn(app, 'anna', NEW_PASSWORD)).status, 303);
+
+    // No password and no hash in the answers or in any log line.
+    const secrets = [NEW_PASSWORD, row.password_hash, ...row.password_hash.split('$').slice(-2)];
+    for (const text of [await res.text(), res.headers.get('location')!, page, ...lines]) {
+      for (const secret of secrets) assert.ok(!text.includes(secret), `«${text}» has ${secret}`);
+    }
+  });
+
+  test('a disabled person gets the new password, stays disabled, has no session', async (t) => {
+    const { app, cookie, lines } = await found(t);
+    const anna = await addUser('anna', PASSWORD_HASH, true);
+    // A row a disabled user should not have; the reset ends it all the same.
+    const stale = await addSession(anna);
+    const res = await resetFor(app, cookie, anna, NEW_PASSWORD);
+    assert.equal(res.status, 303);
+    const [row] = await userRow('anna');
+    assert.ok(row);
+    assert.equal(row.is_disabled, true);
+    assert.equal(await verifyPassword(NEW_PASSWORD, row.password_hash), 'valid');
+    assert.deepEqual(await sessionTokens(stale), { known: [], other: 1 });
+    // The new password alone does not let a disabled person in.
+    assert.equal((await signIn(app, 'anna', NEW_PASSWORD)).status, 400);
+    assert.equal(lines.at(-1), 'warn login_failed user_id=2 username=anna ip=- reason=disabled');
+  });
+
+  const refusals: [string, Record<string, string>][] = [
+    ['a password shorter than 15', { password: 'a'.repeat(14) }],
+    ['a password over 256', { password: 'b'.repeat(257) }],
+    ['no password field', {}],
+  ];
+  for (const [name, fields] of refusals) {
+    test(`${name}: 400 on the card, no password shown, nothing changed, no Argon2`, async (t) => {
+      const { app, cookie, lines } = await found(t);
+      const anna = await addUser('anna');
+      const annaSession = await addSession(anna);
+      const logged = lines.length;
+      const { result: res, argon2 } = await countArgon2(() =>
+        post(app, '/admin/users/2/password', fields, { cookie }),
+      );
+      assert.equal(argon2, 0);
+      assert.equal(res.status, 400);
+      const page = await res.text();
+      assert.ok(page.includes('<h1>anna</h1>'));
+      assert.ok(page.includes('<p id="password-error">Пароль — от 15 до 256 символов.</p>'));
+      assert.match(page, /name="password"[^>]*aria-invalid="true"/);
+      if (fields.password !== undefined) assert.ok(!page.includes(fields.password));
+      assert.ok(!page.includes('сброшен'));
+      assert.equal(await hashOf(anna), PASSWORD_HASH);
+      assert.deepEqual(await sessionTokens(annaSession), { known: [annaSession], other: 1 });
+      assert.deepEqual(lines.slice(logged), []);
+    });
+  }
+
+  test('the transaction fails after UPDATE: 500, the old hash and sessions stay, no log line', async (t) => {
+    const { app, cookie, lines } = await found(t);
+    const anna = await addUser('anna');
+    const annaSession = await addSession(anna);
+    // DELETE FROM sessions is refused by the database, after UPDATE users went through. Sessions
+    // are still read, so the session of the administrator works.
+    await pool.query(
+      "CREATE FUNCTION refuse_for_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused for the test'; END $$",
+    );
+    await pool.query(
+      'CREATE TRIGGER sessions_no_delete BEFORE DELETE ON sessions FOR EACH STATEMENT EXECUTE FUNCTION refuse_for_test()',
+    );
+    try {
+      const res = await resetFor(app, cookie, anna, NEW_PASSWORD);
+      assert.equal(res.status, 500);
+      const page = await res.text();
+      assert.ok(page.includes('Во дворе что-то стряслось'));
+      assert.ok(!page.includes(NEW_PASSWORD));
+    } finally {
+      await pool.query('DROP TRIGGER IF EXISTS sessions_no_delete ON sessions');
+      await pool.query('DROP FUNCTION IF EXISTS refuse_for_test()');
+    }
+    assert.equal(await hashOf(anna), PASSWORD_HASH);
+    assert.deepEqual(await sessionTokens(annaSession), { known: [annaSession], other: 1 });
+    assert.match(
+      lines.at(-1)!,
+      /^error unexpected_error method=POST path=\/admin\/users\/2\/password error="refused for the test" /,
+    );
+    assert.ok(!lines.some((line) => line.includes('password_reset')));
+    assert.ok(!lines.some((line) => line.includes(NEW_PASSWORD)));
+  });
+});
+
+describe('reset by the administrator racing a sign-in', () => {
+  test('the sign-in is halfway: the reset waits on UPDATE, then ends the new session', async (t) => {
+    const { app, token: ownerSession, cookie } = await found(t);
+    const anna = await addUser('anna');
+    // POST /login in the middle of its transaction: the row locked with FOR UPDATE, its new
+    // session written, no COMMIT yet.
+    const signingIn = await pool.connect();
+    let annaToken: string;
+    try {
+      await signingIn.query('BEGIN');
+      await signingIn.query(
+        'SELECT password_hash, is_disabled FROM users WHERE id = $1 FOR UPDATE',
+        [anna],
+      );
+      annaToken = await createSession(signingIn, anna);
+      const pending = resetFor(app, cookie, anna, NEW_PASSWORD);
+      // The reset waits for the row before it deletes anything.
+      assert.match(await waitingQuery(), /^UPDATE users SET password_hash/);
+      await signingIn.query('COMMIT');
+      const res = await pending;
+      assert.equal(res.status, 303);
+    } finally {
+      signingIn.release();
+    }
+    // The session of that sign-in did not outlive the reset.
+    assert.deepEqual(await sessionTokens(ownerSession, annaToken), {
+      known: [ownerSession],
+      other: 0,
+    });
+    const away = await get(app, '/', { cookie: `__Host-hof=${annaToken}` });
+    assert.equal(away.headers.get('location'), '/login?next=%2F');
+    assert.equal(await verifyPassword(NEW_PASSWORD, await hashOf(anna)), 'valid');
+  });
+
+  test('the reset goes first: a sign-in with the old password waits behind it, then fails', async (t) => {
+    const { app, token: ownerSession, cookie, lines } = await found(t);
+    const anna = await addUser('anna');
+    // Something holds the row, so both line up for it: the reset first, then the sign-in, which
+    // has already checked the old password with Argon2.
+    const holder = await pool.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE', [anna]);
+      const reset = resetFor(app, cookie, anna, NEW_PASSWORD);
+      await waitForLock(1);
+      const login = signIn(app, 'anna', PASSWORD);
+      await waitForLock(2);
+      await holder.query('COMMIT');
+      assert.equal((await reset).status, 303);
+      const refused = await login;
+      assert.equal(refused.status, 400);
+      assert.equal(refused.headers.get('set-cookie'), null);
+    } finally {
+      holder.release();
+    }
+    assert.ok(
+      lines.includes('warn login_failed user_id=2 username=anna ip=- reason=password_changed'),
+    );
+    assert.deepEqual(await sessionTokens(ownerSession), { known: [ownerSession], other: 0 });
+    assert.equal((await signIn(app, 'anna', NEW_PASSWORD)).status, 303);
   });
 });
