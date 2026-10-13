@@ -1,13 +1,14 @@
 // Core routes (ARCHITECTURE.md §4.1): founding the court, signing in and out, the courtyard,
-// my chambers and the change of one's own password.
+// my chambers, the change of one's own password and «Приближённые» of the administrator.
 //
 // Order inside Core, after the common checks and the first-run gate in main.ts:
 //   1. /setup has its own rules before and after founding;
 //   2. public paths (/login, /logout) need no session;
-//   3. the known protected paths need a signed-in user;
+//   3. the known protected paths need a signed-in user, the known paths of the administrator
+//      the administrator;
 //   4. anything else is not a Core route and ends in the common 404.
 
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { html } from 'hono/html';
 import { parse as parseCookies } from 'hono/utils/cookie';
 import type { HtmlEscapedString } from 'hono/utils/html';
@@ -46,6 +47,17 @@ type CoreEnv = { Variables: { user: CurrentUser } };
 // not here.
 const PROTECTED_PATHS = ['/', '/account', '/account/password'];
 
+// Core paths of the administrator, for every method. Only these: any other /admin/… address is
+// not a route and ends in the common 404, for a guest, a user and the administrator alike.
+const ADMIN_PATHS = ['/admin/users'];
+
+// The same text wherever a login is typed for a new user.
+const USERNAME_ERROR =
+  'Логин: латиница, цифры, точка, дефис и подчёркивание, до 32 символов, первый символ — буква или цифра.';
+
+// SQLSTATE of a unique violation.
+const UNIQUE_VIOLATION = '23505';
+
 type SetupField = 'code' | 'username' | 'password' | 'password2';
 
 interface SetupForm {
@@ -64,6 +76,23 @@ interface LoginForm {
   username: string;
   next: string;
   failed: boolean;
+}
+
+// One person of the court, as «Приближённые» lists them.
+interface Person {
+  id: number;
+  username: string;
+  is_admin: boolean;
+  is_disabled: boolean;
+}
+
+type NewUserField = 'username' | 'password';
+
+interface NewUserForm {
+  username: string;
+  // The login of the user just accepted, for the message after the redirect.
+  created?: string;
+  error?: { field: NewUserField; text: string };
 }
 
 // Why a sign-in of an existing user was refused; written to the log only (§4.10).
@@ -87,6 +116,28 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
         ${body}
       </body>
     </html>`;
+}
+
+// Texts from design/preview/Error403.html, laid out like the common error pages of main.ts.
+// Nothing from the request goes into it.
+const FORBIDDEN_PAGE = page(
+  'Сюда только хозяину',
+  html`<h1>Сюда только хозяину</h1>
+    <p>Это место двора открыто только хозяину. Если нужно, попросите его.</p>
+    <p><a href="/">Во двор</a></p>`,
+);
+
+// The places of Hof (ARCHITECTURE.md §6): Двор, Приближённые (the administrator only), Мои
+// покои — without the one the page itself is.
+function nav(user: CurrentUser, here: string) {
+  const places = [
+    { path: '/', name: 'Двор' },
+    ...(user.isAdmin ? [{ path: '/admin/users', name: 'Приближённые' }] : []),
+    { path: '/account', name: 'Мои покои' },
+  ].filter((place) => place.path !== here);
+  return html`<nav>
+    ${places.map((place) => html`<a href="${place.path}">${place.name}</a> `)}
+  </nav>`;
 }
 
 // Texts from design/preview/Setup.html. The gate key and the passwords are never written back
@@ -204,7 +255,7 @@ function loginPage(form: LoginForm) {
 function courtyardPage(user: CurrentUser, services: readonly Service[]) {
   return page(
     'Hof — двор',
-    html`<nav><a href="/account">Мои покои</a></nav>
+    html`${nav(user, '/')}
       <h1>Двор</h1>
       <p>${user.username}</p>
       <h2>Службы двора</h2>
@@ -231,7 +282,7 @@ function accountPage(user: CurrentUser, form: AccountForm) {
 
   return page(
     'Hof — мои покои',
-    html`<nav><a href="/">Двор</a></nav>
+    html`${nav(user, '/account')}
       <h1>Мои покои</h1>
       <p>${user.isAdmin ? `${user.username} · хозяин двора` : user.username}</p>
       ${form.done ? html`<p>Пароль сменён.</p>` : ''}
@@ -283,6 +334,88 @@ function accountPage(user: CurrentUser, form: AccountForm) {
       </form>
       <p id="logout-hint">на этом устройстве; всё во дворе останется на месте</p>`,
   );
+}
+
+// Texts from design/preview/Users.html and UsersEmpty.html: everybody of the court, the
+// administrator first, and the form for a new user. The initial password is shown while it is
+// typed, so it can be passed on, but never written back into the page.
+function usersPage(user: CurrentUser, people: readonly Person[], form: NewUserForm) {
+  const describedBy = (field: NewUserField, hint?: string) => {
+    const ids = [hint, form.error?.field === field ? `${field}-error` : undefined].filter(Boolean);
+    const invalid = form.error?.field === field ? html`aria-invalid="true"` : '';
+    return ids.length > 0 ? html`${invalid} aria-describedby="${ids.join(' ')}"` : invalid;
+  };
+  const error = (field: NewUserField) =>
+    form.error?.field === field ? html`<p id="${field}-error">${form.error.text}</p>` : '';
+  const others = people.filter((person) => !person.is_admin);
+
+  return page(
+    'Hof — приближённые',
+    html`${nav(user, '/admin/users')}
+      <h1>Приближённые</h1>
+      ${
+        form.created === undefined
+          ? ''
+          : html`<p>Ключ для ${form.created} готов. Передайте логин и начальный пароль лично.</p>`
+      }
+      ${
+        others.length === 0
+          ? html`<h2>Пока у двора только хозяин</h2>
+              <p>
+                На ключнице один ключ — ваш. Примите ко двору семью или друзей: у каждого будет свой
+                ключ и свои мешки.
+              </p>`
+          : html`<ul>
+              ${people.map((person) => html`<li>${person.username} · ${personStatus(person)}</li>`)}
+            </ul>`
+      }
+      <h2>Принять ко двору</h2>
+      <form method="post" action="/admin/users">
+        <p>
+          <label for="username">Логин</label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            autocomplete="off"
+            required
+            value="${form.username}"
+            ${describedBy('username')}
+          />
+        </p>
+        ${error('username')}
+        <p>
+          <label for="password">Начальный пароль</label>
+          <input
+            id="password"
+            name="password"
+            type="text"
+            autocomplete="off"
+            required
+            ${describedBy('password', 'password-hint')}
+          />
+        </p>
+        ${error('password')}
+        <p id="password-hint">
+          Пароль виден, чтобы его можно было передать. Человек сменит его в своих покоях.
+        </p>
+        <button type="submit">Принять</button>
+      </form>`,
+  );
+}
+
+// What the list says of a person; the administrator is the one reading it.
+function personStatus(person: Person): string {
+  if (person.is_admin) return 'хозяин, это вы';
+  return person.is_disabled ? 'Ключ взят' : 'С ключом';
+}
+
+// Everybody of the court for «Приближённые»: the administrator first, the others by login.
+async function listPeople(pool: Pool): Promise<Person[]> {
+  const { rows } = await pool.query<Person>(
+    'SELECT id, username, is_admin, is_disabled FROM users ORDER BY is_admin DESC, username',
+  );
+  return rows;
 }
 
 // §4.6: the only addresses sign-in sends a person back to — a local path. "/" first; then not
@@ -346,12 +479,7 @@ export function createCoreApp(
       return refuse('code', 'Ключ от ворот не подходит.');
     }
     const username = parseUsername(typedUsername);
-    if (username === null) {
-      return refuse(
-        'username',
-        'Логин: латиница, цифры, точка, дефис и подчёркивание, до 32 символов, первый символ — буква или цифра.',
-      );
-    }
+    if (username === null) return refuse('username', USERNAME_ERROR);
     const password = text('password');
     const passwordError = newPasswordError(password);
     if (passwordError !== null) return refuse('password', `${passwordError}.`);
@@ -523,15 +651,22 @@ export function createCoreApp(
     return c.redirect('/login', 303);
   });
 
-  // 3. Protected paths: a signed-in user or the way to /login.
-  for (const path of PROTECTED_PATHS) {
-    core.use(path, async (c, next) => {
-      const user = await currentUser(pool, sessionToken(c.req.header('Cookie')));
-      if (user === null) return c.redirect(loginLocation(c.req.method, c.req.url), 303);
-      c.set('user', user);
-      await next();
-    });
-  }
+  // 3. Protected paths: a signed-in user or the way to /login. The paths of the administrator
+  //    need the role as well (§4.6): a signed-in user without it gets 403. Both run before the
+  //    form, the path or any record is looked at, so a refusal costs no Argon2 and does not
+  //    tell whether a record exists.
+  const signedIn: MiddlewareHandler<CoreEnv> = async (c, next) => {
+    const user = await currentUser(pool, sessionToken(c.req.header('Cookie')));
+    if (user === null) return c.redirect(loginLocation(c.req.method, c.req.url), 303);
+    c.set('user', user);
+    await next();
+  };
+  const administratorOnly: MiddlewareHandler<CoreEnv> = async (c, next) => {
+    if (!c.get('user').isAdmin) return c.html(FORBIDDEN_PAGE, 403);
+    await next();
+  };
+  for (const path of PROTECTED_PATHS) core.use(path, signedIn);
+  for (const path of ADMIN_PATHS) core.use(path, signedIn, administratorOnly);
 
   core.get('/', (c) => c.html(courtyardPage(c.get('user'), services)));
 
@@ -626,6 +761,77 @@ export function createCoreApp(
       ip: c.req.header('X-Real-IP') ?? '-',
     });
     return c.redirect('/account?done=password', 303);
+  });
+
+  // Приближённые. `created` is the id of the user just accepted (§4.1): the message shows only
+  // for a user in the list just read, so no other query is needed. The ids there are integers,
+  // and only the plain decimal form of one of them matches: "02", "2.0", "abc", a missing id or
+  // the administrator's own show nothing.
+  core.get('/admin/users', async (c) => {
+    const people = await listPeople(pool);
+    const createdId = c.req.query('created');
+    const created = people.find((person) => !person.is_admin && String(person.id) === createdId);
+    return c.html(usersPage(c.get('user'), people, { username: '', created: created?.username }));
+  });
+
+  // «Принять ко двору» (§4.1, §4.3): a new user with the initial password the administrator
+  // typed. No password is ever written back into the page.
+  core.post('/admin/users', async (c) => {
+    const administrator = c.get('user');
+    const form = await c.req.parseBody();
+    const text = (name: NewUserField) => {
+      const value = form[name];
+      return typeof value === 'string' ? value : '';
+    };
+    const typedUsername = text('username');
+    const refuse = async (field: NewUserField, message: string) =>
+      c.html(
+        usersPage(administrator, await listPeople(pool), {
+          username: typedUsername,
+          error: { field, text: message },
+        }),
+        400,
+      );
+
+    // The form first, without Argon2.
+    const username = parseUsername(typedUsername);
+    if (username === null) return refuse('username', USERNAME_ERROR);
+    const password = text('password');
+    const passwordError = newPasswordError(password);
+    if (passwordError !== null) return refuse('password', `${passwordError}.`);
+
+    // Argon2 runs before the INSERT: no connection is held while it computes.
+    const passwordHash = await hashPassword(password);
+
+    // One statement, so no transaction of our own. Two submissions of one login at once are
+    // settled by the unique index: the second INSERT waits for the first to commit and then
+    // fails on users_username_key. That one violation is the expected «taken»; any other error,
+    // another unique index included, is unexpected and goes to onError in main.ts (500).
+    let userId: number;
+    try {
+      const { rows } = await pool.query<{ id: number }>(
+        'INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id',
+        [username, passwordHash],
+      );
+      userId = rows[0]!.id;
+    } catch (error) {
+      if (
+        error instanceof DatabaseError &&
+        error.code === UNIQUE_VIOLATION &&
+        error.constraint === 'users_username_key'
+      ) {
+        return refuse('username', 'Логин занят.');
+      }
+      throw error;
+    }
+
+    log('info', 'user_created', {
+      user_id: userId,
+      username,
+      admin_id: administrator.id,
+      ip: c.req.header('X-Real-IP') ?? '-',
+    });
+    return c.redirect(`/admin/users?created=${userId}`, 303);
   });
 
   return core;

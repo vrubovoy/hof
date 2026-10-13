@@ -1,6 +1,6 @@
-// Founding the court, signing in and out, the courtyard and the gates (ARCHITECTURE.md §4.1–4.4,
-// §4.6, §4.8), through the whole application: the common checks of main.ts, the first-run gate
-// and the Core routes. Database: hof_test as hof_core; the first-run state is the real one, its
+// Founding the court, signing in and out, the courtyard, my chambers, «Приближённые» and the
+// gates (ARCHITECTURE.md §4.1–4.4, §4.6, §4.8), through the whole application: the common checks
+// of main.ts, the first-run gate and the Core routes. Database: hof_test as hof_core; the first-run state is the real one, its
 // key read from the log.
 
 import assert from 'node:assert/strict';
@@ -95,7 +95,8 @@ function changePassword(app: App, cookie: string, fields: Record<string, string>
   return post(app, '/account/password', fields, { cookie, ...headers });
 }
 
-// A user written straight into the table: there is no page for adding people before M4.
+// A user written straight into the table, without «Принять ко двору»: quicker, and only the
+// tests of that page depend on it.
 async function addUser(username: string, passwordHash = PASSWORD_HASH, disabled = false) {
   const { rows } = await pool.query<{ id: number }>(
     'INSERT INTO users (username, password_hash, is_disabled) VALUES ($1, $2, $3) RETURNING id',
@@ -1085,5 +1086,392 @@ describe('log audit, M2–M3', () => {
       }
       assert.ok(!line.includes('$argon2id'), line);
     }
+  });
+});
+
+// «Приближённые» (M4): what the administrator types for a new user.
+function newUserFields(username: string, initial = NEW_PASSWORD) {
+  return { username, password: initial };
+}
+
+function acceptUser(app: App, cookie: string, fields: Record<string, string>, headers = {}) {
+  return post(app, '/admin/users', fields, { cookie, ...headers });
+}
+
+async function userRow(username: string) {
+  const { rows } = await pool.query<{
+    id: number;
+    password_hash: string;
+    is_admin: boolean;
+    is_disabled: boolean;
+  }>('SELECT id, password_hash, is_admin, is_disabled FROM users WHERE username = $1', [username]);
+  return rows;
+}
+
+const FORBIDDEN_H1 = '<h1>Сюда только хозяину</h1>';
+const NOT_FOUND_H1 = '<h1>Такой тропы во дворе нет</h1>';
+
+describe('the pages of the administrator: who gets in', () => {
+  test('no session: GET and HEAD keep the way back, POST goes to /login, nobody is added', async (t) => {
+    const { app, lines } = await found(t);
+    const disabled = await addSession(await addUser('anna', PASSWORD_HASH, true));
+    const logged = lines.length;
+    for (const cookie of [
+      undefined,
+      '__Host-hof=not-a-token',
+      `__Host-hof=${newSessionToken()}`,
+      `__Host-hof=${disabled}`,
+    ]) {
+      const headers: Record<string, string> = cookie === undefined ? {} : { cookie };
+      const name = cookie ?? 'no cookie';
+      const page = await get(app, '/admin/users?created=2', headers);
+      assert.equal(page.status, 303, name);
+      assert.equal(page.headers.get('location'), '/login?next=%2Fadmin%2Fusers%3Fcreated%3D2');
+      const head = await app.request('/admin/users', {
+        method: 'HEAD',
+        headers: { host: HOST, ...headers },
+      });
+      assert.equal(head.status, 303, name);
+      assert.equal(head.headers.get('location'), '/login?next=%2Fadmin%2Fusers');
+      const { result: accept, argon2 } = await countArgon2(() =>
+        post(app, '/admin/users', newUserFields('boris'), headers),
+      );
+      assert.equal(argon2, 0, name);
+      assert.equal(accept.status, 303, name);
+      assert.equal(accept.headers.get('location'), '/login', name);
+    }
+    assert.equal(await count('users'), 2);
+    assert.deepEqual(lines.slice(logged), []);
+  });
+
+  test('a user who is not the administrator: 403 on GET, HEAD and POST, nothing written, no Argon2', async (t) => {
+    const { app, lines } = await found(t);
+    const anna = `__Host-hof=${await addSession(await addUser('anna'))}`;
+    const logged = lines.length;
+    const page = await get(app, '/admin/users', { cookie: anna });
+    assert.equal(page.status, 403);
+    const head = await app.request('/admin/users', {
+      method: 'HEAD',
+      headers: { host: HOST, cookie: anna },
+    });
+    assert.equal(head.status, 403);
+    assert.equal(await head.text(), '');
+    for (const fields of [newUserFields('boris'), newUserFields('', ''), { anything: 'else' }]) {
+      const { result: res, argon2 } = await countArgon2(() => acceptUser(app, anna, fields));
+      assert.equal(argon2, 0);
+      assert.equal(res.status, 403);
+      assert.ok((await res.text()).includes(FORBIDDEN_H1));
+    }
+    assert.equal(await count('users'), 2);
+    assert.deepEqual(await userRow('boris'), []);
+    // Neither the refusal nor the form is written to the log.
+    assert.deepEqual(lines.slice(logged), []);
+  });
+
+  test('the 403 page: its texts, the common headers, nothing from the request', async (t) => {
+    const { app } = await found(t);
+    const anna = `__Host-hof=${await addSession(await addUser('anna'))}`;
+    const plain = await get(app, '/admin/users', { cookie: anna });
+    const loaded = await get(
+      app,
+      '/admin/users?created=2&next=%3Cscript%3Ealert(1)%3C%2Fscript%3E',
+      {
+        cookie: anna,
+        'x-real-ip': '203.0.113.7',
+      },
+    );
+    for (const res of [plain, loaded]) {
+      assert.equal(res.status, 403);
+      assert.match(res.headers.get('content-type') ?? '', /^text\/html/);
+      assert.equal(res.headers.get('cache-control'), 'no-store');
+      assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+      assert.match(res.headers.get('content-security-policy') ?? '', /^default-src 'none'/);
+    }
+    const page = await plain.text();
+    for (const text of [
+      '<title>Сюда только хозяину</title>',
+      FORBIDDEN_H1,
+      '<p>Это место двора открыто только хозяину. Если нужно, попросите его.</p>',
+      '<a href="/">Во двор</a>',
+    ]) {
+      assert.ok(page.includes(text), text);
+    }
+    // The same page whatever the request carried: no login, no query, no address.
+    assert.equal(await loaded.text(), page);
+    for (const absent of ['anna', 'script', 'created', '203.0.113.7', 'admin']) {
+      assert.ok(!page.includes(absent), absent);
+    }
+  });
+
+  test('the administrator gets in', async (t) => {
+    const { app, cookie } = await found(t);
+    assert.equal((await get(app, '/admin/users', { cookie })).status, 200);
+    const head = await app.request('/admin/users', {
+      method: 'HEAD',
+      headers: { host: HOST, cookie },
+    });
+    assert.equal(head.status, 200);
+  });
+
+  test('any other /admin/… address: the common 404 for a guest, a user and the administrator', async (t) => {
+    const { app, cookie } = await found(t);
+    const anna = `__Host-hof=${await addSession(await addUser('anna'))}`;
+    for (const [who, headers] of [
+      ['guest', {}],
+      ['user', { cookie: anna }],
+      ['administrator', { cookie }],
+    ] as const) {
+      for (const path of ['/admin', '/admin/', '/admin/users/', '/admin/foo', '/admin/users/x/y']) {
+        for (const res of [
+          await get(app, path, headers),
+          await post(app, path, newUserFields('boris'), headers),
+        ]) {
+          const name = `${who} ${path}`;
+          assert.equal(res.status, 404, name);
+          assert.ok((await res.text()).includes(NOT_FOUND_H1), name);
+        }
+      }
+    }
+    assert.equal(await count('users'), 2);
+  });
+
+  test('the way to Приближённые: from the courtyard and my chambers, for the administrator only', async (t) => {
+    const { app, cookie } = await found(t);
+    const anna = `__Host-hof=${await addSession(await addUser('anna'))}`;
+    for (const path of ['/', '/account']) {
+      const own = await (await get(app, path, { cookie })).text();
+      assert.ok(own.includes('<a href="/admin/users">Приближённые</a>'), path);
+      const other = await (await get(app, path, { cookie: anna })).text();
+      assert.ok(!other.includes('Приближённые'), path);
+    }
+  });
+});
+
+describe('Приближённые', () => {
+  test('only the administrator: the empty state and the form', async (t) => {
+    const { app, cookie } = await found(t);
+    const res = await get(app, '/admin/users', { cookie });
+    assert.equal(res.status, 200);
+    const page = await res.text();
+    for (const text of [
+      '<title>Hof — приближённые</title>',
+      '<a href="/">Двор</a>',
+      '<a href="/account">Мои покои</a>',
+      '<h1>Приближённые</h1>',
+      '<h2>Пока у двора только хозяин</h2>',
+      'На ключнице один ключ — ваш. Примите ко двору семью или друзей: у каждого будет свой',
+      'ключ и свои мешки.',
+      '<h2>Принять ко двору</h2>',
+      '<form method="post" action="/admin/users">',
+      '<label for="username">Логин</label>',
+      '<label for="password">Начальный пароль</label>',
+      'Пароль виден, чтобы его можно было передать. Человек сменит его в своих покоях.',
+      '<button type="submit">Принять</button>',
+    ]) {
+      assert.ok(page.includes(text), text);
+    }
+    // Both fields are plain text without autofill; the password is shown while it is typed.
+    assert.match(page, /name="username"\s+type="text"\s+autocomplete="off"/);
+    assert.match(page, /name="password"\s+type="text"\s+autocomplete="off"/);
+    assert.ok(!page.includes('<a href="/admin/users">'), 'no link to the page itself');
+    assert.ok(!page.includes('<li>'));
+    assert.ok(!page.includes('хозяин, это вы'));
+  });
+
+  test('everyone: the administrator first and without a link, the others by login', async (t) => {
+    const { app, cookie } = await found(t);
+    await addUser('zoe');
+    await addUser('anna', PASSWORD_HASH, true);
+    await addUser('boris');
+    const page = await (await get(app, '/admin/users', { cookie })).text();
+    const items = [...page.matchAll(/<li>\s*([\s\S]*?)\s*<\/li>/g)].map((m) =>
+      m[1]!.replace(/\s+/g, ' '),
+    );
+    assert.deepEqual(items, [
+      'owner · хозяин, это вы',
+      'anna · Ключ взят',
+      'boris · С ключом',
+      'zoe · С ключом',
+    ]);
+    // No way to a user yet (M4.2), and no way to the administrator ever.
+    assert.ok(!/href="\/admin\/users\/\d/.test(page));
+    assert.ok(!page.includes('Пока у двора только хозяин'));
+  });
+});
+
+describe('Принять ко двору', () => {
+  test('a new user: 303 with created, an enabled ordinary row, the password works, the log line', async (t) => {
+    const { app, token, cookie, lines } = await found(t);
+    const { result: res, argon2 } = await countArgon2(() =>
+      acceptUser(app, cookie, newUserFields(' Anna '), { 'x-real-ip': '203.0.113.7' }),
+    );
+    assert.equal(argon2, 1);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/admin/users?created=2');
+    assert.equal(res.headers.get('set-cookie'), null);
+    assert.equal(
+      lines.at(-1),
+      'info user_created user_id=2 username=anna admin_id=1 ip=203.0.113.7',
+    );
+
+    const [row] = await userRow('anna');
+    assert.ok(row);
+    assert.equal(row.id, 2);
+    assert.equal(row.is_admin, false);
+    assert.equal(row.is_disabled, false);
+    assert.equal(await verifyPassword(NEW_PASSWORD, row.password_hash), 'valid');
+    assert.ok(!lines.at(-1)!.includes(NEW_PASSWORD));
+    assert.ok(!lines.at(-1)!.includes(row.password_hash.split('$').at(-1)!));
+    // The administrator stays signed in with the same session.
+    assert.deepEqual(await sessionTokens(token), { known: [token], other: 0 });
+
+    const page = await (await get(app, '/admin/users?created=2', { cookie })).text();
+    assert.ok(
+      page.includes('<p>Ключ для anna готов. Передайте логин и начальный пароль лично.</p>'),
+    );
+    assert.ok(page.replace(/\s+/g, ' ').includes('anna · С ключом'));
+    assert.ok(!page.includes(NEW_PASSWORD));
+
+    // The new person signs in with the initial password.
+    const signedIn = await signIn(app, 'anna', NEW_PASSWORD);
+    assert.equal(signedIn.status, 303);
+    assert.equal(signedIn.headers.get('location'), '/');
+  });
+
+  test('created: only the plain id of an ordinary user in the list, anything else is ignored', async (t) => {
+    const { app, cookie } = await found(t);
+    await addUser('anna');
+    const message = 'готов. Передайте логин и начальный пароль лично.';
+    const shown = await (await get(app, '/admin/users?created=2', { cookie })).text();
+    assert.ok(shown.includes(`Ключ для anna ${message}`));
+    for (const created of ['1', '3', '02', '2.0', ' 2', '2 ', '-2', 'abc', '', '2147483648']) {
+      const path = `/admin/users?created=${encodeURIComponent(created)}`;
+      const page = await (await get(app, path, { cookie })).text();
+      assert.ok(!page.includes(message), JSON.stringify(created));
+    }
+    const other = await (await get(app, '/admin/users?done=password', { cookie })).text();
+    assert.ok(!other.includes(message));
+  });
+
+  const refusals: [string, Record<string, string>, 'username' | 'password', string, number][] = [
+    // name, fields, field with the error, message, Argon2 computations
+    [
+      'a login of the wrong form',
+      newUserFields('<b>anna</b>'),
+      'username',
+      'Логин: латиница, цифры, точка, дефис и подчёркивание, до 32 символов, первый символ — буква или цифра.',
+      0,
+    ],
+    [
+      'no login',
+      newUserFields(''),
+      'username',
+      'Логин: латиница, цифры, точка, дефис и подчёркивание, до 32 символов, первый символ — буква или цифра.',
+      0,
+    ],
+    [
+      'a password shorter than 15',
+      newUserFields('boris', 'a'.repeat(14)),
+      'password',
+      'Пароль — от 15 до 256 символов.',
+      0,
+    ],
+    [
+      'a password over 256',
+      newUserFields('boris', 'a'.repeat(257)),
+      'password',
+      'Пароль — от 15 до 256 символов.',
+      0,
+    ],
+    ['a taken login', newUserFields('anna'), 'username', 'Логин занят.', 1],
+    ['a taken login in capitals', newUserFields(' ANNA '), 'username', 'Логин занят.', 1],
+    ['the login of the administrator', newUserFields('owner'), 'username', 'Логин занят.', 1],
+  ];
+  for (const [name, fields, field, message, expectedArgon2] of refusals) {
+    test(`${name}: 400 at «${field}», the login kept, no password shown, nobody added`, async (t) => {
+      const { app, cookie, lines } = await found(t);
+      await addUser('anna');
+      const logged = lines.length;
+      const { result: res, argon2 } = await countArgon2(() => acceptUser(app, cookie, fields));
+      assert.equal(argon2, expectedArgon2);
+      assert.equal(res.status, 400);
+      const page = await res.text();
+      assert.ok(page.includes(`<p id="${field}-error">${message}</p>`), message);
+      assert.match(page, new RegExp(`name="${field}"[^>]*aria-invalid="true"`));
+      assert.equal((page.match(/aria-invalid/g) ?? []).length, 1);
+      // The login as typed, escaped; the password never.
+      const escaped = fields.username!.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+      assert.ok(page.includes(`value="${escaped}"`), escaped);
+      assert.ok(!page.includes('<b>anna</b>'));
+      assert.ok(!page.includes(fields.password!), 'page shows the password');
+      // The same page: the list is there.
+      assert.ok(page.replace(/\s+/g, ' ').includes('anna · С ключом'));
+      assert.equal(await count('users'), 2);
+      assert.deepEqual(lines.slice(logged), []);
+    });
+  }
+
+  test('one login from two places at once: the second INSERT waits, then «Логин занят.»', async (t) => {
+    const { app, cookie } = await found(t);
+    const rival = await pool.connect();
+    try {
+      await rival.query('BEGIN');
+      await rival.query('INSERT INTO users (username, password_hash) VALUES ($1, $2)', [
+        'anna',
+        PASSWORD_HASH,
+      ]);
+      const pending = acceptUser(app, cookie, newUserFields('anna'));
+      await waitForLock();
+      // It is the INSERT that waits: on the unique index, for the rival's transaction.
+      const { rows } = await pool.query<{ query: string }>(
+        "SELECT query FROM pg_stat_activity WHERE datname = 'hof_test' AND wait_event_type = 'Lock'",
+      );
+      assert.equal(rows.length, 1);
+      assert.match(rows[0]!.query, /^INSERT INTO users \(username, password_hash\)/);
+      await rival.query('COMMIT');
+      const res = await pending;
+      assert.equal(res.status, 400);
+      assert.ok((await res.text()).includes('<p id="username-error">Логин занят.</p>'));
+    } finally {
+      rival.release();
+    }
+    const rows = await userRow('anna');
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.password_hash, PASSWORD_HASH);
+  });
+
+  test('any other refusal of the database is unexpected: 500, not «Логин занят.»', async (t) => {
+    const { app, cookie, lines } = await found(t);
+    for (const [name, add, drop] of [
+      [
+        'another unique index',
+        'CREATE UNIQUE INDEX users_one_row ON users ((true))',
+        'DROP INDEX IF EXISTS users_one_row',
+      ],
+      [
+        'a check',
+        'ALTER TABLE users ADD CONSTRAINT no_new_users CHECK (false) NOT VALID',
+        'ALTER TABLE users DROP CONSTRAINT IF EXISTS no_new_users',
+      ],
+    ] as const) {
+      await pool.query(add);
+      try {
+        const logged = lines.length;
+        const res = await acceptUser(app, cookie, newUserFields('anna'));
+        assert.equal(res.status, 500, name);
+        const page = await res.text();
+        assert.ok(page.includes('Во дворе что-то стряслось'), name);
+        assert.ok(!page.includes('Логин занят.'), name);
+        assert.equal(lines.length, logged + 1, name);
+        assert.match(
+          lines.at(-1)!,
+          /^error unexpected_error method=POST path=\/admin\/users /,
+          name,
+        );
+      } finally {
+        await pool.query(drop);
+      }
+    }
+    assert.equal(await count('users'), 1);
   });
 });
