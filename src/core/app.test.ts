@@ -1608,8 +1608,6 @@ describe('the card of a person', () => {
     assert.match(page, /name="password"\s+type="text"\s+autocomplete="off"/);
     assert.equal((page.match(/<input/g) ?? []).length, 1);
     assert.ok(!page.includes('сброшен'));
-    // Only the reset for now: the key block comes with M4.3.
-    assert.ok(!page.includes('Забрать ключ'));
   });
 
   test('a disabled person: «Ключ взят»', async (t) => {
@@ -1889,5 +1887,505 @@ describe('reset by the administrator racing a sign-in', () => {
     );
     assert.deepEqual(await sessionTokens(ownerSession), { known: [ownerSession], other: 0 });
     assert.equal((await signIn(app, 'anna', NEW_PASSWORD)).status, 303);
+  });
+});
+
+// The key of a person (M4.3): «Забрать ключ» and «Вернуть ключ» from the card.
+function keyAction(
+  app: App,
+  cookie: string,
+  id: number | string,
+  action: 'disable' | 'enable',
+  headers: Record<string, string> = {},
+) {
+  return post(app, `/admin/users/${id}/${action}`, {}, { cookie, ...headers });
+}
+
+async function isDisabled(userId: number): Promise<boolean> {
+  const { rows } = await pool.query<{ is_disabled: boolean }>(
+    'SELECT is_disabled FROM users WHERE id = $1',
+    [userId],
+  );
+  return rows[0]!.is_disabled;
+}
+
+// After a request: every client is back in the pool, no connection was left inside a
+// transaction, and nobody holds the row of the user.
+async function assertNothingHeld(userId: number): Promise<void> {
+  assert.equal(pool.totalCount - pool.idleCount, 0, 'a client was not released');
+  const { rows } = await pool.query<{ open: number }>(
+    "SELECT count(*)::int AS open FROM pg_stat_activity WHERE datname = 'hof_test' AND state LIKE 'idle in transaction%'",
+  );
+  assert.equal(rows[0]!.open, 0, 'a transaction was left open');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE NOWAIT', [userId]);
+  } finally {
+    await client.query('ROLLBACK');
+    client.release();
+  }
+}
+
+describe('the key of a person: who gets in', () => {
+  test('no session: POST disable and enable go to /login, nothing changed, no log line', async (t) => {
+    const { app, lines } = await found(t);
+    const anna = await addUser('anna');
+    const annaSession = await addSession(anna);
+    const boris = await addUser('boris', PASSWORD_HASH, true);
+    const logged = lines.length;
+    for (const path of [
+      '/admin/users/2/disable',
+      '/admin/users/3/enable',
+      '/admin/users/abc/disable',
+      '/admin/users/1/disable',
+    ]) {
+      const { result: res, argon2 } = await countArgon2(() => post(app, path, {}));
+      assert.equal(argon2, 0, path);
+      assert.equal(res.status, 303, path);
+      assert.equal(res.headers.get('location'), '/login', path);
+    }
+    assert.equal(await isDisabled(anna), false);
+    assert.equal(await isDisabled(boris), true);
+    assert.deepEqual(await sessionTokens(annaSession), { known: [annaSession], other: 1 });
+    assert.deepEqual(lines.slice(logged), []);
+  });
+
+  test('a user who is not the administrator: the same 403 for any id, nothing changed', async (t) => {
+    const { app, lines } = await found(t);
+    const anna = await addUser('anna');
+    const annaSession = await addSession(anna);
+    const carl = await addUser('carl', PASSWORD_HASH, true);
+    const boris = `__Host-hof=${await addSession(await addUser('boris'))}`;
+    const forbidden = await (await get(app, '/admin/users', { cookie: boris })).text();
+    assert.ok(forbidden.includes(FORBIDDEN_H1));
+    const logged = lines.length;
+    for (const id of ['2', '3', '4', '1', '99', '0', 'abc']) {
+      for (const action of ['disable', 'enable'] as const) {
+        const { result: res, argon2 } = await countArgon2(() => keyAction(app, boris, id, action));
+        assert.equal(argon2, 0, `${action} ${id}`);
+        assert.equal(res.status, 403, `${action} ${id}`);
+        assert.equal(await res.text(), forbidden, `${action} ${id}`);
+      }
+    }
+    assert.equal(await isDisabled(anna), false);
+    assert.equal(await isDisabled(carl), true);
+    assert.equal(await isDisabled(1), false);
+    // anna's, boris's and the administrator's sessions all stay.
+    assert.deepEqual(await sessionTokens(annaSession), { known: [annaSession], other: 2 });
+    assert.deepEqual(lines.slice(logged), []);
+  });
+
+  test('other addresses: the common 404 for a guest, a user and the administrator', async (t) => {
+    const { app, cookie } = await found(t);
+    const anna = await addUser('anna');
+    const boris = `__Host-hof=${await addSession(await addUser('boris'))}`;
+    for (const [who, headers] of [
+      ['guest', {}],
+      ['user', { cookie: boris }],
+      ['administrator', { cookie }],
+    ] as const) {
+      for (const path of [
+        '/admin/users/2/disable/',
+        '/admin/users/2/enable/',
+        '/admin/users/2/disable/x',
+        '/admin/users/2/foo',
+        '/admin/foo',
+      ]) {
+        const res = await post(app, path, {}, headers);
+        assert.equal(res.status, 404, `${who} ${path}`);
+        assert.ok((await res.text()).includes(NOT_FOUND_H1), `${who} ${path}`);
+      }
+    }
+    // The administrator on a known address with a method it does not have.
+    for (const path of ['/admin/users/2/disable', '/admin/users/2/enable']) {
+      assert.equal((await get(app, path, { cookie })).status, 404, path);
+    }
+    assert.equal(await isDisabled(anna), false);
+  });
+
+  test('a wrong id, nobody, or the administrator: 404 on both, nothing changed', async (t) => {
+    const { app, token: ownerSession, cookie, lines } = await found(t);
+    const anna = await addUser('anna');
+    const annaSession = await addSession(anna);
+    const logged = lines.length;
+    for (const id of ['0', '-1', '01', '2.0', 'abc', '2147483648', '2147483647', '99', '1']) {
+      for (const action of ['disable', 'enable'] as const) {
+        const res = await keyAction(app, cookie, id, action);
+        assert.equal(res.status, 404, `${action} ${id}`);
+        assert.ok((await res.text()).includes(NOT_FOUND_H1), `${action} ${id}`);
+      }
+    }
+    // The administrator keeps the key and the session; anna is untouched.
+    assert.equal(await isDisabled(1), false);
+    assert.equal(await isDisabled(anna), false);
+    assert.deepEqual(await sessionTokens(ownerSession, annaSession), {
+      known: [ownerSession, annaSession],
+      other: 0,
+    });
+    assert.deepEqual(lines.slice(logged), []);
+    await assertNothingHeld(1);
+  });
+});
+
+describe('Забрать ключ', () => {
+  test('disabled at once: every session of the person ended, nobody else touched', async (t) => {
+    const { app, token: ownerSession, cookie, lines } = await found(t);
+    const anna = await addUser('anna');
+    const boris = await addUser('boris');
+    const annaBrowser = await addSession(anna);
+    const annaPhone = await addSession(anna);
+    const borisSession = await addSession(boris);
+    const logged = lines.length;
+
+    const { result: res, argon2 } = await countArgon2(() =>
+      keyAction(app, cookie, anna, 'disable', { 'x-real-ip': '203.0.113.7' }),
+    );
+    assert.equal(argon2, 0);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/admin/users/2');
+    assert.equal(res.headers.get('set-cookie'), null);
+    assert.deepEqual(lines.slice(logged), [
+      'info user_disabled user_id=2 username=anna admin_id=1 ip=203.0.113.7',
+    ]);
+
+    assert.equal(await isDisabled(anna), true);
+    assert.equal(await hashOf(anna), PASSWORD_HASH);
+    assert.equal(await isDisabled(boris), false);
+    assert.deepEqual(await sessionTokens(ownerSession, annaBrowser, annaPhone, borisSession), {
+      known: [ownerSession, borisSession],
+      other: 0,
+    });
+    await assertNothingHeld(anna);
+
+    // anna is out at her next click, and her right password does not let her in again.
+    for (const old of [annaBrowser, annaPhone]) {
+      const away = await get(app, '/', { cookie: `__Host-hof=${old}` });
+      assert.equal(away.headers.get('location'), '/login?next=%2F');
+    }
+    const refused = await signIn(app, 'anna', PASSWORD);
+    assert.equal(refused.status, 400);
+    assert.ok((await refused.text()).includes('Неверный логин или пароль.'));
+    assert.equal(lines.at(-1), 'warn login_failed user_id=2 username=anna ip=- reason=disabled');
+
+    // The card after the redirect, and the list.
+    const card = await (await get(app, '/admin/users/2', { cookie })).text();
+    assert.ok(card.includes('<p>Ключ взят</p>'));
+    assert.ok(card.includes('<form method="post" action="/admin/users/2/enable">'));
+    const list = await (await get(app, '/admin/users', { cookie })).text();
+    assert.ok(list.replace(/\s+/g, ' ').includes('anna · Ключ взят'));
+  });
+
+  test('again for a person already disabled: UPDATE and DELETE again, 303, a new log line', async (t) => {
+    const { app, cookie, lines } = await found(t);
+    const anna = await addUser('anna', PASSWORD_HASH, true);
+    // A session a disabled person should not have, written straight into the table: the repeat
+    // must end it all the same, not stop at «already disabled».
+    const stale = await addSession(anna);
+    for (const round of [1, 2]) {
+      const res = await keyAction(app, cookie, anna, 'disable');
+      assert.equal(res.status, 303, `round ${round}`);
+      assert.equal(res.headers.get('location'), '/admin/users/2');
+      assert.equal(lines.at(-1), 'info user_disabled user_id=2 username=anna admin_id=1 ip=-');
+    }
+    assert.equal(lines.filter((line) => line.startsWith('info user_disabled')).length, 2);
+    assert.equal(await isDisabled(anna), true);
+    assert.deepEqual(await sessionTokens(stale), { known: [], other: 1 });
+  });
+
+  // The database refuses one step of the transaction; nothing of it stays. Each case: [where,
+  // how to make it fail, how to undo that].
+  const failures: [string, string, string][] = [
+    [
+      'at DELETE, after UPDATE',
+      'CREATE TRIGGER sessions_no_delete BEFORE DELETE ON sessions FOR EACH STATEMENT EXECUTE FUNCTION refuse_for_test()',
+      'DROP TRIGGER IF EXISTS sessions_no_delete ON sessions',
+    ],
+    [
+      // A deferred trigger runs at COMMIT, after UPDATE and DELETE went through.
+      'at COMMIT, after UPDATE and DELETE',
+      'CREATE CONSTRAINT TRIGGER users_refuse_at_commit AFTER UPDATE ON users DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION refuse_for_test()',
+      'DROP TRIGGER IF EXISTS users_refuse_at_commit ON users',
+    ],
+  ];
+  for (const [where, breakIt, repair] of failures) {
+    test(`a failure ${where}: 500, ROLLBACK, the session stays, no log line`, async (t) => {
+      const { app, cookie, lines } = await found(t);
+      const anna = await addUser('anna');
+      const annaSession = await addSession(anna);
+      const logged = lines.length;
+      await pool.query(
+        "CREATE FUNCTION refuse_for_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused for the test'; END $$",
+      );
+      await pool.query(breakIt);
+      try {
+        const res = await keyAction(app, cookie, anna, 'disable');
+        assert.equal(res.status, 500);
+        assert.ok((await res.text()).includes('Во дворе что-то стряслось'));
+        // The client is back, outside any transaction, and the row is free.
+        await assertNothingHeld(anna);
+      } finally {
+        await pool.query(repair);
+        await pool.query('DROP FUNCTION IF EXISTS refuse_for_test()');
+      }
+      assert.equal(await isDisabled(anna), false);
+      assert.deepEqual(await sessionTokens(annaSession), { known: [annaSession], other: 1 });
+      assert.equal(lines.length, logged + 1);
+      assert.match(
+        lines.at(-1)!,
+        /^error unexpected_error method=POST path=\/admin\/users\/2\/disable error="refused for the test" /,
+      );
+      // And the same request goes through once the database lets it.
+      assert.equal((await keyAction(app, cookie, anna, 'disable')).status, 303);
+      assert.equal(await isDisabled(anna), true);
+    });
+  }
+});
+
+describe('Вернуть ключ', () => {
+  test('the person may sign in again with the same password; no session comes back', async (t) => {
+    const { app, token: ownerSession, cookie, lines } = await found(t);
+    const anna = await addUser('anna');
+    const before = await addSession(anna);
+    assert.equal((await keyAction(app, cookie, anna, 'disable')).status, 303);
+    const logged = lines.length;
+
+    const { result: res, argon2 } = await countArgon2(() =>
+      keyAction(app, cookie, anna, 'enable', { 'x-real-ip': '203.0.113.7' }),
+    );
+    assert.equal(argon2, 0);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/admin/users/2');
+    assert.equal(res.headers.get('set-cookie'), null);
+    assert.deepEqual(lines.slice(logged), [
+      'info user_enabled user_id=2 username=anna admin_id=1 ip=203.0.113.7',
+    ]);
+    assert.equal(await isDisabled(anna), false);
+    assert.equal(await hashOf(anna), PASSWORD_HASH);
+    // No session was made, and the one from before the key was taken stays gone.
+    assert.deepEqual(await sessionTokens(ownerSession, before), {
+      known: [ownerSession],
+      other: 0,
+    });
+    const away = await get(app, '/', { cookie: `__Host-hof=${before}` });
+    assert.equal(away.headers.get('location'), '/login?next=%2F');
+
+    // She signs in herself, with the password she had.
+    assert.equal((await signIn(app, 'anna', PASSWORD)).status, 303);
+    const card = await (await get(app, '/admin/users/2', { cookie })).text();
+    assert.ok(card.includes('<p>С ключом</p>'));
+    assert.ok(card.includes('<form method="post" action="/admin/users/2/disable">'));
+  });
+
+  test('again for a person who has the key: 303, a new log line, the sessions untouched', async (t) => {
+    const { app, cookie, lines } = await found(t);
+    const anna = await addUser('anna');
+    const annaSession = await addSession(anna);
+    for (const round of [1, 2]) {
+      const res = await keyAction(app, cookie, anna, 'enable');
+      assert.equal(res.status, 303, `round ${round}`);
+      assert.equal(lines.at(-1), 'info user_enabled user_id=2 username=anna admin_id=1 ip=-');
+    }
+    assert.equal(await isDisabled(anna), false);
+    assert.deepEqual(await sessionTokens(annaSession), { known: [annaSession], other: 1 });
+  });
+});
+
+describe('the card: the key of the court', () => {
+  test('with the key: «С ключом», the text, «Забрать ключ»; the reset and the way back stay', async (t) => {
+    const { app, cookie } = await found(t);
+    await addUser('anna');
+    const res = await get(app, '/admin/users/2', { cookie });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+    assert.match(res.headers.get('content-security-policy') ?? '', /^default-src 'none'/);
+    const page = (await res.text()).replace(/\s+/g, ' ');
+    for (const text of [
+      '<p><a href="/admin/users">Приближённые</a></p>',
+      '<p>С ключом</p>',
+      '<form method="post" action="/admin/users/2/password">',
+      '<h2>Ключ от двора</h2>',
+      'У anna есть ключ от двора. Если забрать ключ, вход закроется сразу, а мешки и записи останутся. Вернуть ключ можно в любой момент.',
+      '<form method="post" action="/admin/users/2/disable"> <button type="submit">Забрать ключ</button> </form>',
+    ]) {
+      assert.ok(page.includes(text), text);
+    }
+    assert.ok(!page.includes('Вернуть ключ</button>'));
+    assert.ok(!page.includes('/enable'));
+  });
+
+  test('without the key: «Ключ взят», the text, «Вернуть ключ»; the reset stays', async (t) => {
+    const { app, cookie } = await found(t);
+    await addUser('anna', PASSWORD_HASH, true);
+    const page = (await (await get(app, '/admin/users/2', { cookie })).text()).replace(/\s+/g, ' ');
+    for (const text of [
+      '<p>Ключ взят</p>',
+      '<form method="post" action="/admin/users/2/password">',
+      '<h2>Ключ от двора</h2>',
+      'Ключ у anna забран: вход закрыт, мешки и записи на месте. Если вернуть ключ, anna войдёт со своим паролем.',
+      '<form method="post" action="/admin/users/2/enable"> <button type="submit">Вернуть ключ</button> </form>',
+    ]) {
+      assert.ok(page.includes(text), text);
+    }
+    assert.ok(!page.includes('Забрать ключ</button>'));
+    assert.ok(!page.includes('/disable'));
+  });
+});
+
+describe('the key racing a sign-in or a reset', () => {
+  test('the sign-in goes first: disable waits on UPDATE, then ends the new session', async (t) => {
+    const { app, token: ownerSession, cookie } = await found(t);
+    const anna = await addUser('anna');
+    // POST /login in the middle of its transaction: the row locked with FOR UPDATE, its new
+    // session written, no COMMIT yet.
+    const signingIn = await pool.connect();
+    let annaToken: string;
+    try {
+      await signingIn.query('BEGIN');
+      await signingIn.query(
+        'SELECT password_hash, is_disabled FROM users WHERE id = $1 FOR UPDATE',
+        [anna],
+      );
+      annaToken = await createSession(signingIn, anna);
+      const pending = keyAction(app, cookie, anna, 'disable');
+      // The disable waits for the row before it deletes anything.
+      assert.match(await waitingQuery(), /^UPDATE users SET is_disabled = true/);
+      await signingIn.query('COMMIT');
+      assert.equal((await pending).status, 303);
+    } finally {
+      signingIn.release();
+    }
+    assert.equal(await isDisabled(anna), true);
+    assert.deepEqual(await sessionTokens(ownerSession, annaToken), {
+      known: [ownerSession],
+      other: 0,
+    });
+    // Giving the key back brings that session back neither.
+    assert.equal((await keyAction(app, cookie, anna, 'enable')).status, 303);
+    assert.deepEqual(await sessionTokens(ownerSession, annaToken), {
+      known: [ownerSession],
+      other: 0,
+    });
+    const away = await get(app, '/', { cookie: `__Host-hof=${annaToken}` });
+    assert.equal(away.headers.get('location'), '/login?next=%2F');
+  });
+
+  test('the disable goes first: a sign-in with the right password waits behind it, then fails', async (t) => {
+    const { app, token: ownerSession, cookie, lines } = await found(t);
+    const anna = await addUser('anna');
+    // Something holds the row, so both line up for it: the disable first, then the sign-in,
+    // which has already checked the password with Argon2.
+    const holder = await pool.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE', [anna]);
+      const disable = keyAction(app, cookie, anna, 'disable');
+      await waitForLock(1);
+      const login = signIn(app, 'anna', PASSWORD);
+      await waitForLock(2);
+      await holder.query('COMMIT');
+      assert.equal((await disable).status, 303);
+      const refused = await login;
+      assert.equal(refused.status, 400);
+      assert.equal(refused.headers.get('set-cookie'), null);
+    } finally {
+      holder.release();
+    }
+    assert.ok(lines.includes('warn login_failed user_id=2 username=anna ip=- reason=disabled'));
+    assert.equal(await isDisabled(anna), true);
+    assert.deepEqual(await sessionTokens(ownerSession), { known: [ownerSession], other: 0 });
+  });
+
+  // A disable and a reset of one person wait for the same row, in the order they came, behind a
+  // sign-in that holds it. Whichever goes first, the person ends disabled, with the new hash and
+  // without a session.
+  for (const order of [
+    ['disable', 'reset'],
+    ['reset', 'disable'],
+  ] as const) {
+    test(`${order[0]} and then ${order[1]}, both waiting: disabled, the new hash, no session`, async (t) => {
+      const { app, token: ownerSession, cookie } = await found(t);
+      const anna = await addUser('anna');
+      const signingIn = await pool.connect();
+      let annaToken: string;
+      try {
+        await signingIn.query('BEGIN');
+        await signingIn.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE', [anna]);
+        annaToken = await createSession(signingIn, anna);
+        const run = (step: 'disable' | 'reset') =>
+          step === 'disable'
+            ? keyAction(app, cookie, anna, 'disable')
+            : resetFor(app, cookie, anna, NEW_PASSWORD);
+        const first = run(order[0]);
+        await waitForLock(1);
+        const second = run(order[1]);
+        await waitForLock(2);
+        await signingIn.query('COMMIT');
+        assert.equal((await first).status, 303);
+        assert.equal((await second).status, 303);
+      } finally {
+        signingIn.release();
+      }
+      assert.equal(await isDisabled(anna), true);
+      assert.equal(await verifyPassword(NEW_PASSWORD, await hashOf(anna)), 'valid');
+      assert.deepEqual(await sessionTokens(ownerSession, annaToken), {
+        known: [ownerSession],
+        other: 0,
+      });
+      // The new password alone does not let a disabled person in.
+      assert.equal((await signIn(app, 'anna', NEW_PASSWORD)).status, 400);
+    });
+  }
+});
+
+describe('log audit, M4', () => {
+  test('accept, reset, take and give back the key: the exact lines, no secret in any', async (t) => {
+    const { app, token: ownerToken, cookie, lines } = await found(t);
+    const initial = 'the initial password of anna';
+    const fresh = 'a fresh password after the reset';
+    const secrets = [PASSWORD, initial, fresh, 'too short', ownerToken];
+    const rememberToken = (res: Response) => {
+      const token = COOKIE.exec(res.headers.get('set-cookie') ?? '')?.[1];
+      assert.ok(token, 'no session cookie');
+      secrets.push(token, hashSessionToken(token).toString('hex'));
+      return token;
+    };
+    const rememberHash = async () => {
+      const phc = await hashOf(2);
+      secrets.push(phc, ...phc.split('$').slice(-2));
+    };
+    secrets.push(hashSessionToken(ownerToken).toString('hex'));
+    const logged = lines.length;
+
+    // Refused forms write nothing; neither do the refusals of a user who is not the
+    // administrator.
+    await acceptUser(app, cookie, newUserFields('anna', 'too short'));
+    await acceptUser(app, cookie, newUserFields('anna', initial));
+    await rememberHash();
+    const anna = `__Host-hof=${rememberToken(await signIn(app, 'anna', initial))}`;
+    await keyAction(app, anna, 1, 'disable');
+    await resetFor(app, anna, 2, fresh);
+    await resetFor(app, cookie, 2, 'too short');
+    await resetFor(app, cookie, 2, fresh);
+    await rememberHash();
+    await keyAction(app, cookie, 2, 'disable');
+    await keyAction(app, cookie, 2, 'enable');
+    rememberToken(await signIn(app, 'anna', fresh));
+
+    assert.deepEqual(lines.slice(logged), [
+      'info user_created user_id=2 username=anna admin_id=1 ip=-',
+      'info login user_id=2 username=anna ip=-',
+      'info password_reset user_id=2 username=anna by=admin admin_id=1 ip=-',
+      'info user_disabled user_id=2 username=anna admin_id=1 ip=-',
+      'info user_enabled user_id=2 username=anna admin_id=1 ip=-',
+      'info login user_id=2 username=anna ip=-',
+    ]);
+    for (const line of lines.slice(logged)) {
+      for (const secret of secrets) {
+        assert.ok(!line.includes(secret), `log line «${line}» contains ${secret}`);
+      }
+      assert.ok(!line.includes('$argon2id'), line);
+    }
   });
 });
