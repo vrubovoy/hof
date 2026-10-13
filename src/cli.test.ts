@@ -1,16 +1,16 @@
 // cli.ts reset-password (ARCHITECTURE.md §4.3, §4.8): the checks before the database as a separate
-// process, the reset itself against hof_test. The hidden input needs a real terminal and is
+// process, the command against hof_test. Its transaction is the shared one of
+// core/reset-password.ts and is tested there. The hidden input needs a real terminal and is
 // checked by hand (README, «Восстановление доступа»).
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, test, type TestContext } from 'node:test';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { Pool } from 'pg';
-import { resetPassword, resetPasswordCommand } from './cli.ts';
+import { resetPasswordCommand } from './cli.ts';
 import { hashPassword, verifyPassword } from './core/password.ts';
-import { createSession, hashSessionToken, newSessionToken } from './core/sessions.ts';
+import { hashSessionToken, newSessionToken } from './core/sessions.ts';
 import { migrate } from './migrate.ts';
 
 const password = process.env.HOF_CORE_DB_PASSWORD;
@@ -213,65 +213,26 @@ describe('reset-password', () => {
       assert.ok(!written.includes(secret), `output contains ${secret}`);
     }
   });
-});
 
-describe('the reset transaction', () => {
-  test('a failure after UPDATE: ROLLBACK, the old hash and every session stay', async () => {
+  // The transaction is the shared one of src/core/reset-password.ts, tested there; here only what
+  // the command makes of its failure. main() prints the error and exits with 1.
+  test('the database fails during the reset: the error comes out, nothing changed', async (t) => {
+    const out = captureOutput(t);
     const anna = await addUser('anna');
     await addSession(anna);
-    await addSession(anna);
-    const newHash = await hashPassword(NEW_PASSWORD);
     // UPDATE users goes through, DELETE FROM sessions finds no table and fails before COMMIT.
     await pool.query('ALTER TABLE sessions RENAME TO sessions_away');
     try {
       await assert.rejects(
-        resetPassword(pool, anna, newHash),
+        resetPasswordCommand(pool, 'anna', typing([NEW_PASSWORD, NEW_PASSWORD]).ask),
         /relation "sessions" does not exist/,
       );
     } finally {
       await pool.query('ALTER TABLE IF EXISTS sessions_away RENAME TO sessions');
     }
-    assert.equal((await userRow(anna)).password_hash, OLD_HASH);
-    assert.equal(await sessionsOf(anna), 2);
-  });
-
-  test('UPDATE first: a sign-in that has not committed yet loses its session', async () => {
-    const anna = await addUser('anna');
-    const newHash = await hashPassword(NEW_PASSWORD);
-
-    // A sign-in in the middle of its transaction: the user row locked with FOR UPDATE, its new
-    // session written, no COMMIT yet.
-    const signIn = await pool.connect();
-    try {
-      await signIn.query('BEGIN');
-      await signIn.query('SELECT password_hash, is_disabled FROM users WHERE id = $1 FOR UPDATE', [
-        anna,
-      ]);
-      await createSession(signIn, anna);
-
-      // The reset waits for the row on its UPDATE.
-      const reset = resetPassword(pool, anna, newHash);
-      assert.match(await waitingQuery(), /^UPDATE users SET password_hash/);
-
-      // The sign-in commits; the reset goes on and deletes the session it now sees.
-      await signIn.query('COMMIT');
-      assert.equal(await reset, 1);
-    } finally {
-      signIn.release();
-    }
-    assert.equal(await sessionsOf(anna), 0);
-    assert.equal((await userRow(anna)).password_hash, newHash);
+    assert.deepEqual(await userRow(anna), { password_hash: OLD_HASH, is_disabled: false });
+    assert.equal(await sessionsOf(anna), 1);
+    // Neither «сменён» nor the log line: only the prompt was written.
+    assert.deepEqual(out.stdout, ['Новый пароль для anna: не короче 15 символов, дважды.']);
   });
 });
-
-// The query of hof_test that waits for a lock held by another transaction, once there is one.
-async function waitingQuery(): Promise<string> {
-  for (let i = 0; i < 200; i++) {
-    const { rows } = await pool.query<{ query: string }>(
-      "SELECT query FROM pg_stat_activity WHERE datname = 'hof_test' AND wait_event_type = 'Lock'",
-    );
-    if (rows[0] !== undefined) return rows[0].query;
-    await sleep(10);
-  }
-  assert.fail('no query started waiting for the lock');
-}

@@ -24,6 +24,7 @@ import {
   passwordLength,
   verifyPassword,
 } from './password.ts';
+import { resetPassword } from './reset-password.ts';
 import {
   CLEARED_SESSION_COOKIE,
   createSession,
@@ -48,8 +49,12 @@ type CoreEnv = { Variables: { user: CurrentUser } };
 const PROTECTED_PATHS = ['/', '/account', '/account/password'];
 
 // Core paths of the administrator, for every method. Only these: any other /admin/… address is
-// not a route and ends in the common 404, for a guest, a user and the administrator alike.
-const ADMIN_PATHS = ['/admin/users'];
+// not a route and ends in the common 404, for a guest, a user and the administrator alike. A
+// path with a wrong :id is one of these: it gets the same checks, and the 404 only after them.
+const ADMIN_PATHS = ['/admin/users', '/admin/users/:id', '/admin/users/:id/password'];
+
+// §4.7: the largest id of a PostgreSQL integer.
+const MAX_ID = 2_147_483_647;
 
 // The same text wherever a login is typed for a new user.
 const USERNAME_ERROR =
@@ -93,6 +98,15 @@ interface NewUserForm {
   // The login of the user just accepted, for the message after the redirect.
   created?: string;
   error?: { field: NewUserField; text: string };
+}
+
+// A person other than the administrator, for their card; nobody has a card of the
+// administrator.
+type Member = Omit<Person, 'is_admin'>;
+
+interface ResetForm {
+  done: boolean;
+  error?: string;
 }
 
 // Why a sign-in of an existing user was refused; written to the log only (§4.10).
@@ -366,7 +380,13 @@ function usersPage(user: CurrentUser, people: readonly Person[], form: NewUserFo
                 ключ и свои мешки.
               </p>`
           : html`<ul>
-              ${people.map((person) => html`<li>${person.username} · ${personStatus(person)}</li>`)}
+              ${people.map(
+                (person) =>
+                  html`<li>
+                    ${person.username} · ${personStatus(person)}
+                    ${person.is_admin ? '' : html`<a href="/admin/users/${person.id}">Открыть ›</a>`}
+                  </li>`,
+              )}
             </ul>`
       }
       <h2>Принять ко двору</h2>
@@ -404,10 +424,56 @@ function usersPage(user: CurrentUser, people: readonly Person[], form: NewUserFo
   );
 }
 
+// Texts from design/preview/User.html: the person, their key and the reset of their password.
+// The new password is shown while it is typed, so it can be passed on, but never written back
+// into the page.
+function memberPage(user: CurrentUser, member: Member, form: ResetForm) {
+  const describedBy =
+    form.error === undefined
+      ? html`aria-describedby="password-hint"`
+      : html`aria-invalid="true" aria-describedby="password-hint password-error"`;
+
+  return page(
+    `Hof — ${member.username}`,
+    html`${nav(user, '/admin/users')}
+      <p><a href="/admin/users">Приближённые</a></p>
+      <h1>${member.username}</h1>
+      <p>${keyStatus(member)}</p>
+      ${
+        form.done
+          ? html`<p>Пароль для ${member.username} сброшен. Передайте новый пароль лично.</p>`
+          : ''
+      }
+      <h2>Сбросить пароль</h2>
+      <form method="post" action="/admin/users/${member.id}/password">
+        <p>
+          <label for="password">Новый начальный пароль</label>
+          <input
+            id="password"
+            name="password"
+            type="text"
+            autocomplete="off"
+            required
+            ${describedBy}
+          />
+        </p>
+        ${form.error === undefined ? '' : html`<p id="password-error">${form.error}</p>`}
+        <p id="password-hint">
+          ${member.username} выйдет со двора на всех устройствах. Передайте новый пароль лично.
+        </p>
+        <button type="submit">Сбросить пароль</button>
+      </form>`,
+  );
+}
+
+// Whether a person has the key of the court.
+function keyStatus(person: { is_disabled: boolean }): string {
+  return person.is_disabled ? 'Ключ взят' : 'С ключом';
+}
+
 // What the list says of a person; the administrator is the one reading it.
 function personStatus(person: Person): string {
-  if (person.is_admin) return 'хозяин, это вы';
-  return person.is_disabled ? 'Ключ взят' : 'С ключом';
+  return person.is_admin ? 'хозяин, это вы' : keyStatus(person);
 }
 
 // Everybody of the court for «Приближённые»: the administrator first, the others by login.
@@ -416,6 +482,25 @@ async function listPeople(pool: Pool): Promise<Person[]> {
     'SELECT id, username, is_admin, is_disabled FROM users ORDER BY is_admin DESC, username',
   );
   return rows;
+}
+
+// §4.7: an id from the path — digits without a leading zero, at most MAX_ID — or null.
+function parseId(input: string): number | null {
+  if (!/^[1-9][0-9]{0,9}$/.test(input)) return null;
+  const id = Number(input);
+  return id <= MAX_ID ? id : null;
+}
+
+// The person of the :id in the path, unless it is the administrator: no such person, a wrong
+// id and the administrator all come back as null, and the caller answers 404.
+async function findMember(pool: Pool, idInPath: string): Promise<Member | null> {
+  const id = parseId(idInPath);
+  if (id === null) return null;
+  const { rows } = await pool.query<Member>(
+    'SELECT id, username, is_disabled FROM users WHERE id = $1 AND NOT is_admin',
+    [id],
+  );
+  return rows[0] ?? null;
 }
 
 // §4.6: the only addresses sign-in sends a person back to — a local path. "/" first; then not
@@ -832,6 +917,46 @@ export function createCoreApp(
       ip: c.req.header('X-Real-IP') ?? '-',
     });
     return c.redirect(`/admin/users?created=${userId}`, 303);
+  });
+
+  // The card of a person. `done` is a flag from a fixed list; anything else is ignored (§4.1).
+  core.get('/admin/users/:id', async (c) => {
+    const member = await findMember(pool, c.req.param('id'));
+    if (member === null) return c.notFound();
+    return c.html(memberPage(c.get('user'), member, { done: c.req.query('done') === 'password' }));
+  });
+
+  // The reset of a person's password by the administrator (§4.2, §4.3, §4.8): the person first,
+  // then the form, then Argon2, and only then the transaction, which ends every session of the
+  // person. No password is ever written back into the page.
+  core.post('/admin/users/:id/password', async (c) => {
+    const administrator = c.get('user');
+    const member = await findMember(pool, c.req.param('id'));
+    if (member === null) return c.notFound();
+
+    const form = await c.req.parseBody();
+    const password = typeof form.password === 'string' ? form.password : '';
+    const passwordError = newPasswordError(password);
+    if (passwordError !== null) {
+      return c.html(
+        memberPage(administrator, member, { done: false, error: `${passwordError}.` }),
+        400,
+      );
+    }
+
+    // Argon2 runs before the transaction, so the row lock is held only for the two writes.
+    // The person found above is still there and still not the administrator when the reset
+    // writes: users are never deleted, and is_admin never changes.
+    await resetPassword(pool, member.id, await hashPassword(password));
+
+    log('info', 'password_reset', {
+      user_id: member.id,
+      username: member.username,
+      by: 'admin',
+      admin_id: administrator.id,
+      ip: c.req.header('X-Real-IP') ?? '-',
+    });
+    return c.redirect(`/admin/users/${member.id}?done=password`, 303);
   });
 
   return core;
