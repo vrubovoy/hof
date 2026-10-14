@@ -713,6 +713,92 @@ describe('Säckel in the court', () => {
     assert.deepEqual(rows, [{ is_archived: false }, { is_archived: true }]);
   });
 
+  test('the administrator lays out into no pouch of anybody else and sees no income of anybody else', async () => {
+    const owner = await person('owner', { admin: true });
+    const anna = await person('anna');
+    const hers = Number((await makePouch('Анины деньги', anna.cookie)).split('/').at(-1));
+    const written = await post(
+      '/saeckel/income',
+      { amount: '7 777,77', date: '', note: 'зарплата Анны' },
+      anna.cookie,
+    );
+    assert.equal(written.status, 303);
+    const assignPath = written.headers.get('location')!;
+    // His laying out into her pouch: the same refusal as for a pouch that does not exist.
+    const res = await post('/saeckel/assign', { [`amount_${hers}`]: '1' }, owner.cookie);
+    assert.equal(res.status, 400);
+    const page = await res.text();
+    assert.ok(page.includes('<p id="refusal">Мешок не найден.</p>'));
+    assert.ok(!page.includes('Анины деньги'));
+    // Her income in his address names nothing.
+    const his = await get(assignPath, owner.cookie);
+    assert.equal(his.status, 200);
+    const hisPage = (await his.text()).replace(/\s+/g, ' ');
+    assert.ok(!hisPage.includes('лёг в казну'));
+    assert.ok(!hisPage.includes('7 777'));
+    assert.ok(hisPage.includes('В казне: 0,00 ₽.'));
+    const { rows } = await saeckelPool.query("SELECT 1 FROM operations WHERE kind = 'assign'");
+    assert.equal(rows.length, 0);
+  });
+
+  test('an unexpected error in an income or a laying out: the common 500, no amount, note or name in the log', async (t) => {
+    const lines = captureLog(t);
+    const { token, cookie } = await person('anna');
+    const pouch = Number((await makePouch('Тайный мешок', cookie)).split('/').at(-1));
+    await saeckelPool.query(
+      "CREATE FUNCTION refuse_for_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused for the test'; END $$",
+    );
+    await saeckelPool.query(
+      'CREATE TRIGGER operations_no_insert BEFORE INSERT ON operations FOR EACH ROW EXECUTE FUNCTION refuse_for_test()',
+    );
+    try {
+      for (const [path, fields] of [
+        ['/saeckel/income', { amount: '7 777,77', date: '05.10.2026', note: 'тайная заметка' }],
+        ['/saeckel/assign', { [`amount_${pouch}`]: '7 777,77' }],
+      ] as const) {
+        const res = await post(path, fields, cookie);
+        assert.equal(res.status, 500, path);
+        const page = await res.text();
+        assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'), path);
+        assert.ok(!page.includes('тайная') && !page.includes('Тайный'), path);
+      }
+    } finally {
+      await saeckelPool.query('DROP TRIGGER IF EXISTS operations_no_insert ON operations');
+      await saeckelPool.query('DROP FUNCTION IF EXISTS refuse_for_test()');
+    }
+    const errors = lines.filter((line) => line.startsWith('error '));
+    assert.equal(errors.length, 2);
+    assert.match(
+      errors[0]!,
+      /^error unexpected_error method=POST path=\/saeckel\/income error="refused for the test" /,
+    );
+    assert.match(
+      errors[1]!,
+      /^error unexpected_error method=POST path=\/saeckel\/assign error="refused for the test" /,
+    );
+    for (const error of errors) {
+      for (const secret of [
+        '7 777',
+        '7777',
+        '777777',
+        'тайная',
+        encodeURIComponent('тайная'),
+        'Тайный',
+        encodeURIComponent('Тайный'),
+        '05.10.2026',
+        '2026-10-05',
+        token,
+        'amount=',
+        'amount_',
+        'note=',
+      ]) {
+        assert.ok(!error.includes(secret), secret);
+      }
+    }
+    const { rows } = await saeckelPool.query('SELECT 1 FROM operations');
+    assert.equal(rows.length, 0);
+  });
+
   test('the currency of the records: another one than CURRENCY is found', async () => {
     assert.equal(await otherRecordedCurrency(saeckelPool, 'RUB'), null);
     const { cookie } = await person('anna');

@@ -7,86 +7,38 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, test, type TestContext } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { Pool } from 'pg';
 import { migrate } from '../migrate.ts';
-import { createSaeckelApp, type CurrentUser, type SaeckelUser } from './app.ts';
+import { createSaeckelApp } from './app.ts';
 import { dateForField, today } from './dates.ts';
-
-const password = process.env.HOF_SAECKEL_DB_PASSWORD;
-assert.ok(password, 'HOF_SAECKEL_DB_PASSWORD is not set: create .env from .env.example');
-const pool = new Pool({ database: 'hof_test', user: 'hof_saeckel', password });
+import {
+  activeList,
+  addOperation,
+  addPouch,
+  appWithoutDatabase,
+  assertNothingHeld,
+  deadPool,
+  failingTrigger,
+  fold,
+  get,
+  operations,
+  pool,
+  post,
+  pouchLines,
+  pouches,
+  signedIn,
+  waitingQueries,
+} from './test-helpers.ts';
 
 before(() => migrate(pool, join(import.meta.dirname, 'migrations')));
 beforeEach(() => pool.query('TRUNCATE operations, pouches RESTART IDENTITY'));
-after(() => pool.end());
+after(() => Promise.all([pool.end(), deadPool.end()]));
 
-const FORM = 'application/x-www-form-urlencoded';
 const NAME_ERROR = 'Название — от 1 до 50 символов, одной строкой.';
 const TAKEN = 'Мешок с таким названием уже есть.';
-
-// The people of these tests. Who is signed in is told by a test header; there is no session.
-const PEOPLE: Record<string, SaeckelUser> = {
-  anna: { id: 1, username: 'anna' },
-  boris: { id: 2, username: 'boris' },
-};
-const signedIn: CurrentUser = (request) =>
-  Promise.resolve(PEOPLE[request.headers.get('x-test-user') ?? ''] ?? null);
-
-// The settings main.ts checks at startup.
-const SETTINGS = { currency: 'RUB', timeZone: 'Europe/Moscow' };
-const app = createSaeckelApp(pool, signedIn, SETTINGS);
-
-// Nothing listens on port 1: any query through this pool fails, and the request with it.
-const deadPool = new Pool({ host: '127.0.0.1', port: 1 });
-after(() => deadPool.end());
-const appWithoutDatabase = createSaeckelApp(deadPool, signedIn, SETTINGS);
-
-function get(path: string, who?: string, target = app) {
-  return target.request(path, { headers: who === undefined ? {} : { 'x-test-user': who } });
-}
-
-function post(path: string, fields: Record<string, string>, who?: string, target = app) {
-  return target.request(path, {
-    method: 'POST',
-    headers: { 'content-type': FORM, ...(who === undefined ? {} : { 'x-test-user': who }) },
-    body: new URLSearchParams(fields).toString(),
-  });
-}
-
-async function addPouch(userId: number, name: string, archived = false): Promise<number> {
-  const { rows } = await pool.query<{ id: number }>(
-    'INSERT INTO pouches (user_id, name, is_archived) VALUES ($1, $2, $3) RETURNING id',
-    [userId, name, archived],
-  );
-  return rows[0]!.id;
-}
-
-async function pouches() {
-  const { rows } = await pool.query<{
-    id: number;
-    user_id: number;
-    name: string;
-    icon: string;
-    is_archived: boolean;
-  }>('SELECT id, user_id, name, icon, is_archived FROM pouches ORDER BY id');
-  return rows;
-}
-
-// Мешки without the storeroom: the active pouches only.
-function activeList(page: string): string {
-  return page.split('<details>')[0]!;
-}
 
 // The pouches of the list, as their links, in the order shown. pouchLines gives the whole lines.
 function listItems(page: string): string[] {
   return [...activeList(page).matchAll(/<li>\s*(<a [^>]*>[^<]*<\/a>)/g)].map((m) => m[1]!);
-}
-
-// The lines of the list of pouches, with whitespace folded.
-function pouchLines(page: string): string[] {
-  return [...activeList(page).matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) =>
-    m[1]!.replace(/\s+/g, ' ').trim(),
-  );
 }
 
 // Resolves once a query of hof_test waits for a lock held by another transaction.
@@ -184,8 +136,8 @@ describe('Мешки', () => {
     // The first pouch is made from its name only.
     assert.equal((page.match(/<input/g) ?? []).length, 1);
     assert.ok(!page.includes('+ Новый мешок'));
-    // Nothing of M6 is shown before it works.
-    for (const absent of ['Казна', 'Доход', 'Разложить', 'Переложить', 'Покрыть', 'Летопись']) {
+    // Nothing of M6 is shown before it works; the treasury came with M6.1.
+    for (const absent of ['Переложить', 'Покрыть', 'Летопись']) {
       assert.ok(!page.includes(absent), absent);
     }
   });
@@ -701,42 +653,6 @@ describe('Изменить мешок', () => {
 
 // M5.3: records, balances and expenses.
 
-// A record written straight into the table, as M6 will write the kinds M5 has no form for.
-async function addOperation(
-  userId: number,
-  kind: 'income' | 'assign' | 'expense' | 'transfer',
-  cents: number,
-  pouches: { from?: number; to?: number } = {},
-  date = '2026-10-05',
-  note = '',
-): Promise<number> {
-  const { rows } = await pool.query<{ id: number }>(
-    `INSERT INTO operations (user_id, kind, amount, currency, from_pouch_id, to_pouch_id, date, note)
-     VALUES ($1, $2, $3, 'RUB', $4, $5, $6, $7) RETURNING id`,
-    [userId, kind, cents, pouches.from ?? null, pouches.to ?? null, date, note],
-  );
-  return rows[0]!.id;
-}
-
-async function operations() {
-  const { rows } = await pool.query<{
-    id: number;
-    user_id: number;
-    kind: string;
-    amount: string;
-    currency: string;
-    from_pouch_id: number | null;
-    to_pouch_id: number | null;
-    date: string;
-    note: string;
-  }>(
-    `SELECT id, user_id, kind, amount::text AS amount, currency, from_pouch_id, to_pouch_id,
-            to_char(date, 'YYYY-MM-DD') AS date, note
-       FROM operations ORDER BY id`,
-  );
-  return rows;
-}
-
 function spend(id: number | string, fields: Record<string, string>, who = 'anna') {
   return post(`/saeckel/pouches/${id}/expense`, fields, who);
 }
@@ -747,44 +663,7 @@ function expenseRows(page: string): string[] {
   return [...list.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]!.replace(/\s+/g, ' ').trim());
 }
 
-// Resolves once `count` queries of hof_test wait for locks; returns them.
-async function waitingQueries(count: number): Promise<string[]> {
-  for (let i = 0; i < 200; i++) {
-    const { rows } = await pool.query<{ query: string }>(
-      "SELECT query FROM pg_stat_activity WHERE datname = 'hof_test' AND wait_event_type = 'Lock'",
-    );
-    if (rows.length >= count) return rows.map((row) => row.query);
-    await sleep(10);
-  }
-  assert.fail(`${count} queries never waited for a lock`);
-}
-
-// After a request: every client is back in the pool, no connection was left inside a
-// transaction, and nobody holds the row of the pouch. The pool hands out the client released
-// last first: if that one was left inside a transaction, this check runs in it, and it shows
-// as a transaction older than the check itself.
-async function assertNothingHeld(pouchId: number): Promise<void> {
-  assert.equal(pool.totalCount - pool.idleCount, 0, 'a client was not released');
-  const { rows } = await pool.query<{ open: number }>(
-    `SELECT count(*)::int AS open FROM pg_stat_activity
-      WHERE datname = 'hof_test'
-        AND (state LIKE 'idle in transaction%' OR (pid = pg_backend_pid() AND xact_start < query_start))`,
-  );
-  assert.equal(rows[0]!.open, 0, 'a transaction was left open');
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query('SELECT 1 FROM pouches WHERE id = $1 FOR UPDATE NOWAIT', [pouchId]);
-  } finally {
-    await client.query('ROLLBACK');
-    client.release();
-  }
-}
-
 const ARCHIVED = 'Мешок в Кладовой: траты в нём не записываются.';
-
-// A page with whitespace folded: money on the page is spaced with U+00A0.
-const fold = (page: string) => page.replace(/\s+/g, ' ');
 
 describe('balances on Мешки', () => {
   test('a pouch without records: 0,00 ₽ and no expenses yet', async () => {
@@ -1259,23 +1138,6 @@ const ARCHIVE_LOCK =
 const EXPENSE_LOCK = /^SELECT is_archived FROM pouches WHERE id = \$1 AND user_id = \$2 FOR UPDATE/;
 const RESTORE_UPDATE = /^UPDATE pouches SET is_archived = false WHERE id = \$1 AND user_id = \$2/;
 
-// A trigger that fails, for the time of one test: before every UPDATE of a pouch, or, deferred,
-// at the COMMIT of a transaction that updated one.
-async function failingPouchUpdates(atCommit: boolean): Promise<() => Promise<void>> {
-  await pool.query(
-    "CREATE FUNCTION refuse_for_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused for the test'; END $$",
-  );
-  await pool.query(
-    atCommit
-      ? 'CREATE CONSTRAINT TRIGGER pouches_refuse_for_test AFTER UPDATE ON pouches DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION refuse_for_test()'
-      : 'CREATE TRIGGER pouches_refuse_for_test BEFORE UPDATE ON pouches FOR EACH ROW EXECUTE FUNCTION refuse_for_test()',
-  );
-  return async () => {
-    await pool.query('DROP TRIGGER IF EXISTS pouches_refuse_for_test ON pouches');
-    await pool.query('DROP FUNCTION IF EXISTS refuse_for_test()');
-  };
-}
-
 describe('Кладовая on Мешки', () => {
   test('«Кладовая (N)», folded, in the order the pouches were made, each with «Вернуть»', async () => {
     const active = await addPouch(1, 'Продукты');
@@ -1515,7 +1377,7 @@ describe('В кладовую', () => {
   test('a failure inside the archiving: ROLLBACK, 500, still active, the client back', async (t: TestContext) => {
     t.mock.method(console, 'error', () => undefined);
     const id = await addPouch(1, 'Продукты');
-    const drop = await failingPouchUpdates(false);
+    const drop = await failingTrigger('pouches', 'UPDATE');
     try {
       const res = await archive(id);
       assert.equal(res.status, 500);
@@ -1532,7 +1394,7 @@ describe('В кладовую', () => {
   test('the COMMIT of the archiving fails: 500, no redirect, still active', async (t: TestContext) => {
     t.mock.method(console, 'error', () => undefined);
     const id = await addPouch(1, 'Продукты');
-    const drop = await failingPouchUpdates(true);
+    const drop = await failingTrigger('pouches', 'UPDATE', { atCommit: true });
     try {
       const res = await archive(id);
       assert.equal(res.status, 500);
