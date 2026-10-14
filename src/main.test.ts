@@ -649,6 +649,70 @@ describe('Säckel in the court', () => {
     assert.equal(rows.length, 0);
   });
 
+  test('the administrator cannot put a pouch of anybody else into the storeroom or bring it back', async () => {
+    const owner = await person('owner', { admin: true });
+    const anna = await person('anna');
+    const hers = await makePouch('Анины деньги', anna.cookie);
+    const stored = await makePouch('Анин отпуск', anna.cookie);
+    assert.equal((await post(`${stored}/archive`, {}, anna.cookie)).status, 303);
+    const missing = await (await post('/saeckel/pouches/99/archive', {}, owner.cookie)).text();
+    for (const path of [`${hers}/archive`, `${stored}/restore`]) {
+      const res = await post(path, {}, owner.cookie);
+      assert.equal(res.status, 404, path);
+      const page = await res.text();
+      assert.ok(page.includes('<h1>Такой тропы во дворе нет</h1>'), path);
+      assert.equal(page, missing, path);
+    }
+    const { rows } = await saeckelPool.query('SELECT name, is_archived FROM pouches ORDER BY id');
+    assert.deepEqual(rows, [
+      { name: 'Анины деньги', is_archived: false },
+      { name: 'Анин отпуск', is_archived: true },
+    ]);
+  });
+
+  test('an unexpected error in «В кладовую» or «Вернуть»: the common 500, no name in the log', async (t) => {
+    const lines = captureLog(t);
+    const { token, cookie } = await person('anna');
+    const active = await makePouch('Тайный мешок', cookie);
+    const stored = await makePouch('Тайный отпуск', cookie);
+    assert.equal((await post(`${stored}/archive`, {}, cookie)).status, 303);
+    await saeckelPool.query(
+      "CREATE FUNCTION refuse_for_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused for the test'; END $$",
+    );
+    await saeckelPool.query(
+      'CREATE TRIGGER pouches_no_update BEFORE UPDATE ON pouches FOR EACH ROW EXECUTE FUNCTION refuse_for_test()',
+    );
+    try {
+      for (const path of [`${active}/archive`, `${stored}/restore`]) {
+        const res = await post(path, {}, cookie);
+        assert.equal(res.status, 500, path);
+        const page = await res.text();
+        assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'), path);
+        assert.ok(!page.includes('Тайный'), path);
+      }
+    } finally {
+      await saeckelPool.query('DROP TRIGGER IF EXISTS pouches_no_update ON pouches');
+      await saeckelPool.query('DROP FUNCTION IF EXISTS refuse_for_test()');
+    }
+    const errors = lines.filter((line) => line.startsWith('error '));
+    assert.equal(errors.length, 2);
+    assert.match(
+      errors[0]!,
+      /^error unexpected_error method=POST path=\/saeckel\/pouches\/\d+\/archive error="refused for the test" /,
+    );
+    assert.match(
+      errors[1]!,
+      /^error unexpected_error method=POST path=\/saeckel\/pouches\/\d+\/restore error="refused for the test" /,
+    );
+    for (const error of errors) {
+      for (const secret of ['Тайный', encodeURIComponent('Тайный'), token]) {
+        assert.ok(!error.includes(secret), secret);
+      }
+    }
+    const { rows } = await saeckelPool.query('SELECT is_archived FROM pouches ORDER BY id');
+    assert.deepEqual(rows, [{ is_archived: false }, { is_archived: true }]);
+  });
+
   test('the currency of the records: another one than CURRENCY is found', async () => {
     assert.equal(await otherRecordedCurrency(saeckelPool, 'RUB'), null);
     const { cookie } = await person('anna');

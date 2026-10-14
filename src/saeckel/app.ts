@@ -11,7 +11,7 @@
 import { Hono, type MiddlewareHandler } from 'hono';
 import { html } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
-import { DatabaseError, type Pool } from 'pg';
+import { DatabaseError, type Pool, type PoolClient } from 'pg';
 import { dateForField, dateForList, parseDate, today } from './dates.ts';
 import { centsFrom, moneyFormat, parseAmount, type MoneyFormat } from './money.ts';
 
@@ -44,6 +44,10 @@ const TAKEN_ERROR = 'Мешок с таким названием уже есть
 const ICON_ERROR = 'Выберите знак из списка.';
 const NOTE_ERROR = 'Заметка — до 200 символов, одной строкой.';
 const ARCHIVED_ERROR = 'Мешок в Кладовой: траты в нём не записываются.';
+const notEmptyError = (balance: string) =>
+  `Убрать в кладовую можно только пустой мешок. Сейчас в нём ${balance}.`;
+const restoreTakenError = (name: string) =>
+  `Среди мешков уже есть «${name}». Переименуйте его и верните этот снова.`;
 
 // §4.7: text of a form is one line; PostgreSQL does not take \0 at all.
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/;
@@ -110,6 +114,12 @@ interface ListedPouch {
   lastExpense: number | null;
 }
 
+// A pouch in the storeroom, as Мешки lists it: its balance is zero.
+interface StoredPouch {
+  id: number;
+  name: string;
+}
+
 // An expense as a pouch page lists it; the date is ISO text, the amount in hundredths.
 interface Expense {
   id: number;
@@ -136,7 +146,7 @@ interface PouchView {
   // marked as just written.
   fresh?: string;
   form: ExpenseForm;
-  // A refusal of the whole form rather than of one field.
+  // A refusal of the whole form, or of «Вернуть», rather than of one field.
   refusal?: string;
 }
 
@@ -187,9 +197,34 @@ function pouchNote(pouch: ListedPouch, money: MoneyFormat): string {
   return 'трат пока не было';
 }
 
+// «Кладовая (N)», folded, only when there is something in it: each pouch leads to its page and
+// can be brought back from here.
+function storeroom(stored: readonly StoredPouch[]) {
+  if (stored.length === 0) return '';
+  return html`<details>
+    <summary>Кладовая (${stored.length})</summary>
+    <ul>
+      ${stored.map(
+        (pouch) =>
+          html`<li>
+            <a href="/saeckel/pouches/${pouch.id}">${pouch.name}</a>
+            <form method="post" action="/saeckel/pouches/${pouch.id}/restore">
+              <button type="submit">Вернуть</button>
+            </form>
+          </li>`,
+      )}
+    </ul>
+  </details>`;
+}
+
 // Мешки, texts from design/preview/Saeckel.html and SaeckelEmpty.html. The parts of M6 — the
-// treasury, income, laying out, «Летопись» — come with what they do.
-function pouchesPage(pouches: readonly ListedPouch[], money: MoneyFormat) {
+// treasury, income, laying out, «Летопись» — come with what they do. The empty state is about
+// the active pouches; the storeroom is there either way.
+function pouchesPage(
+  pouches: readonly ListedPouch[],
+  stored: readonly StoredPouch[],
+  money: MoneyFormat,
+) {
   return page(
     'Säckel — мешки',
     html`<nav><a href="/">← Двор</a></nav>
@@ -214,7 +249,8 @@ function pouchesPage(pouches: readonly ListedPouch[], money: MoneyFormat) {
                 )}
               </ul>
               <p><a href="/saeckel/pouches/new">+ Новый мешок</a></p>`
-      }`,
+      }
+      ${storeroom(stored)}`,
   );
 }
 
@@ -277,7 +313,7 @@ function expenseRow(expense: Expense, fresh: string | undefined, money: MoneyFor
 }
 
 // The pouch, its balance, the form of an expense and its last expenses. A pouch in the
-// storeroom has neither «Изменить» nor the form: it is brought back first.
+// storeroom has neither «Изменить» nor the form, only «Вернуть»: it is brought back first.
 function pouchPage(pouch: Pouch, view: PouchView, money: MoneyFormat) {
   return page(
     `Säckel — ${pouch.name}`,
@@ -289,8 +325,14 @@ function pouchPage(pouch: Pouch, view: PouchView, money: MoneyFormat) {
           : html`<p><a href="/saeckel/pouches/${pouch.id}/edit">Изменить</a></p>`
       }
       <p>Остаток ${money.format(view.balance)}</p>
-      ${view.refusal === undefined ? '' : html`<p id="expense-error">${view.refusal}</p>`}
-      ${pouch.is_archived ? '' : expenseForm(pouch, view.form, money)}
+      ${view.refusal === undefined ? '' : html`<p id="refusal">${view.refusal}</p>`}
+      ${
+        pouch.is_archived
+          ? html`<form method="post" action="/saeckel/pouches/${pouch.id}/restore">
+              <button type="submit">Вернуть</button>
+            </form>`
+          : expenseForm(pouch, view.form, money)
+      }
       ${
         view.expenses.length === 0
           ? ''
@@ -301,9 +343,11 @@ function pouchPage(pouch: Pouch, view: PouchView, money: MoneyFormat) {
   );
 }
 
-// «Изменить», texts from design/preview/PouchEditMobile.html: the name and the sign. The
-// heading keeps the stored name; the fields show what was typed and chosen.
-function editPouchPage(pouch: Pouch, form: EditPouchForm) {
+// «Изменить», texts from design/preview/PouchEditMobile.html: the name and the sign, then «В
+// кладовую». The heading keeps the stored name; the fields show what was typed and chosen.
+// Only an empty pouch goes into the storeroom: with any other balance the block says why and
+// its button is off, as in the design; the server checks again under the lock.
+function editPouchPage(pouch: Pouch, form: EditPouchForm, balance: number, money: MoneyFormat) {
   const describedBy = form.error?.field === 'icon' ? html`aria-describedby="icon-error"` : '';
   return page(
     `Säckel — ${pouch.name}`,
@@ -328,6 +372,11 @@ function editPouchPage(pouch: Pouch, form: EditPouchForm) {
         </fieldset>
         ${formError(form.error, 'icon')}
         <button type="submit">Сохранить</button>
+      </form>
+      <h2>В кладовую</h2>
+      ${balance === 0 ? '' : html`<p>${notEmptyError(money.format(balance))}</p>`}
+      <form method="post" action="/saeckel/pouches/${pouch.id}/archive">
+        <button type="submit" ${balance === 0 ? '' : html`disabled`}>В кладовую</button>
       </form>`,
   );
 }
@@ -389,6 +438,19 @@ const POUCHES_WITH_BALANCES = `
    WHERE p.user_id = $1 AND NOT p.is_archived
    ORDER BY p.id`;
 
+// The balance of one pouch of this user by the same rule, as text. One statement of its own:
+// the archiving runs it after it has locked the pouch, so it sees every record committed
+// meanwhile.
+const POUCH_BALANCE = `
+  SELECT coalesce(sum(CASE WHEN to_pouch_id = $1 THEN amount ELSE -amount END), 0)::text AS balance
+    FROM operations
+   WHERE user_id = $2 AND (from_pouch_id = $1 OR to_pouch_id = $1)`;
+
+async function balanceOf(db: Pool | PoolClient, pouchId: number, userId: number): Promise<number> {
+  const { rows } = await db.query<{ balance: string }>(POUCH_BALANCE, [pouchId, userId]);
+  return centsFrom(rows[0]!.balance);
+}
+
 // §5.6: a currency the records of Säckel were written in other than this one, or null. The
 // first record fixes the currency of an installation; main.ts does not start on another one.
 export async function otherRecordedCurrency(pool: Pool, currency: string): Promise<string | null> {
@@ -447,15 +509,9 @@ export function createSaeckelApp(
     return rows[0] ?? null;
   }
 
-  // Мешки: the active pouches of this user, in the order they were made.
   // The balance of one pouch of this user and its last expenses, for its page.
   async function pouchState(pouchId: number, userId: number) {
-    const sum = await pool.query<{ balance: string }>(
-      `SELECT coalesce(sum(CASE WHEN to_pouch_id = $1 THEN amount ELSE -amount END), 0)::text AS balance
-         FROM operations
-        WHERE user_id = $2 AND (from_pouch_id = $1 OR to_pouch_id = $1)`,
-      [pouchId, userId],
-    );
+    const balance = await balanceOf(pool, pouchId, userId);
     const recent = await pool.query<{ id: number; amount: string; date: string; note: string }>(
       `SELECT id, amount::text AS amount, to_char(date, 'YYYY-MM-DD') AS date, note
          FROM operations
@@ -465,7 +521,7 @@ export function createSaeckelApp(
       [userId, pouchId],
     );
     return {
-      balance: centsFrom(sum.rows[0]!.balance),
+      balance,
       expenses: recent.rows.map((row) => ({
         id: row.id,
         cents: centsFrom(row.amount),
@@ -483,21 +539,27 @@ export function createSaeckelApp(
     errors: {},
   });
 
-  // Мешки: the active pouches of this user, in the order they were made, with their balances.
+  // Мешки: the active pouches of this user, in the order they were made, with their balances,
+  // and the storeroom in the same order.
   saeckel.get('/saeckel/', signedIn, async (c) => {
+    const userId = c.get('user').id;
     const { rows } = await pool.query<{
       id: number;
       name: string;
       balance: string;
       last_expense: string | null;
-    }>(POUCHES_WITH_BALANCES, [c.get('user').id]);
+    }>(POUCHES_WITH_BALANCES, [userId]);
     const pouches = rows.map((row) => ({
       id: row.id,
       name: row.name,
       balance: centsFrom(row.balance),
       lastExpense: row.last_expense === null ? null : centsFrom(row.last_expense),
     }));
-    return c.html(pouchesPage(pouches, money));
+    const stored = await pool.query<StoredPouch>(
+      'SELECT id, name FROM pouches WHERE user_id = $1 AND is_archived ORDER BY id',
+      [userId],
+    );
+    return c.html(pouchesPage(pouches, stored.rows, money));
   });
 
   // Registered before /saeckel/pouches/:id, which would match it too.
@@ -552,6 +614,16 @@ export function createSaeckelApp(
     const pouch = await findPouch(c.req.param('id'), userId);
     if (pouch === null) return c.notFound();
 
+    // The pouch is in the storeroom: its page without the form, and why. A form opened before
+    // that is refused whatever was typed in it, as its page has no fields to show errors in.
+    const refuseArchived = async () => {
+      const state = await pouchState(pouch.id, userId);
+      const view = { ...state, form: emptyExpenseForm(), refusal: ARCHIVED_ERROR };
+      return c.html(pouchPage({ ...pouch, is_archived: true }, view, money), 400);
+    };
+    // Already seen by the look-up. The check that counts is the one under the lock below.
+    if (pouch.is_archived) return refuseArchived();
+
     const fields = await c.req.parseBody();
     const text = (name: ExpenseField) => {
       const value = fields[name];
@@ -601,13 +673,8 @@ export function createSaeckelApp(
     }
 
     if (outcome === 'missing') return c.notFound();
-    if (outcome === 'archived') {
-      // The pouch went into the storeroom since the page was opened: no form any more.
-      const archived = { ...pouch, is_archived: true };
-      const state = await pouchState(pouch.id, userId);
-      const view = { ...state, form: emptyExpenseForm(), refusal: ARCHIVED_ERROR };
-      return c.html(pouchPage(archived, view, money), 400);
-    }
+    // The pouch went into the storeroom since it was looked up.
+    if (outcome === 'archived') return refuseArchived();
     return c.redirect(`/saeckel/pouches/${pouch.id}?fresh=${outcome}`, 303);
   });
 
@@ -615,10 +682,12 @@ export function createSaeckelApp(
   // somebody else's: it is brought back first. A stored key the set does not know shows as
   // the default sign.
   saeckel.get('/saeckel/pouches/:id/edit', signedIn, async (c) => {
-    const pouch = await findPouch(c.req.param('id'), c.get('user').id);
+    const userId = c.get('user').id;
+    const pouch = await findPouch(c.req.param('id'), userId);
     if (pouch === null || pouch.is_archived) return c.notFound();
     const icon = parseIcon(pouch.icon) ?? DEFAULT_ICON;
-    return c.html(editPouchPage(pouch, { name: pouch.name, icon }));
+    const balance = await balanceOf(pool, pouch.id, userId);
+    return c.html(editPouchPage(pouch, { name: pouch.name, icon }, balance, money));
   });
 
   // The pouch first, then the form, then one UPDATE. The UPDATE checks the user and the
@@ -631,8 +700,10 @@ export function createSaeckelApp(
     const form = await c.req.parseBody();
     const typed = typeof form.name === 'string' ? form.name : '';
     const icon = parseIcon(form.icon);
-    const refuse = (error: FormError) =>
-      c.html(editPouchPage(pouch, { name: typed, icon, error }), 400);
+    const refuse = async (error: FormError) => {
+      const balance = await balanceOf(pool, pouch.id, userId);
+      return c.html(editPouchPage(pouch, { name: typed, icon, error }, balance, money), 400);
+    };
     const name = parsePouchName(typed);
     if (name === null) return refuse({ field: 'name', text: NAME_ERROR });
     if (icon === null) return refuse({ field: 'icon', text: ICON_ERROR });
@@ -653,6 +724,88 @@ export function createSaeckelApp(
     }
     if (updated === 0) return c.notFound();
     return c.redirect(`/saeckel/pouches/${pouch.id}`, 303);
+  });
+
+  // «В кладовую» (§4.8, §5.4): one transaction that locks the row of the pouch first and only
+  // then counts its balance, in a statement of its own. An expense takes the same lock, so
+  // either it waits and finds the pouch in the storeroom, or the archiving waits and — as a
+  // new statement under READ COMMITTED — sees that expense in the balance. A pouch already in
+  // the storeroom is where it was asked to go.
+  saeckel.post('/saeckel/pouches/:id/archive', signedIn, async (c) => {
+    const userId = c.get('user').id;
+    const id = parseId(c.req.param('id'));
+    if (id === null) return c.notFound();
+
+    // The pouch as locked and its balance, or why there is nothing to refuse.
+    let outcome: 'missing' | 'archived' | { pouch: Pouch; balance: number };
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // The name and the sign are only for the page of a refusal.
+      const locked = await client.query<Pouch>(
+        'SELECT id, name, icon, is_archived FROM pouches WHERE id = $1 AND user_id = $2 FOR UPDATE',
+        [id, userId],
+      );
+      const pouch = locked.rows[0];
+      if (pouch === undefined || pouch.is_archived) {
+        outcome = pouch === undefined ? 'missing' : 'archived';
+        await client.query('ROLLBACK');
+      } else {
+        const balance = await balanceOf(client, id, userId);
+        if (balance !== 0) {
+          outcome = { pouch, balance };
+          await client.query('ROLLBACK');
+        } else {
+          await client.query(
+            'UPDATE pouches SET is_archived = true WHERE id = $1 AND user_id = $2',
+            [id, userId],
+          );
+          await client.query('COMMIT');
+          outcome = 'archived';
+        }
+      }
+    } catch (error) {
+      // The connection may already be broken; the original error matters more.
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    if (outcome === 'missing') return c.notFound();
+    if (outcome === 'archived') return c.redirect('/saeckel/', 303);
+    // Not empty: «Изменить» again, with the balance the lock saw.
+    const { pouch, balance } = outcome;
+    const form = { name: pouch.name, icon: parseIcon(pouch.icon) ?? DEFAULT_ICON };
+    return c.html(editPouchPage(pouch, form, balance, money), 400);
+  });
+
+  // «Вернуть» (§5.4): one UPDATE, no transaction of our own and no look for the name first. A
+  // name another active pouch of this user has is settled by the unique index, the same way
+  // as two pouches of one name at once. A pouch that is already active stays so: 303 again.
+  saeckel.post('/saeckel/pouches/:id/restore', signedIn, async (c) => {
+    const userId = c.get('user').id;
+    const id = parseId(c.req.param('id'));
+    if (id === null) return c.notFound();
+
+    let restored: number;
+    try {
+      const { rowCount } = await pool.query(
+        'UPDATE pouches SET is_archived = false WHERE id = $1 AND user_id = $2 RETURNING name',
+        [id, userId],
+      );
+      restored = rowCount ?? 0;
+    } catch (error) {
+      if (!isNameTaken(error)) throw error;
+      // The page of the pouch, still in the storeroom; its name is the one taken, in any case.
+      const pouch = await findPouch(c.req.param('id'), userId);
+      if (pouch === null) return c.notFound();
+      const state = await pouchState(pouch.id, userId);
+      const view = { ...state, form: emptyExpenseForm(), refusal: restoreTakenError(pouch.name) };
+      return c.html(pouchPage(pouch, view, money), 400);
+    }
+    if (restored === 0) return c.notFound();
+    return c.redirect(`/saeckel/pouches/${id}`, 303);
   });
 
   return saeckel;

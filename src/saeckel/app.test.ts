@@ -72,14 +72,21 @@ async function pouches() {
   return rows;
 }
 
+// Мешки without the storeroom: the active pouches only.
+function activeList(page: string): string {
+  return page.split('<details>')[0]!;
+}
+
 // The pouches of the list, as their links, in the order shown. pouchLines gives the whole lines.
 function listItems(page: string): string[] {
-  return [...page.matchAll(/<li>\s*(<a [^>]*>[^<]*<\/a>)/g)].map((m) => m[1]!);
+  return [...activeList(page).matchAll(/<li>\s*(<a [^>]*>[^<]*<\/a>)/g)].map((m) => m[1]!);
 }
 
 // The lines of the list of pouches, with whitespace folded.
 function pouchLines(page: string): string[] {
-  return [...page.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]!.replace(/\s+/g, ' ').trim());
+  return [...activeList(page).matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) =>
+    m[1]!.replace(/\s+/g, ' ').trim(),
+  );
 }
 
 // Resolves once a query of hof_test waits for a lock held by another transaction.
@@ -111,7 +118,13 @@ describe('who gets in', () => {
       const head = await appWithoutDatabase.request(path, { method: 'HEAD' });
       assert.equal(head.status, 303, path);
     }
-    for (const path of ['/saeckel/pouches/new', '/saeckel/pouches/1/edit']) {
+    for (const path of [
+      '/saeckel/pouches/new',
+      '/saeckel/pouches/1/edit',
+      '/saeckel/pouches/1/archive',
+      '/saeckel/pouches/1/restore',
+      '/saeckel/pouches/abc/archive',
+    ]) {
       const fields = { name: 'Продукты', icon: 'cart' };
       const res = await post(path, fields, undefined, appWithoutDatabase);
       assert.equal(res.status, 303, path);
@@ -139,6 +152,10 @@ describe('who gets in', () => {
     for (const path of ['/saeckel/', '/saeckel/pouches/1']) {
       assert.equal((await post(path, { name: 'x' }, undefined, appWithoutDatabase)).status, 404);
       assert.equal((await post(path, { name: 'x' }, 'anna')).status, 404);
+    }
+    for (const path of ['/saeckel/pouches/1/archive', '/saeckel/pouches/1/restore']) {
+      assert.equal((await get(path, undefined, appWithoutDatabase)).status, 404, path);
+      assert.equal((await get(path, 'anna')).status, 404, path);
     }
     assert.deepEqual(await pouches(), []);
   });
@@ -187,7 +204,8 @@ describe('Мешки', () => {
     assert.ok(page.includes('<a href="/saeckel/pouches/new">+ Новый мешок</a>'));
     assert.ok(!page.includes('Мешков пока нет'));
     assert.ok(!page.includes('Мешок Бориса'));
-    assert.ok(!page.includes('Старый'));
+    // The one in the storeroom is not in the list: it is in «Кладовая».
+    assert.ok(!activeList(page).includes('Старый'));
     // Boris sees his own pouch and nothing of anna's.
     const his = await (await get('/saeckel/', 'boris')).text();
     assert.deepEqual(listItems(his), ['<a href="/saeckel/pouches/2">Мешок Бориса</a>']);
@@ -742,11 +760,15 @@ async function waitingQueries(count: number): Promise<string[]> {
 }
 
 // After a request: every client is back in the pool, no connection was left inside a
-// transaction, and nobody holds the row of the pouch.
+// transaction, and nobody holds the row of the pouch. The pool hands out the client released
+// last first: if that one was left inside a transaction, this check runs in it, and it shows
+// as a transaction older than the check itself.
 async function assertNothingHeld(pouchId: number): Promise<void> {
   assert.equal(pool.totalCount - pool.idleCount, 0, 'a client was not released');
   const { rows } = await pool.query<{ open: number }>(
-    "SELECT count(*)::int AS open FROM pg_stat_activity WHERE datname = 'hof_test' AND state LIKE 'idle in transaction%'",
+    `SELECT count(*)::int AS open FROM pg_stat_activity
+      WHERE datname = 'hof_test'
+        AND (state LIKE 'idle in transaction%' OR (pid = pg_backend_pid() AND xact_start < query_start))`,
   );
   assert.equal(rows[0]!.open, 0, 'a transaction was left open');
   const client = await pool.connect();
@@ -939,7 +961,8 @@ describe('the page of a pouch: balance, form, expenses', () => {
     await addOperation(1, 'expense', 100, { from: id });
     const page = await (await get(`/saeckel/pouches/${id}`, 'anna')).text();
     assert.ok(fold(page).includes('<p>Остаток −1,00 ₽</p>'));
-    assert.ok(!page.includes('<form'));
+    assert.ok(!page.includes('Записать трату'));
+    assert.ok(!page.includes('/expense"'));
     assert.deepEqual(expenseRows(page), ['05.10 · −1,00 ₽']);
   });
 });
@@ -1100,8 +1123,8 @@ describe('Записать трату', () => {
     const res = await spend(id, { amount: '1', date: '', note: '' });
     assert.equal(res.status, 400);
     const page = await res.text();
-    assert.ok(page.includes(`<p id="expense-error">${ARCHIVED}</p>`));
-    assert.ok(!page.includes('<form'));
+    assert.ok(page.includes(`<p id="refusal">${ARCHIVED}</p>`));
+    assert.ok(!page.includes('/expense"'));
     assert.deepEqual(await operations(), []);
     await assertNothingHeld(id);
   });
@@ -1208,5 +1231,502 @@ describe('Записать трату', () => {
       await pool.query('DROP FUNCTION IF EXISTS refuse_for_test()');
     }
     assert.deepEqual(await operations(), []);
+  });
+});
+
+// M5.4: the storeroom.
+
+function archive(id: number | string, who = 'anna') {
+  return post(`/saeckel/pouches/${id}/archive`, {}, who);
+}
+
+function restore(id: number | string, who = 'anna') {
+  return post(`/saeckel/pouches/${id}/restore`, {}, who);
+}
+
+async function isArchived(id: number): Promise<boolean> {
+  return (await pouch(id))!.is_archived;
+}
+
+const notEmpty = (balance: string) =>
+  `Убрать в кладовую можно только пустой мешок. Сейчас в нём ${balance}.`;
+const restoreTaken = (name: string) =>
+  `Среди мешков уже есть «${name}». Переименуйте его и верните этот снова.`;
+
+// The statements that take the row of a pouch: archiving, an expense, bringing back.
+const ARCHIVE_LOCK =
+  /^SELECT id, name, icon, is_archived FROM pouches WHERE id = \$1 AND user_id = \$2 FOR UPDATE/;
+const EXPENSE_LOCK = /^SELECT is_archived FROM pouches WHERE id = \$1 AND user_id = \$2 FOR UPDATE/;
+const RESTORE_UPDATE = /^UPDATE pouches SET is_archived = false WHERE id = \$1 AND user_id = \$2/;
+
+// A trigger that fails, for the time of one test: before every UPDATE of a pouch, or, deferred,
+// at the COMMIT of a transaction that updated one.
+async function failingPouchUpdates(atCommit: boolean): Promise<() => Promise<void>> {
+  await pool.query(
+    "CREATE FUNCTION refuse_for_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused for the test'; END $$",
+  );
+  await pool.query(
+    atCommit
+      ? 'CREATE CONSTRAINT TRIGGER pouches_refuse_for_test AFTER UPDATE ON pouches DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION refuse_for_test()'
+      : 'CREATE TRIGGER pouches_refuse_for_test BEFORE UPDATE ON pouches FOR EACH ROW EXECUTE FUNCTION refuse_for_test()',
+  );
+  return async () => {
+    await pool.query('DROP TRIGGER IF EXISTS pouches_refuse_for_test ON pouches');
+    await pool.query('DROP FUNCTION IF EXISTS refuse_for_test()');
+  };
+}
+
+describe('Кладовая on Мешки', () => {
+  test('«Кладовая (N)», folded, in the order the pouches were made, each with «Вернуть»', async () => {
+    const active = await addPouch(1, 'Продукты');
+    const apples = await addPouch(1, 'Яблоки', true);
+    await addPouch(2, 'Старый Бориса', true);
+    const oranges = await addPouch(1, 'Апельсины', true);
+    const page = fold(await (await get('/saeckel/', 'anna')).text());
+    assert.deepEqual(listItems(page), [`<a href="/saeckel/pouches/${active}">Продукты</a>`]);
+    const storeroom = page.split('<details>')[1]!;
+    assert.ok(storeroom.startsWith(' <summary>Кладовая (2)</summary>'));
+    assert.deepEqual(
+      [...storeroom.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]!.trim()),
+      [apples, oranges].map(
+        (id) =>
+          `<a href="/saeckel/pouches/${id}">${id === apples ? 'Яблоки' : 'Апельсины'}</a> <form method="post" action="/saeckel/pouches/${id}/restore"> <button type="submit">Вернуть</button> </form>`,
+      ),
+    );
+    assert.ok(!page.includes('Старый Бориса'));
+    // Boris has his own storeroom, of one.
+    const his = fold(await (await get('/saeckel/', 'boris')).text());
+    assert.ok(his.includes('<summary>Кладовая (1)</summary>'));
+    assert.ok(!his.includes('Яблоки'));
+  });
+
+  test('nothing in the storeroom: no «Кладовая»', async () => {
+    await addPouch(1, 'Продукты');
+    await addPouch(2, 'Старый Бориса', true);
+    const page = await (await get('/saeckel/', 'anna')).text();
+    assert.ok(!page.includes('<details>'));
+    assert.ok(!page.includes('Кладовая'));
+  });
+
+  test('no active pouch: the empty state, and the storeroom beside it', async () => {
+    const id = await addPouch(1, 'Отпуск', true);
+    const page = fold(await (await get('/saeckel/', 'anna')).text());
+    assert.ok(page.includes('<h2>Мешков пока нет</h2>'));
+    assert.ok(page.includes('<form method="post" action="/saeckel/pouches/new">'));
+    assert.ok(page.includes('<summary>Кладовая (1)</summary>'));
+    assert.ok(page.includes(`<form method="post" action="/saeckel/pouches/${id}/restore">`));
+  });
+
+  test('a name is escaped in the storeroom', async () => {
+    await addPouch(1, '<b>Пир</b> & Co', true);
+    const page = await (await get('/saeckel/', 'anna')).text();
+    assert.ok(page.includes('&lt;b&gt;Пир&lt;/b&gt; &amp; Co'));
+    assert.ok(!page.includes('<b>'));
+  });
+});
+
+describe('В кладовую', () => {
+  test('«Изменить» of an empty pouch: the block «В кладовую», its button on', async () => {
+    const id = await addPouch(1, 'Продукты');
+    const page = fold(await (await get(`/saeckel/pouches/${id}/edit`, 'anna')).text());
+    assert.ok(page.includes('<h2>В кладовую</h2>'));
+    assert.ok(page.includes(`<form method="post" action="/saeckel/pouches/${id}/archive">`));
+    assert.match(page, /<button type="submit" ?>В кладовую<\/button>/);
+    assert.ok(!page.includes('Убрать в кладовую'));
+  });
+
+  test('«Изменить» of a pouch that is not empty: why, with the balance, and the button off', async () => {
+    const id = await addPouch(1, 'Продукты');
+    await addOperation(1, 'expense', 124050, { from: id });
+    const page = fold(await (await get(`/saeckel/pouches/${id}/edit`, 'anna')).text());
+    assert.ok(page.includes(`<p>${notEmpty('−1 240,50 ₽')}</p>`));
+    assert.match(page, /<button type="submit" disabled>В кладовую<\/button>/);
+    // A refused rename shows the block the same way.
+    const refused = fold(await (await edit(id, { name: '', icon: 'pouch' })).text());
+    assert.ok(refused.includes(`<p>${notEmpty('−1 240,50 ₽')}</p>`));
+    // Money left over is no more empty than a debt.
+    await addOperation(1, 'assign', 124550, { to: id });
+    const over = fold(await (await get(`/saeckel/pouches/${id}/edit`, 'anna')).text());
+    assert.ok(over.includes(`<p>${notEmpty('5,00 ₽')}</p>`));
+  });
+
+  test('an empty pouch: 303 to Мешки, then only in the storeroom', async () => {
+    const id = await addPouch(1, 'Продукты');
+    const res = await archive(id);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/saeckel/');
+    assert.equal(await isArchived(id), true);
+    const page = fold(await (await get('/saeckel/', 'anna')).text());
+    assert.deepEqual(listItems(page), []);
+    assert.ok(page.includes('<h2>Мешков пока нет</h2>'));
+    assert.ok(page.includes('<summary>Кладовая (1)</summary>'));
+    // Its page: the balance and «Вернуть», neither the form of an expense nor «Изменить».
+    const own = fold(await (await get(`/saeckel/pouches/${id}`, 'anna')).text());
+    assert.ok(own.includes('<h1>Продукты</h1>'));
+    assert.ok(own.includes('<p>Остаток 0,00 ₽</p>'));
+    assert.ok(own.includes(`<form method="post" action="/saeckel/pouches/${id}/restore">`));
+    assert.ok(own.includes('<button type="submit">Вернуть</button>'));
+    assert.ok(!own.includes('Записать трату'));
+    assert.ok(!own.includes('Изменить'));
+    assert.equal((await get(`/saeckel/pouches/${id}/edit`, 'anna')).status, 404);
+    await assertNothingHeld(id);
+  });
+
+  test('a pouch whose records come to zero is empty: it goes, its history with it', async () => {
+    const id = await addPouch(1, 'Продукты');
+    await addOperation(1, 'assign', 10000, { to: id });
+    await addOperation(1, 'expense', 9950, { from: id }, '2026-10-06', 'рынок');
+    await addOperation(1, 'expense', 50, { from: id }, '2026-10-07');
+    assert.equal((await archive(id)).status, 303);
+    assert.equal(await isArchived(id), true);
+    const page = await (await get(`/saeckel/pouches/${id}`, 'anna')).text();
+    assert.deepEqual(expenseRows(page), ['07.10 · −0,50 ₽', '06.10 · рынок · −99,50 ₽']);
+    assert.equal((await operations()).length, 3);
+  });
+
+  for (const [label, cents, shown] of [
+    ['in debt', -124050, '−1 240,50 ₽'],
+    ['with money in it', 1, '0,01 ₽'],
+  ] as const) {
+    test(`a pouch ${label}: 400 on «Изменить» with the balance, nothing changes`, async () => {
+      const id = await addPouch(1, 'Продукты');
+      await pool.query("UPDATE pouches SET icon = 'cart' WHERE id = $1", [id]);
+      await addOperation(1, cents < 0 ? 'expense' : 'assign', Math.abs(cents), {
+        [cents < 0 ? 'from' : 'to']: id,
+      });
+      const res = await archive(id);
+      assert.equal(res.status, 400);
+      const page = fold(await res.text());
+      for (const text of [
+        '<h1>Мешок «Продукты»</h1>',
+        `<form method="post" action="/saeckel/pouches/${id}/edit">`,
+        'value="Продукты"',
+        `<p>${notEmpty(shown)}</p>`,
+      ]) {
+        assert.ok(page.includes(text), text);
+      }
+      assert.deepEqual(signs(page).checked, ['cart']);
+      assert.equal(await isArchived(id), false);
+      assert.equal((await operations()).length, 1);
+      await assertNothingHeld(id);
+    });
+  }
+
+  test('a pouch already in the storeroom: 303 again, nothing changes', async () => {
+    const id = await addPouch(1, 'Отпуск', true);
+    const res = await archive(id);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/saeckel/');
+    assert.equal(await isArchived(id), true);
+    await assertNothingHeld(id);
+  });
+
+  test('somebody else’s, a missing or a wrong id: the same 404 here and in «Вернуть»', async () => {
+    const his = await addPouch(2, 'Мешок Бориса');
+    const hisStored = await addPouch(2, 'Старый Бориса', true);
+    const missing = await (await archive(99)).text();
+    for (const id of [String(his), String(hisStored), '99', '0', '01', '-1', 'abc', '2147483648']) {
+      for (const res of [await archive(id), await restore(id)]) {
+        assert.equal(res.status, 404, id);
+        assert.equal(await res.text(), missing, id);
+      }
+    }
+    // A user_id in the form is no way into his pouches either.
+    for (const path of [
+      `/saeckel/pouches/${his}/archive`,
+      `/saeckel/pouches/${hisStored}/restore`,
+    ]) {
+      assert.equal((await post(path, { user_id: '2' }, 'anna')).status, 404, path);
+    }
+    assert.deepEqual(
+      (await pouches()).map((row) => [row.user_id, row.is_archived]),
+      [
+        [2, false],
+        [2, true],
+      ],
+    );
+  });
+
+  test('the INSERT of an expense waits; the archiving waits behind it, then counts it: 400', async () => {
+    const id = await addPouch(1, 'Продукты');
+    // An expense as its route writes it: the row of the pouch locked, the record inserted, no
+    // COMMIT yet.
+    const expense = await pool.connect();
+    let res: Response;
+    try {
+      await expense.query('BEGIN');
+      await expense.query(
+        'SELECT is_archived FROM pouches WHERE id = $1 AND user_id = 1 FOR UPDATE',
+        [id],
+      );
+      await expense.query(
+        "INSERT INTO operations (user_id, kind, amount, currency, from_pouch_id, date) VALUES (1, 'expense', 100, 'RUB', $1, '2026-10-05')",
+        [id],
+      );
+      const pending = archive(id);
+      const [query] = await waitingQueries(1);
+      assert.match(query!, ARCHIVE_LOCK);
+      await expense.query('COMMIT');
+      res = await pending;
+    } finally {
+      expense.release();
+    }
+    // The balance is a statement of its own, after the lock: it sees the committed expense.
+    assert.equal(res.status, 400);
+    assert.ok(fold(await res.text()).includes(notEmpty('−1,00 ₽')));
+    assert.equal(await isArchived(id), false);
+    assert.equal((await operations()).length, 1);
+    await assertNothingHeld(id);
+  });
+
+  test('the archiving first: the expense waits behind it, then finds the storeroom, 400', async () => {
+    const id = await addPouch(1, 'Продукты');
+    // The rival holds the row so that both requests queue on it, the archiving first.
+    const rival = await pool.connect();
+    let archived: Response;
+    let spent: Response;
+    try {
+      await rival.query('BEGIN');
+      await rival.query('SELECT 1 FROM pouches WHERE id = $1 FOR UPDATE', [id]);
+      const archiving = archive(id);
+      assert.match((await waitingQueries(1))[0]!, ARCHIVE_LOCK);
+      const spending = spend(id, { amount: '1', date: '', note: 'после' });
+      const waiting = await waitingQueries(2);
+      assert.ok(
+        waiting.some((query) => EXPENSE_LOCK.test(query)),
+        waiting.join('\n'),
+      );
+      await rival.query('COMMIT');
+      archived = await archiving;
+      spent = await spending;
+    } finally {
+      rival.release();
+    }
+    assert.equal(archived.status, 303);
+    assert.equal(spent.status, 400);
+    const page = await spent.text();
+    assert.ok(page.includes(`<p id="refusal">${ARCHIVED}</p>`));
+    assert.ok(!page.includes('/expense"'));
+    assert.deepEqual(await operations(), []);
+    assert.equal(await isArchived(id), true);
+    await assertNothingHeld(id);
+  });
+
+  test('a failure inside the archiving: ROLLBACK, 500, still active, the client back', async (t: TestContext) => {
+    t.mock.method(console, 'error', () => undefined);
+    const id = await addPouch(1, 'Продукты');
+    const drop = await failingPouchUpdates(false);
+    try {
+      const res = await archive(id);
+      assert.equal(res.status, 500);
+      assert.equal(res.headers.get('location'), null);
+      await assertNothingHeld(id);
+    } finally {
+      await drop();
+    }
+    assert.equal(await isArchived(id), false);
+    // It goes once the database lets it.
+    assert.equal((await archive(id)).status, 303);
+  });
+
+  test('the COMMIT of the archiving fails: 500, no redirect, still active', async (t: TestContext) => {
+    t.mock.method(console, 'error', () => undefined);
+    const id = await addPouch(1, 'Продукты');
+    const drop = await failingPouchUpdates(true);
+    try {
+      const res = await archive(id);
+      assert.equal(res.status, 500);
+      assert.equal(res.headers.get('location'), null);
+      await assertNothingHeld(id);
+    } finally {
+      await drop();
+    }
+    assert.equal(await isArchived(id), false);
+  });
+});
+
+describe('Вернуть', () => {
+  test('303 to the pouch, active again: name, sign, history and balance as they were', async () => {
+    const id = await addPouch(1, 'Отпуск');
+    await pool.query("UPDATE pouches SET icon = 'lute' WHERE id = $1", [id]);
+    await addOperation(1, 'assign', 500, { to: id });
+    await addOperation(1, 'expense', 500, { from: id }, '2026-10-06', 'билеты');
+    assert.equal((await archive(id)).status, 303);
+    const res = await restore(id);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), `/saeckel/pouches/${id}`);
+    assert.deepEqual(await pouch(id), {
+      id,
+      user_id: 1,
+      name: 'Отпуск',
+      icon: 'lute',
+      is_archived: false,
+    });
+    assert.equal((await operations()).length, 2);
+    const list = await (await get('/saeckel/', 'anna')).text();
+    assert.deepEqual(listItems(list), [`<a href="/saeckel/pouches/${id}">Отпуск</a>`]);
+    assert.ok(!list.includes('<details>'));
+    const page = fold(await (await get(`/saeckel/pouches/${id}`, 'anna')).text());
+    assert.ok(page.includes('<p>Остаток 0,00 ₽</p>'));
+    assert.ok(page.includes('Записать трату'));
+    assert.deepEqual(expenseRows(page), ['06.10 · билеты · −5,00 ₽']);
+  });
+
+  test('a pouch that is already active: 303 again, nothing changes', async () => {
+    const id = await addPouch(1, 'Отпуск');
+    const res = await restore(id);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), `/saeckel/pouches/${id}`);
+    assert.equal(await isArchived(id), false);
+  });
+
+  test('the name is taken by an active pouch, in any case: 400 on its page, escaped, still stored', async () => {
+    const stored = await addPouch(1, 'Отпуск & <Ко>', true);
+    await addOperation(1, 'expense', 100, { from: stored });
+    const active = await addPouch(1, 'ОТПУСК & <КО>');
+    const res = await restore(stored);
+    assert.equal(res.status, 400);
+    const page = fold(await res.text());
+    assert.ok(
+      page.includes(`<p id="refusal">${restoreTaken('Отпуск &amp; &lt;Ко&gt;')}</p>`),
+      page,
+    );
+    assert.ok(!page.includes('<Ко>'));
+    // The page of the pouch in the storeroom: its balance, its expenses, «Вернуть» again.
+    assert.ok(page.includes('<p>Остаток −1,00 ₽</p>'));
+    assert.ok(page.includes(`<form method="post" action="/saeckel/pouches/${stored}/restore">`));
+    assert.ok(!page.includes('Записать трату'));
+    assert.deepEqual(expenseRows(page), ['05.10 · −1,00 ₽']);
+    assert.equal(await isArchived(stored), true);
+    // Once the other one is renamed, it comes back.
+    assert.equal((await edit(active, { name: 'Отпуск-2027', icon: 'pouch' })).status, 303);
+    assert.equal((await restore(stored)).status, 303);
+    assert.equal(await isArchived(stored), false);
+  });
+
+  test('the name of a pouch in the storeroom, or of another user, is not taken', async () => {
+    const first = await addPouch(1, 'Отпуск', true);
+    const second = await addPouch(1, 'отпуск', true);
+    await addPouch(2, 'Отпуск');
+    assert.equal((await restore(first)).status, 303);
+    // Now it is taken.
+    assert.equal((await restore(second)).status, 400);
+    assert.equal(await isArchived(second), true);
+  });
+
+  test('any other refusal of the database is not «taken»: the error goes on', async (t: TestContext) => {
+    t.mock.method(console, 'error', () => undefined);
+    const id = await addPouch(1, 'Отпуск', true);
+    await addPouch(1, 'Продукты');
+    // Another unique index: also 23505, but not pouches_active_name.
+    await pool.query(
+      'CREATE UNIQUE INDEX pouches_one_icon ON pouches (icon) WHERE NOT is_archived',
+    );
+    try {
+      const res = await restore(id);
+      assert.equal(res.status, 500);
+      assert.ok(!(await res.text()).includes('Среди мешков'));
+    } finally {
+      await pool.query('DROP INDEX IF EXISTS pouches_one_icon');
+    }
+    assert.equal(await isArchived(id), true);
+    await assertNothingHeld(id);
+  });
+
+  test('bringing back while a pouch of that name is made: the UPDATE waits, then «taken»', async () => {
+    const id = await addPouch(1, 'Отпуск', true);
+    const rival = await pool.connect();
+    let res: Response;
+    try {
+      await rival.query('BEGIN');
+      await rival.query("INSERT INTO pouches (user_id, name) VALUES (1, 'отпуск')");
+      const pending = restore(id);
+      // It is the UPDATE that waits: on the unique index, for the rival's transaction.
+      assert.match((await waitingQueries(1))[0]!, RESTORE_UPDATE);
+      await rival.query('COMMIT');
+      res = await pending;
+    } finally {
+      rival.release();
+    }
+    assert.equal(res.status, 400);
+    assert.ok((await res.text()).includes(restoreTaken('Отпуск')));
+    assert.equal(await isArchived(id), true);
+  });
+
+  // Both change the one row: they queue on it, and the pouch ends as the last one left it.
+  for (const [label, startsArchived, order] of [
+    ['the archiving, then «Вернуть»: active', false, ['archive', 'restore']],
+    ['«Вернуть», then the archiving: in the storeroom', true, ['restore', 'archive']],
+  ] as const) {
+    test(`at once, ${label}`, async () => {
+      const id = await addPouch(1, 'Отпуск', startsArchived);
+      const rival = await pool.connect();
+      const answers: Response[] = [];
+      try {
+        await rival.query('BEGIN');
+        await rival.query('SELECT 1 FROM pouches WHERE id = $1 FOR UPDATE', [id]);
+        const pending: Promise<Response>[] = [];
+        for (const [i, action] of order.entries()) {
+          pending.push(Promise.resolve(action === 'archive' ? archive(id) : restore(id)));
+          const waiting = await waitingQueries(i + 1);
+          const statement = action === 'archive' ? ARCHIVE_LOCK : RESTORE_UPDATE;
+          assert.ok(
+            waiting.some((query) => statement.test(query)),
+            waiting.join('\n'),
+          );
+        }
+        await rival.query('COMMIT');
+        answers.push(...(await Promise.all(pending)));
+      } finally {
+        rival.release();
+      }
+      for (const [i, action] of order.entries()) {
+        assert.equal(answers[i]!.status, 303, action);
+        assert.equal(
+          answers[i]!.headers.get('location'),
+          action === 'archive' ? '/saeckel/' : `/saeckel/pouches/${id}`,
+        );
+      }
+      assert.equal(await isArchived(id), order.at(-1) === 'archive');
+      await assertNothingHeld(id);
+    });
+  }
+});
+
+describe('a form of an expense opened before the storeroom', () => {
+  test('wrong fields in a pouch now in the storeroom: the refusal of the storeroom, nothing written', async () => {
+    const id = await addPouch(1, 'Продукты');
+    await addOperation(1, 'expense', 100, { from: id });
+    await pool.query('UPDATE pouches SET is_archived = true WHERE id = $1', [id]);
+    for (const fields of [
+      { amount: '1,2,3', date: '05.10.2026', note: 'тайная заметка' },
+      { amount: '10', date: '31.02.2026', note: '' },
+      { amount: '0', date: 'вчера', note: 'a\u0000b' },
+    ]) {
+      const res = await spend(id, fields);
+      assert.equal(res.status, 400);
+      const page = fold(await res.text());
+      assert.ok(page.includes(`<p id="refusal">${ARCHIVED}</p>`), fields.amount);
+      // Its page as a pouch in the storeroom: the balance, the expenses, «Вернуть».
+      assert.ok(page.includes('<p>Остаток −1,00 ₽</p>'));
+      assert.deepEqual(expenseRows(page), ['05.10 · −1,00 ₽']);
+      assert.ok(page.includes(`<form method="post" action="/saeckel/pouches/${id}/restore">`));
+      // No form, so no fields, no errors of fields and nothing of what was typed.
+      assert.ok(!page.includes('/expense"'));
+      assert.ok(!page.includes('<input'));
+      assert.ok(!page.includes('-error"'));
+      assert.ok(!page.includes('1,2,3'));
+      assert.ok(!page.includes('тайная'));
+    }
+    assert.equal((await operations()).length, 1);
+    await assertNothingHeld(id);
+  });
+
+  test('an active pouch keeps the errors under its fields', async () => {
+    const id = await addPouch(1, 'Продукты');
+    const page = await (await spend(id, { amount: '1,2,3', date: '', note: '' })).text();
+    assert.ok(page.includes('<p id="amount-error">'));
+    assert.ok(page.includes('value="1,2,3"'));
+    assert.ok(!page.includes('id="refusal"'));
   });
 });
