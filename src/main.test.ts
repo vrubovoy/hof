@@ -11,6 +11,7 @@ import type { FirstRun } from './core/gate-key.ts';
 import { hashSessionToken, newSessionToken } from './core/sessions.ts';
 import { applicationUser, createApp } from './main.ts';
 import { migrate } from './migrate.ts';
+import { otherRecordedCurrency } from './saeckel/app.ts';
 
 const HOST = 'hof.example';
 const FORM = 'application/x-www-form-urlencoded';
@@ -28,9 +29,11 @@ const founded: FirstRun = {
   markFounded: () => undefined,
 };
 const unusedPool = new Pool();
+// The settings of the installation Säckel gets; checked by start(), not by createApp.
+const SETTINGS = { currency: 'RUB', timeZone: 'Europe/Moscow' };
 
 function request(method: string, headers: Record<string, string>, body?: string) {
-  return createApp(unusedPool, unusedPool, founded, 'unused').request('/anything', {
+  return createApp(unusedPool, unusedPool, SETTINGS, founded, 'unused').request('/anything', {
     method,
     headers,
     body,
@@ -194,7 +197,7 @@ describe('500 page and the unexpected_error line', () => {
   const secrets = [COOKIE_TOKEN, 'query-secret', 'body-secret'];
 
   function failing(method: string, error: Error) {
-    return createApp(unusedPool, unusedPool, failingGate(error), 'unused').request(
+    return createApp(unusedPool, unusedPool, SETTINGS, failingGate(error), 'unused').request(
       '/x?token=query-secret',
       {
         method,
@@ -293,7 +296,7 @@ describe('500 page and the unexpected_error line', () => {
     // Nothing listens on port 1: the session query of Core fails to connect.
     const deadPool = new Pool({ host: '127.0.0.1', port: 1 });
     after(() => deadPool.end());
-    const res = await createApp(deadPool, unusedPool, founded, 'unused').request('/', {
+    const res = await createApp(deadPool, unusedPool, SETTINGS, founded, 'unused').request('/', {
       headers: { host: HOST, cookie: `__Host-hof=${COOKIE_TOKEN}` },
     });
     assert.equal(res.status, 500);
@@ -329,6 +332,14 @@ describe('startup', () => {
     );
   });
 
+  // Everything start() needs before it reaches the database.
+  const CONFIGURED = {
+    HOF_CORE_DB_PASSWORD: 'x',
+    HOF_SAECKEL_DB_PASSWORD: 'x',
+    CURRENCY: 'RUB',
+    TZ: 'Europe/Moscow',
+  };
+
   test('without HOF_SAECKEL_DB_PASSWORD: exits with 1 and names the variable', () => {
     const result = start({ HOF_CORE_DB_PASSWORD: 'x' });
     assert.equal(result.status, 1);
@@ -338,13 +349,33 @@ describe('startup', () => {
     );
   });
 
-  test('database unavailable: exits with 1 before listening', () => {
-    const result = start({
-      HOF_CORE_DB_PASSWORD: 'x',
-      HOF_SAECKEL_DB_PASSWORD: 'x',
-      PGHOST: '127.0.0.1',
-      PGPORT: '1',
+  const settingsRefused: [string, Record<string, string>, string][] = [
+    ['without CURRENCY', { CURRENCY: '' }, 'CURRENCY is not set (see .env.example)'],
+    ['an unknown CURRENCY', { CURRENCY: 'XXX' }, 'CURRENCY=XXX is not an ISO 4217 currency code'],
+    [
+      'a CURRENCY in lower case',
+      { CURRENCY: 'rub' },
+      'CURRENCY=rub is not an ISO 4217 currency code',
+    ],
+    [
+      'a CURRENCY without two decimals',
+      { CURRENCY: 'JPY' },
+      'CURRENCY=JPY does not have two decimal places',
+    ],
+    ['without TZ', { TZ: '' }, 'TZ is not set (see .env.example)'],
+    ['an unknown TZ', { TZ: 'Mars/Olympus' }, 'TZ=Mars/Olympus is not a time zone'],
+  ];
+  for (const [name, change, error] of settingsRefused) {
+    test(`${name}: exits with 1 before the database and names the setting`, () => {
+      // Nothing listens on port 1: a connection attempt would be a different error.
+      const result = start({ ...CONFIGURED, ...change, PGHOST: '127.0.0.1', PGPORT: '1' });
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, `error startup_failed error=${JSON.stringify(error)}\n`);
     });
+  }
+
+  test('database unavailable: exits with 1 before listening', () => {
+    const result = start({ ...CONFIGURED, PGHOST: '127.0.0.1', PGPORT: '1' });
     assert.equal(result.status, 1);
     assert.equal(result.stdout, 'error startup_failed error="connect ECONNREFUSED 127.0.0.1:1"\n');
   });
@@ -362,7 +393,7 @@ describe('Säckel in the court', () => {
     user: 'hof_saeckel',
     password: process.env.HOF_SAECKEL_DB_PASSWORD,
   });
-  const app = createApp(corePool, saeckelPool, founded, 'unused');
+  const app = createApp(corePool, saeckelPool, SETTINGS, founded, 'unused');
   const ORIGIN = `https://${HOST}`;
 
   before(async () => {
@@ -371,7 +402,7 @@ describe('Säckel in the court', () => {
   });
   beforeEach(async () => {
     await corePool.query('TRUNCATE sessions, users RESTART IDENTITY');
-    await saeckelPool.query('TRUNCATE pouches RESTART IDENTITY');
+    await saeckelPool.query('TRUNCATE operations, pouches RESTART IDENTITY');
   });
   after(() => Promise.all([corePool.end(), saeckelPool.end()]));
 
@@ -557,5 +588,77 @@ describe('Säckel in the court', () => {
     for (const secret of ['Тайное', encodeURIComponent('Тайное'), token, 'name=', 'icon=']) {
       assert.ok(!errors[0]!.includes(secret), secret);
     }
+  });
+
+  test('the administrator cannot spend from a pouch of anybody else', async () => {
+    const owner = await person('owner', { admin: true });
+    const anna = await person('anna');
+    const hers = await makePouch('Анины деньги', anna.cookie);
+    const res = await post(`${hers}/expense`, { amount: '100', date: '', note: '' }, owner.cookie);
+    assert.equal(res.status, 404);
+    assert.ok((await res.text()).includes('<h1>Такой тропы во дворе нет</h1>'));
+    const { rows } = await saeckelPool.query('SELECT 1 FROM operations');
+    assert.equal(rows.length, 0);
+  });
+
+  test('an unexpected error in an expense: the common 500, no amount or note in the log', async (t) => {
+    const lines = captureLog(t);
+    const { token, cookie } = await person('anna');
+    const pouch = await makePouch('Продукты', cookie);
+    await saeckelPool.query(
+      "CREATE FUNCTION refuse_for_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused for the test'; END $$",
+    );
+    await saeckelPool.query(
+      'CREATE TRIGGER operations_no_insert BEFORE INSERT ON operations FOR EACH ROW EXECUTE FUNCTION refuse_for_test()',
+    );
+    try {
+      const res = await post(
+        `${pouch}/expense`,
+        { amount: '7 777,77', date: '05.10.2026', note: 'тайная заметка' },
+        cookie,
+      );
+      assert.equal(res.status, 500);
+      const page = await res.text();
+      assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'));
+      assert.ok(!page.includes('тайная'));
+    } finally {
+      await saeckelPool.query('DROP TRIGGER IF EXISTS operations_no_insert ON operations');
+      await saeckelPool.query('DROP FUNCTION IF EXISTS refuse_for_test()');
+    }
+    const errors = lines.filter((line) => line.startsWith('error '));
+    assert.equal(errors.length, 1);
+    assert.match(
+      errors[0]!,
+      /^error unexpected_error method=POST path=\/saeckel\/pouches\/\d+\/expense error="refused for the test" /,
+    );
+    for (const secret of [
+      '7 777',
+      '7777',
+      '777777',
+      'тайная',
+      encodeURIComponent('тайная'),
+      '05.10.2026',
+      '2026-10-05',
+      token,
+      'amount=',
+      'note=',
+    ]) {
+      assert.ok(!errors[0]!.includes(secret), secret);
+    }
+    const { rows } = await saeckelPool.query('SELECT 1 FROM operations');
+    assert.equal(rows.length, 0);
+  });
+
+  test('the currency of the records: another one than CURRENCY is found', async () => {
+    assert.equal(await otherRecordedCurrency(saeckelPool, 'RUB'), null);
+    const { cookie } = await person('anna');
+    const pouch = await makePouch('Продукты', cookie);
+    assert.equal(
+      (await post(`${pouch}/expense`, { amount: '1', date: '', note: '' }, cookie)).status,
+      303,
+    );
+    // The court writes in RUB: RUB is the currency, EUR would change what every amount means.
+    assert.equal(await otherRecordedCurrency(saeckelPool, 'RUB'), null);
+    assert.equal(await otherRecordedCurrency(saeckelPool, 'EUR'), 'RUB');
   });
 });
