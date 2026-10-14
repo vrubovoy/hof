@@ -891,6 +891,48 @@ describe('Säckel in the court', () => {
     assert.equal(rows.length, 0);
   });
 
+  test('the administrator sees no history and opens no record of anybody else', async () => {
+    const owner = await person('owner', { admin: true });
+    const anna = await person('anna');
+    const hers = await makePouch('Анины деньги', anna.cookie);
+    const spent = await post(
+      `${hers}/expense`,
+      { amount: '7 777,77', date: '', note: 'тайная трата' },
+      anna.cookie,
+    );
+    const record = Number(
+      new URL(spent.headers.get('location')!, ORIGIN).searchParams.get('fresh'),
+    );
+    const pouch = Number(hers.split('/').at(-1));
+    const missing = await (await get('/saeckel/operations/99999', owner.cookie)).text();
+    for (const path of [`/saeckel/history?pouch=${pouch}`, `/saeckel/operations/${record}`]) {
+      const res = await get(path, owner.cookie);
+      assert.equal(res.status, 404, path);
+      const page = await res.text();
+      assert.ok(page.includes('<h1>Такой тропы во дворе нет</h1>'), path);
+      assert.equal(page, missing, path);
+    }
+    // His own Летопись is his: empty, with the usual headers.
+    const own = await get('/saeckel/history', owner.cookie);
+    assert.equal(own.status, 200);
+    assert.equal(own.headers.get('content-security-policy'), CSP);
+    assert.equal(own.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(own.headers.get('cache-control'), 'no-store');
+    const page = await own.text();
+    assert.ok(page.includes('Летопись пока пуста'));
+    assert.ok(!page.includes('тайная') && !page.includes('Анины'));
+    // She sees hers.
+    const her = await get(`/saeckel/operations/${record}`, anna.cookie);
+    assert.equal(her.status, 200);
+  });
+
+  test('Летопись without a session: /login with the way back, query and all', async () => {
+    const path = '/saeckel/history?pouch=1&page=2';
+    const res = await get(path);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), `/login?next=${encodeURIComponent(path)}`);
+  });
+
   test('the currency of the records: another one than CURRENCY is found', async () => {
     assert.equal(await otherRecordedCurrency(saeckelPool, 'RUB'), null);
     const { cookie } = await person('anna');
