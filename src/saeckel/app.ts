@@ -1100,9 +1100,10 @@ export function createSaeckelApp(
   // A transfer (§4.1, §4.8): every field first, then one transaction that locks both pouches by
   // one statement in the order of their ids — whichever way the money goes, so two transfers
   // in opposite directions wait for each other instead of in a circle — and checks them before
-  // the INSERT. An archiving of either pouch takes the same lock: it either waits and then sees
-  // this record in the balance, or goes first and this is refused. The source may go below
-  // zero; the treasury is not touched.
+  // the INSERT: both found, two different ones, neither in the storeroom. An archiving of
+  // either pouch takes the same lock: it either waits and then sees this record in the balance,
+  // or goes first and this is refused. The source may go below zero; the treasury is not
+  // touched.
   saeckel.post('/saeckel/transfer', signedIn, async (c) => {
     const userId = c.get('user').id;
     const body = await c.req.parseBody();
@@ -1128,7 +1129,6 @@ export function createSaeckelApp(
     };
     const from = pouchId('from');
     const to = pouchId('to');
-    if (from !== null && from === to) form.errors.to = SAME_POUCH_ERROR;
     const refuse = async () => c.html(transferPage(await activePouches(userId), form, money), 400);
     const entry = parsed.entry;
     if (entry === null || from === null || to === null || Object.keys(form.errors).length > 0) {
@@ -1148,6 +1148,9 @@ export function createSaeckelApp(
       for (const [field, pouch] of chosen) {
         if (refusal === null && pouch === undefined) refusal = { field, text: MISSING_ERROR };
       }
+      // One pouch in both lists, now known to be this user's: somebody else's or a missing one
+      // was refused above as not found, like any other.
+      if (refusal === null && from === to) refusal = { field: 'to', text: SAME_POUCH_ERROR };
       for (const [field, pouch] of chosen) {
         if (refusal === null && pouch?.is_archived === true) {
           refusal = { field, text: archivedCreateError(pouch.name) };

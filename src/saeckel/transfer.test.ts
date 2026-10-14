@@ -245,7 +245,7 @@ describe('Переложить', () => {
     assert.deepEqual(await operations(), []);
   });
 
-  test('one pouch in both lists: «Нельзя переложить в тот же мешок.» under «В мешок»', async () => {
+  test('one pouch of this user in both lists: «Нельзя переложить в тот же мешок.» under «В мешок»', async () => {
     const food = await addPouch(1, 'Продукты');
     const res = await transfer({ from: String(food), to: String(food), amount: '1' });
     assert.equal(res.status, 400);
@@ -254,6 +254,26 @@ describe('Переложить', () => {
     assert.ok(!page.includes('from-error'));
     assert.deepEqual(chosen(page, 'from'), [String(food)]);
     assert.deepEqual(await operations(), []);
+    await assertNothingHeld(food);
+  });
+
+  test('one pouch of somebody else, or a missing one, in both lists: «Мешок не найден.»', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const his = await addPouch(2, 'Тайный мешок Бориса');
+    const pages: string[] = [];
+    for (const id of [his, 99_999]) {
+      const res = await transfer({ from: String(id), to: String(id), amount: '1' });
+      assert.equal(res.status, 400, String(id));
+      const page = await res.text();
+      assert.ok(page.includes(`<p id="from-error">${MISSING}</p>`), String(id));
+      assert.ok(!page.includes(SAME), String(id));
+      assert.ok(!page.includes('Тайный'), String(id));
+      pages.push(page);
+    }
+    assert.equal(pages[0], pages[1]);
+    assert.deepEqual(await operations(), []);
+    await assertNothingHeld(food);
+    await assertNothingHeld(his);
   });
 
   test('an id of the wrong form: «Мешок не найден.» under its list', async () => {
@@ -438,6 +458,8 @@ describe('Переложить and others at once', () => {
       there = await going;
       back = await coming;
     } finally {
+      // Rolls back what a failed test left open; after a COMMIT it changes nothing.
+      await rival.query('ROLLBACK').catch(() => undefined);
       rival.release();
     }
     assert.equal(there.status, 303);
@@ -485,6 +507,8 @@ describe('Переложить and others at once', () => {
           const results = await Promise.all(pending);
           for (const [i, action] of order.entries()) answers[action] = results[i]!;
         } finally {
+          // Rolls back what a failed test left open; after a COMMIT it changes nothing.
+          await rival.query('ROLLBACK').catch(() => undefined);
           rival.release();
         }
         if (first === 'transfer') {
@@ -531,6 +555,8 @@ describe('Переложить and others at once', () => {
       first = await one;
       second = await two;
     } finally {
+      // Rolls back what a failed test left open; after a COMMIT it changes nothing.
+      await rival.query('ROLLBACK').catch(() => undefined);
       rival.release();
     }
     assert.equal(first.status, 303);
