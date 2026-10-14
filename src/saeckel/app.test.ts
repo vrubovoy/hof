@@ -95,6 +95,7 @@ describe('who gets in', () => {
       '/saeckel/pouches/new',
       '/saeckel/pouches/1',
       '/saeckel/pouches/abc',
+      '/saeckel/pouches/1/edit',
     ]) {
       const res = await get(path, undefined, appWithoutDatabase);
       assert.equal(res.status, 303, path);
@@ -102,14 +103,12 @@ describe('who gets in', () => {
       const head = await appWithoutDatabase.request(path, { method: 'HEAD' });
       assert.equal(head.status, 303, path);
     }
-    const res = await post(
-      '/saeckel/pouches/new',
-      { name: 'Продукты' },
-      undefined,
-      appWithoutDatabase,
-    );
-    assert.equal(res.status, 303);
-    assert.equal(res.headers.get('location'), '/login');
+    for (const path of ['/saeckel/pouches/new', '/saeckel/pouches/1/edit']) {
+      const fields = { name: 'Продукты', icon: 'cart' };
+      const res = await post(path, fields, undefined, appWithoutDatabase);
+      assert.equal(res.status, 303, path);
+      assert.equal(res.headers.get('location'), '/login', path);
+    }
     // And with the database: nothing was written.
     assert.equal((await post('/saeckel/pouches/new', { name: 'Продукты' })).status, 303);
     assert.deepEqual(await pouches(), []);
@@ -156,6 +155,9 @@ describe('Мешки', () => {
     ]) {
       assert.ok(page.includes(text), text);
     }
+    assert.ok(page.includes('<p>Знак мешка можно выбрать потом, в «Изменить».</p>'));
+    // The first pouch is made from its name only.
+    assert.equal((page.match(/<input/g) ?? []).length, 1);
     assert.ok(!page.includes('+ Новый мешок'));
     // Nothing of M6 is shown before it works.
     for (const absent of ['Казна', 'Доход', 'Разложить', 'Переложить', 'Покрыть', 'Летопись']) {
@@ -210,12 +212,12 @@ describe('Новый мешок', () => {
   });
 
   test('made for the one signed in, NFC and trimmed, with the default sign', async () => {
-    // «й» typed as «и» and a combining mark; a user_id and a sign in the form are ignored.
+    // «й» typed as «и» and a combining mark; a user_id in the form is ignored.
     const typed = '  Мой мешок  '.normalize('NFD');
     assert.notEqual(typed.trim(), typed.trim().normalize('NFC'));
     const res = await post(
       '/saeckel/pouches/new',
-      { name: typed, user_id: '2', icon: 'cart', is_archived: 'true' },
+      { name: typed, user_id: '2', is_archived: 'true' },
       'anna',
     );
     assert.equal(res.status, 303);
@@ -311,7 +313,7 @@ describe('Новый мешок', () => {
       await rival.query("INSERT INTO pouches (user_id, name) VALUES (1, 'Продукты')");
       const pending = post('/saeckel/pouches/new', { name: 'продукты' }, 'anna');
       // It is the INSERT that waits: on the unique index, for the rival's transaction.
-      assert.match(await waitingQuery(), /^INSERT INTO pouches \(user_id, name\)/);
+      assert.match(await waitingQuery(), /^INSERT INTO pouches \(user_id, name, icon\)/);
       await rival.query('COMMIT');
       const res = await pending;
       assert.equal(res.status, 400);
@@ -357,5 +359,316 @@ describe('the page of a pouch', () => {
     for (const id of ['0', '01', '-1', '1.0', 'abc', '2147483648', '2147483647']) {
       assert.equal((await get(`/saeckel/pouches/${id}`, 'anna')).status, 404, id);
     }
+  });
+});
+
+const ICON_ERROR = 'Выберите знак из списка.';
+// Copied from design/preview/PouchEditMobile.html on purpose: the test must not share the set
+// with the code.
+const SIGNS: [string, string][] = [
+  ['pouch', 'мешок'],
+  ['cart', 'повозка'],
+  ['basket', 'корзина'],
+  ['hearth', 'очаг'],
+  ['jug', 'кувшин'],
+  ['mortar', 'ступка'],
+  ['needle', 'игла'],
+  ['lute', 'лютня'],
+  ['bundle', 'свёрток'],
+  ['scroll', 'свиток'],
+  ['pot', 'кубышка'],
+  ['toyhorse', 'лошадка'],
+  ['bowl', 'миска'],
+  ['hammer', 'молоток'],
+  ['books', 'книги'],
+  ['bag', 'котомка'],
+  ['comb', 'гребень'],
+];
+
+function edit(id: number | string, fields: Record<string, string>, who = 'anna') {
+  return post(`/saeckel/pouches/${id}/edit`, fields, who);
+}
+
+async function pouch(id: number) {
+  return (await pouches()).find((row) => row.id === id);
+}
+
+// The signs a page offers, in order, and the ones chosen.
+function signs(page: string) {
+  const radios = [
+    ...page.matchAll(/<input\s+type="radio"\s+name="icon"\s+value="([^"]*)"\s*(checked)?/g),
+  ];
+  return {
+    offered: radios.map((m) => m[1]!),
+    checked: radios.filter((m) => m[2] !== undefined).map((m) => m[1]!),
+  };
+}
+
+describe('Новый мешок: a sign sent with the name', () => {
+  test('a key of the set is kept', async () => {
+    const res = await post('/saeckel/pouches/new', { name: 'Еда', icon: 'basket' }, 'anna');
+    assert.equal(res.status, 303);
+    assert.equal((await pouches())[0]!.icon, 'basket');
+  });
+
+  for (const icon of ['', 'dragon', 'Cart', 'toString', '__proto__', 'pouch ']) {
+    test(`a sign ${JSON.stringify(icon)}: 400 «${ICON_ERROR}», nothing made`, async () => {
+      const res = await post('/saeckel/pouches/new', { name: 'Еда', icon }, 'anna');
+      assert.equal(res.status, 400);
+      const page = await res.text();
+      assert.ok(page.includes(`<p id="icon-error">${ICON_ERROR}</p>`));
+      assert.ok(page.includes('value="Еда"'));
+      assert.deepEqual(await pouches(), []);
+    });
+  }
+});
+
+describe('Изменить мешок', () => {
+  test('the page: the stored name and sign, the 17 signs in order, «Сохранить»', async () => {
+    const id = await addPouch(1, 'Продукты');
+    await pool.query("UPDATE pouches SET icon = 'cart' WHERE id = $1", [id]);
+    const res = await get(`/saeckel/pouches/${id}/edit`, 'anna');
+    assert.equal(res.status, 200);
+    const page = await res.text();
+    const flat = page.replace(/\s+/g, ' ');
+    for (const text of [
+      '<title>Säckel — Продукты</title>',
+      `<p><a href="/saeckel/pouches/${id}">Продукты</a></p>`,
+      '<h1>Мешок «Продукты»</h1>',
+      `<form method="post" action="/saeckel/pouches/${id}/edit">`,
+      '<label for="name">Название</label>',
+      'value="Продукты"',
+      '<legend>Знак мешка</legend>',
+      '<button type="submit">Сохранить</button>',
+    ]) {
+      assert.ok(flat.includes(text), text);
+    }
+    for (const [key, label] of SIGNS) {
+      assert.match(flat, new RegExp(`value="${key}"( checked)? /> ${label} </label>`), key);
+    }
+    assert.deepEqual(signs(page), { offered: SIGNS.map(([key]) => key), checked: ['cart'] });
+  });
+
+  test('a stored sign the set does not know shows as the default one', async () => {
+    const id = await addPouch(1, 'Продукты');
+    await pool.query("UPDATE pouches SET icon = 'dragon' WHERE id = $1", [id]);
+    const page = await (await get(`/saeckel/pouches/${id}/edit`, 'anna')).text();
+    assert.deepEqual(signs(page).checked, ['pouch']);
+  });
+
+  test('the page of an active pouch leads to «Изменить»; one in the storeroom does not', async () => {
+    const active = await addPouch(1, 'Продукты');
+    const stored = await addPouch(1, 'Старый', true);
+    const page = await (await get(`/saeckel/pouches/${active}`, 'anna')).text();
+    assert.ok(page.includes(`<a href="/saeckel/pouches/${active}/edit">Изменить</a>`));
+    const old = await (await get(`/saeckel/pouches/${stored}`, 'anna')).text();
+    assert.ok(!old.includes('Изменить'));
+  });
+
+  test('saved: the new name and sign, 303 to the pouch, the order of the list kept', async () => {
+    const first = await addPouch(1, 'Яблоки');
+    const second = await addPouch(1, 'Груши');
+    const third = await addPouch(1, 'Сливы');
+    const res = await edit(second, { name: '  Абрикосы  ', icon: 'basket' });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), `/saeckel/pouches/${second}`);
+    assert.deepEqual(await pouch(second), {
+      id: second,
+      user_id: 1,
+      name: 'Абрикосы',
+      icon: 'basket',
+      is_archived: false,
+    });
+    // «Абрикосы» would come first by name; the list keeps the order the pouches were made in.
+    const list = await (await get('/saeckel/', 'anna')).text();
+    assert.deepEqual(listItems(list), [
+      `<a href="/saeckel/pouches/${first}">Яблоки</a>`,
+      `<a href="/saeckel/pouches/${second}">Абрикосы</a>`,
+      `<a href="/saeckel/pouches/${third}">Сливы</a>`,
+    ]);
+    const page = await (await get(`/saeckel/pouches/${second}`, 'anna')).text();
+    assert.ok(page.includes('<h1>Абрикосы</h1>'));
+    const again = await (await get(`/saeckel/pouches/${second}/edit`, 'anna')).text();
+    assert.deepEqual(signs(again).checked, ['basket']);
+  });
+
+  test('its own name in another case is no conflict', async () => {
+    const id = await addPouch(1, 'Продукты');
+    assert.equal((await edit(id, { name: 'ПРОДУКТЫ', icon: 'pouch' })).status, 303);
+    assert.equal((await pouch(id))!.name, 'ПРОДУКТЫ');
+  });
+
+  test('the name of another active pouch: 400, the typed name and the chosen sign kept', async () => {
+    await addPouch(1, 'Продукты');
+    const id = await addPouch(1, 'Квартира');
+    for (const name of ['Продукты', ' ПРОДУКТЫ ', 'продукты']) {
+      const res = await edit(id, { name, icon: 'jug' });
+      assert.equal(res.status, 400, name);
+      const page = await res.text();
+      assert.ok(page.includes(`<p id="name-error">${TAKEN}</p>`), name);
+      assert.ok(page.includes(`value="${name}"`), name);
+      assert.deepEqual(signs(page).checked, ['jug'], name);
+      // The heading keeps the stored name.
+      assert.ok(page.includes('<h1>Мешок «Квартира»</h1>'), name);
+    }
+    assert.deepEqual(await pouch(id), {
+      id,
+      user_id: 1,
+      name: 'Квартира',
+      icon: 'pouch',
+      is_archived: false,
+    });
+  });
+
+  test('a pouch in the storeroom, or of another user, does not take the name', async () => {
+    await addPouch(1, 'Квартира', true);
+    await addPouch(2, 'Транспорт');
+    const id = await addPouch(1, 'Продукты');
+    assert.equal((await edit(id, { name: 'Квартира', icon: 'hearth' })).status, 303);
+    assert.equal((await edit(id, { name: 'Транспорт', icon: 'cart' })).status, 303);
+    assert.equal((await pouch(id))!.name, 'Транспорт');
+  });
+
+  for (const name of ['', '   ', 'я'.repeat(51), 'Про\nдукты']) {
+    test(`a name ${JSON.stringify(name)}: 400, the chosen sign kept, nothing changed`, async () => {
+      const id = await addPouch(1, 'Продукты');
+      const res = await edit(id, { name, icon: 'jug' });
+      assert.equal(res.status, 400);
+      const page = await res.text();
+      assert.ok(page.includes(`<p id="name-error">${NAME_ERROR}</p>`));
+      assert.deepEqual(signs(page).checked, ['jug']);
+      assert.equal((await pouch(id))!.name, 'Продукты');
+    });
+  }
+
+  const wrongSigns: [string, Record<string, string>][] = [
+    ['no sign', { name: 'Еда' }],
+    ['an empty sign', { name: 'Еда', icon: '' }],
+    ['an unknown sign', { name: 'Еда', icon: 'dragon' }],
+    ['a key of every object', { name: 'Еда', icon: 'toString' }],
+  ];
+  for (const [label, fields] of wrongSigns) {
+    test(`${label}: 400 «${ICON_ERROR}», the typed name kept, nothing changed`, async () => {
+      const id = await addPouch(1, 'Продукты');
+      const res = await edit(id, fields);
+      assert.equal(res.status, 400);
+      const page = await res.text();
+      assert.ok(page.includes(`<p id="icon-error">${ICON_ERROR}</p>`));
+      assert.ok(page.includes('value="Еда"'));
+      assert.deepEqual(signs(page).checked, []);
+      assert.deepEqual(await pouch(id), {
+        id,
+        user_id: 1,
+        name: 'Продукты',
+        icon: 'pouch',
+        is_archived: false,
+      });
+    });
+  }
+
+  test('somebody else’s, a missing, a wrong id or a pouch in the storeroom: the same 404', async () => {
+    const his = await addPouch(2, 'Мешок Бориса');
+    const stored = await addPouch(1, 'Старый', true);
+    const missing = await (await get('/saeckel/pouches/99/edit', 'anna')).text();
+    for (const id of [String(his), String(stored), '99', '0', '01', 'abc', '2147483648']) {
+      const page = await get(`/saeckel/pouches/${id}/edit`, 'anna');
+      assert.equal(page.status, 404, id);
+      assert.equal(await page.text(), missing, id);
+      const save = await edit(id, { name: 'Новое', icon: 'cart' });
+      assert.equal(save.status, 404, id);
+    }
+    assert.deepEqual(
+      (await pouches()).map((row) => [row.name, row.icon]),
+      [
+        ['Мешок Бориса', 'pouch'],
+        ['Старый', 'pouch'],
+      ],
+    );
+  });
+
+  test('a user_id in the form is ignored', async () => {
+    const id = await addPouch(1, 'Продукты');
+    assert.equal((await edit(id, { name: 'Еда', icon: 'pouch', user_id: '2' })).status, 303);
+    assert.equal((await pouch(id))!.user_id, 1);
+  });
+
+  test('a rename and a new pouch of one name at once: the UPDATE waits, then «taken»', async () => {
+    const id = await addPouch(1, 'Продукты');
+    const rival = await pool.connect();
+    try {
+      await rival.query('BEGIN');
+      await rival.query("INSERT INTO pouches (user_id, name) VALUES (1, 'Квартира')");
+      const pending = edit(id, { name: 'квартира', icon: 'pouch' });
+      // It is the UPDATE that waits: on the unique index, for the rival's transaction.
+      assert.match(await waitingQuery(), /^UPDATE pouches SET name = \$1, icon = \$2/);
+      await rival.query('COMMIT');
+      const res = await pending;
+      assert.equal(res.status, 400);
+      assert.ok((await res.text()).includes(TAKEN));
+    } finally {
+      rival.release();
+    }
+    assert.deepEqual(
+      (await pouches()).map((row) => row.name),
+      ['Продукты', 'Квартира'],
+    );
+  });
+
+  // The pouch changes after it was looked up and before the UPDATE writes. The first case is
+  // the storeroom, opened in another tab; the second one cannot happen through Hof — the owner
+  // of a pouch never changes — and shows that the UPDATE does not rely on the earlier look.
+  for (const [label, change] of [
+    ['goes into the storeroom', 'UPDATE pouches SET is_archived = true WHERE id = $1'],
+    ['belongs to somebody else', 'UPDATE pouches SET user_id = 2 WHERE id = $1'],
+  ] as const) {
+    test(`the pouch ${label} meanwhile: the UPDATE checks again, 404, nothing written`, async () => {
+      const id = await addPouch(1, 'Продукты');
+      const rival = await pool.connect();
+      try {
+        await rival.query('BEGIN');
+        await rival.query(change, [id]);
+        const pending = edit(id, { name: 'Еда', icon: 'cart' });
+        // The look-up saw the pouch as it was; the UPDATE waits for the rival's row.
+        assert.match(await waitingQuery(), /^UPDATE pouches SET name = \$1, icon = \$2/);
+        await rival.query('COMMIT');
+        assert.equal((await pending).status, 404);
+      } finally {
+        rival.release();
+      }
+      const row = await pouch(id);
+      assert.equal(row!.name, 'Продукты');
+      assert.equal(row!.icon, 'pouch');
+    });
+  }
+
+  test('any other refusal of the database is not «taken»: the error goes on', async (t: TestContext) => {
+    t.mock.method(console, 'error', () => undefined);
+    const id = await addPouch(1, 'Продукты');
+    await pool.query('ALTER TABLE pouches ADD CONSTRAINT pouches_none CHECK (false) NOT VALID');
+    try {
+      const res = await edit(id, { name: 'Еда', icon: 'cart' });
+      assert.equal(res.status, 500);
+      assert.ok(!(await res.text()).includes(TAKEN));
+    } finally {
+      await pool.query('ALTER TABLE pouches DROP CONSTRAINT IF EXISTS pouches_none');
+    }
+    // Another unique index: also 23505, but not pouches_active_name.
+    await pool.query("UPDATE pouches SET icon = 'jug' WHERE id = $1", [id]);
+    await addPouch(1, 'Квартира');
+    await pool.query('CREATE UNIQUE INDEX pouches_one_icon ON pouches (icon)');
+    try {
+      const res = await edit(id, { name: 'Продукты', icon: 'pouch' });
+      assert.equal(res.status, 500);
+      assert.ok(!(await res.text()).includes(TAKEN));
+    } finally {
+      await pool.query('DROP INDEX IF EXISTS pouches_one_icon');
+    }
+    assert.deepEqual(await pouch(id), {
+      id,
+      user_id: 1,
+      name: 'Продукты',
+      icon: 'jug',
+      is_archived: false,
+    });
   });
 });
