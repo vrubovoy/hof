@@ -3,7 +3,14 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { centsFrom, currencyError, moneyFormat, parseAmount } from './money.ts';
+import {
+  AMOUNT_MAX_CENTS,
+  amountForField,
+  centsFrom,
+  currencyError,
+  moneyFormat,
+  parseAmount,
+} from './money.ts';
 
 const FORMAT_ERROR = 'Сумма — число, например 1 240,50.';
 const ZERO_ERROR = 'Сумма должна быть больше нуля.';
@@ -149,6 +156,40 @@ describe('moneyFormat', () => {
       const printed = rub.format(cents).replace(/ ₽$/, '');
       assert.deepEqual(parseAmount(printed), { cents }, printed);
     }
+  });
+});
+
+describe('amountForField', () => {
+  test('two decimals after a comma, groups apart by U+00A0, no sign of the currency', () => {
+    for (const [cents, text] of [
+      [1, '0,01'],
+      [5, '0,05'],
+      [99, '0,99'],
+      [100, '1,00'],
+      [99_999, '999,99'],
+      [100_000, '1\u00A0000,00'],
+      [124_050, '1\u00A0240,50'],
+      [100_000_000_000, '1\u00A0000\u00A0000\u00A0000,00'],
+    ] as const) {
+      assert.equal(amountForField(cents), text, String(cents));
+    }
+  });
+
+  test('read back by parseAmount as the same hundredths', () => {
+    const back = (cents: number) => assert.deepEqual(parseAmount(amountForField(cents)), { cents });
+    // Every amount up to 1 000,00, the edges of every group, and a spread over the whole range.
+    for (let cents = 1; cents <= 100_000; cents++) back(cents);
+    for (let power = 1; power <= AMOUNT_MAX_CENTS; power *= 10) {
+      for (const cents of [power - 1, power, power + 1]) {
+        if (cents >= 1 && cents <= AMOUNT_MAX_CENTS) back(cents);
+      }
+    }
+    let seed = 20_261_014;
+    for (let i = 0; i < 20_000; i++) {
+      seed = (seed * 48_271) % 2_147_483_647;
+      back(1 + Math.floor((seed / 2_147_483_647) * AMOUNT_MAX_CENTS));
+    }
+    back(AMOUNT_MAX_CENTS);
   });
 });
 

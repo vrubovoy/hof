@@ -43,6 +43,15 @@ export function centsFrom(text: string): number {
   return cents;
 }
 
+// An amount as a field shows it, to be typed again or sent: «1 240,50» — two decimals after a
+// comma, groups apart by U+00A0, no sign of the currency. Built from the digits of the integer,
+// never from a float; parseAmount reads it back as the same hundredths.
+export function amountForField(cents: number): string {
+  const digits = String(cents).padStart(3, '0');
+  const whole = digits.slice(0, -2).replace(/\B(?=(\d{3})+$)/g, '\u00A0');
+  return `${whole},${digits.slice(-2)}`;
+}
+
 export interface MoneyFormat {
   // Hundredths as the page shows them: two decimals, "−" for a minus, the currency sign.
   format(cents: number): string;
