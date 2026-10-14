@@ -136,8 +136,8 @@ describe('Мешки', () => {
     // The first pouch is made from its name only.
     assert.equal((page.match(/<input/g) ?? []).length, 1);
     assert.ok(!page.includes('+ Новый мешок'));
-    // Nothing of M6 is shown before it works; the treasury came with M6.1.
-    for (const absent of ['Переложить', 'Покрыть', 'Летопись']) {
+    // Nothing of M6 is shown before it works; the treasury came with M6.1, «Летопись» with M6.3.
+    for (const absent of ['Переложить', 'Покрыть']) {
       assert.ok(!page.includes(absent), absent);
     }
   });
@@ -783,7 +783,7 @@ describe('the page of a pouch: balance, form, expenses', () => {
     assert.ok(fold(page).includes('<p>Остаток −1 240,50 €</p>'));
   });
 
-  test('the last 10 expenses of this pouch, newest first, by date and then by id', async () => {
+  test('the last 10 movements of this pouch, newest first, by date and then by id', async () => {
     const id = await addPouch(1, 'Продукты');
     const other = await addPouch(1, 'Квартира');
     // Twelve expenses over three days, written out of order; the oldest two are not shown.
@@ -801,9 +801,10 @@ describe('the page of a pouch: balance, form, expenses', () => {
     const expected = written
       .map(([date, opId], index) => ({ date, opId, n: index + 1 }))
       .sort((a, b) => (a.date === b.date ? b.opId - a.opId : a.date < b.date ? 1 : -1))
-      .slice(0, 10)
+      .slice(0, 9)
       .map(({ date, n }) => `${date.slice(8)}.${date.slice(5, 7)} · трата ${n} · −${n},00 ₽`);
-    assert.deepEqual(expenseRows(page), expected);
+    // Since M6.3 the list holds every movement of the pouch: the laying out of 05.10 is the newest.
+    assert.deepEqual(expenseRows(page), ['05.10 · из казны · +50,00 ₽', ...expected]);
     assert.ok(!page.includes('не отсюда'));
   });
 
@@ -1242,7 +1243,11 @@ describe('В кладовую', () => {
     assert.equal((await archive(id)).status, 303);
     assert.equal(await isArchived(id), true);
     const page = await (await get(`/saeckel/pouches/${id}`, 'anna')).text();
-    assert.deepEqual(expenseRows(page), ['07.10 · −0,50 ₽', '06.10 · рынок · −99,50 ₽']);
+    assert.deepEqual(expenseRows(page), [
+      '07.10 · −0,50 ₽',
+      '06.10 · рынок · −99,50 ₽',
+      '05.10 · из казны · +100,00 ₽',
+    ]);
     assert.equal((await operations()).length, 3);
   });
 
@@ -1431,7 +1436,7 @@ describe('Вернуть', () => {
     const page = fold(await (await get(`/saeckel/pouches/${id}`, 'anna')).text());
     assert.ok(page.includes('<p>Остаток 0,00 ₽</p>'));
     assert.ok(page.includes('Записать трату'));
-    assert.deepEqual(expenseRows(page), ['06.10 · билеты · −5,00 ₽']);
+    assert.deepEqual(expenseRows(page), ['06.10 · билеты · −5,00 ₽', '05.10 · из казны · +5,00 ₽']);
   });
 
   test('a pouch that is already active: 303 again, nothing changes', async () => {

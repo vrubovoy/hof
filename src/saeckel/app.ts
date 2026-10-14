@@ -67,8 +67,14 @@ const SAME_POUCH_ERROR = 'Нельзя переложить в тот же ме�
 // §4.7: text of a form is one line; PostgreSQL does not take \0 at all.
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/;
 
-// The expenses a pouch page shows; the whole history is «Летопись» (M6).
-const RECENT_EXPENSES = 10;
+// The movements a pouch page shows; the whole history is «Летопись».
+const RECENT_MOVEMENTS = 10;
+
+// «Летопись»: records on one page, and the last page there is (§4.1, §4.7).
+const HISTORY_PAGE_SIZE = 50;
+const HISTORY_LAST_PAGE = 1000;
+
+const EMPTY_POUCH_HISTORY = 'По этому мешку записей пока нет.';
 
 // The signs of a pouch (§5.4, design/preview/PouchEditMobile.html): the key kept in
 // pouches.icon and its label. Only these keys are accepted; a stored key the set does not know
@@ -135,12 +141,45 @@ interface StoredPouch {
   name: string;
 }
 
-// An expense as a pouch page lists it; the date is ISO text, the amount in hundredths.
-interface Expense {
+type Kind = 'income' | 'assign' | 'expense' | 'transfer';
+
+// The words for each kind of record (design/preview/SaeckelHistory.html).
+const KIND_LABELS: Record<Kind, string> = {
+  income: 'Доход',
+  assign: 'Из казны',
+  expense: 'Трата',
+  transfer: 'Из мешка в мешок',
+};
+
+// A record as Säckel shows it: the date is ISO text, the amount in hundredths; its pouches and
+// their names, where the kind has them.
+interface Operation {
   id: number;
+  kind: Kind;
   cents: number;
   date: string;
   note: string;
+  fromPouchId: number | null;
+  toPouchId: number | null;
+  fromName: string | null;
+  toName: string | null;
+}
+
+// A pouch of the filter of «Летопись»: active ones and those in the storeroom alike.
+interface FilterPouch {
+  id: number;
+  name: string;
+  is_archived: boolean;
+}
+
+// One page of «Летопись»: its records, the pouch it is filtered by, if any, and whether a next
+// page has records.
+interface HistoryView {
+  operations: readonly Operation[];
+  page: number;
+  pouch: number | null;
+  pouches: readonly FilterPouch[];
+  hasNext: boolean;
 }
 
 type EntryField = 'amount' | 'date' | 'note';
@@ -191,7 +230,8 @@ interface LockedPouch {
 // What a pouch page shows besides the pouch itself.
 interface PouchView {
   balance: number;
-  expenses: readonly Expense[];
+  // The last records into or out of the pouch, newest first.
+  movements: readonly Operation[];
   // `fresh` as it came in the address: the record of that id, if it is among those shown, is
   // marked as just written.
   fresh?: string;
@@ -267,6 +307,17 @@ function storeroom(stored: readonly StoredPouch[]) {
   </details>`;
 }
 
+// The head of Мешки and «Летопись»: the way back to the courtyard, the name, the two tabs.
+function saeckelHead(current: 'pouches' | 'history') {
+  const here = (tab: typeof current) => (tab === current ? html`aria-current="page"` : '');
+  return html`<nav><a href="/">← Двор</a></nav>
+    <h1>Säckel</h1>
+    <nav>
+      <a href="/saeckel/" ${here('pouches')}>Мешки</a>
+      <a href="/saeckel/history" ${here('history')}>Летопись</a>
+    </nav>`;
+}
+
 // «Казна» (design/preview/Saeckel.html): the money not laid out yet. Shown always — at zero,
 // below zero, before the first pouch — with the way to income and to laying out.
 function treasuryBlock(treasury: number, money: MoneyFormat) {
@@ -286,31 +337,28 @@ function pouchesPage(
 ) {
   return page(
     'Säckel — мешки',
-    html`<nav><a href="/">← Двор</a></nav>
-      <h1>Säckel</h1>
-      <nav><a href="/saeckel/" aria-current="page">Мешки</a></nav>
-      ${treasuryBlock(treasury, money)}
-      ${
-        pouches.length === 0
-          ? html`<h2>Мешков пока нет</h2>
-              <p>
-                Заведите первый мешок: «Продукты», «Квартира», «Транспорт». Траты берутся из мешка,
-                а остаток переходит дальше сам.
-              </p>
-              ${newPouchForm({ name: '' })}
-              <p>Знак мешка можно выбрать потом, в «Изменить».</p>`
-          : html`<ul>
-                ${pouches.map(
-                  (pouch) =>
-                    html`<li>
-                      <a href="/saeckel/pouches/${pouch.id}">${pouch.name}</a> ·
-                      ${money.format(pouch.balance)} · ${pouchNote(pouch, money)}
-                    </li>`,
-                )}
-              </ul>
-              <p><a href="/saeckel/pouches/new">+ Новый мешок</a></p>`
-      }
-      ${storeroom(stored)}`,
+    html`${saeckelHead('pouches')} ${treasuryBlock(treasury, money)}
+    ${
+      pouches.length === 0
+        ? html`<h2>Мешков пока нет</h2>
+            <p>
+              Заведите первый мешок: «Продукты», «Квартира», «Транспорт». Траты берутся из мешка, а
+              остаток переходит дальше сам.
+            </p>
+            ${newPouchForm({ name: '' })}
+            <p>Знак мешка можно выбрать потом, в «Изменить».</p>`
+        : html`<ul>
+              ${pouches.map(
+                (pouch) =>
+                  html`<li>
+                    <a href="/saeckel/pouches/${pouch.id}">${pouch.name}</a> ·
+                    ${money.format(pouch.balance)} · ${pouchNote(pouch, money)}
+                  </li>`,
+              )}
+            </ul>
+            <p><a href="/saeckel/pouches/new">+ Новый мешок</a></p>`
+    }
+    ${storeroom(stored)}`,
   );
 }
 
@@ -509,17 +557,169 @@ function transferPage(pouches: readonly ListedPouch[], form: TransferForm, money
   );
 }
 
-// One expense of the list: «ДД.ММ · заметка · −X», the note left out when there is none. The
-// record just written is marked.
-function expenseRow(expense: Expense, fresh: string | undefined, money: MoneyFormat) {
-  const text = html`${dateForList(expense.date)}${
-    expense.note === '' ? '' : html` · ${expense.note}`
+// One movement of a pouch, seen from that pouch: «ДД.ММ · заметка · −X» for an expense, with
+// «из казны», «из мешка «X»» or «в мешок «Y»» before the note for the others; what comes in has
+// «+», what goes out «−». The note is left out when there is none. The record just written is
+// marked.
+function movementRow(
+  movement: Operation,
+  pouchId: number,
+  fresh: string | undefined,
+  money: MoneyFormat,
+) {
+  const incoming = movement.toPouchId === pouchId;
+  const label =
+    movement.kind === 'assign'
+      ? 'из казны'
+      : movement.kind === 'transfer'
+        ? incoming
+          ? `из мешка «${movement.fromName}»`
+          : `в мешок «${movement.toName}»`
+        : null;
+  const amount = incoming ? `+${money.format(movement.cents)}` : money.format(-movement.cents);
+  const text = html`${dateForList(movement.date)}${label === null ? '' : html` · ${label}`}${
+    movement.note === '' ? '' : html` · ${movement.note}`
   }
-  · ${money.format(-expense.cents)}`;
-  return html`<li>${String(expense.id) === fresh ? html`<mark>${text}</mark>` : text}</li>`;
+  · ${amount}`;
+  return html`<li>${String(movement.id) === fresh ? html`<mark>${text}</mark>` : text}</li>`;
 }
 
-// The pouch, its balance, the form of an expense and its last expenses; «Переложить» and, in
+// Where a record of «Летопись» goes: «Казна» for an income, the pouch, or «Отпуск →
+// Транспорт».
+function operationPouches(operation: Operation): string {
+  if (operation.kind === 'income') return 'Казна';
+  if (operation.kind === 'assign') return operation.toName ?? '';
+  if (operation.kind === 'expense') return operation.fromName ?? '';
+  return `${operation.fromName} → ${operation.toName}`;
+}
+
+// The amount of a record of «Летопись»: income and laying out «+», an expense «−», a transfer
+// without a sign — it stays among the pouches.
+function signedAmount(operation: Operation, money: MoneyFormat): string {
+  if (operation.kind === 'expense') return money.format(-operation.cents);
+  if (operation.kind === 'transfer') return money.format(operation.cents);
+  return `+${money.format(operation.cents)}`;
+}
+
+// An address of «Летопись», with the pouch it is filtered by.
+function historyHref(pouch: number | null, page: number): string {
+  const query = new URLSearchParams(pouch === null ? {} : { pouch: String(pouch) });
+  query.set('page', String(page));
+  return `/saeckel/history?${query.toString()}`;
+}
+
+// «Летопись», texts from design/preview/SaeckelHistory.html and SaeckelHistoryEmpty.html: a
+// filter by pouch, 50 records a page, «Назад» and «Следующие 50». With no record at all, the
+// empty page instead.
+function historyPage(view: HistoryView, money: MoneyFormat) {
+  if (view.operations.length === 0 && view.page === 1 && view.pouch === null) {
+    return page(
+      'Säckel — летопись',
+      html`${saeckelHead('history')}
+        <h2>Летопись пока пуста</h2>
+        <p>Сюда ляжет каждый доход, трата и перекладывание — по порядку, с датой и заметкой.</p>
+        <p><a href="/saeckel/income">Записать доход</a> <a href="/saeckel/">К мешкам</a></p>`,
+    );
+  }
+  return page(
+    'Säckel — летопись',
+    html`${saeckelHead('history')}
+      <h2>Летопись</h2>
+      <form method="get" action="/saeckel/history">
+        <p>
+          <label for="pouch">Мешок</label>
+          <select id="pouch" name="pouch">
+            <option value="">Все мешки</option>
+            ${view.pouches.map(
+              (pouch) =>
+                html`<option value="${pouch.id}" ${pouch.id === view.pouch ? html`selected` : ''}>
+                  ${pouch.is_archived ? `${pouch.name} (в Кладовой)` : pouch.name}
+                </option>`,
+            )}
+          </select>
+          <button type="submit">Показать</button>
+        </p>
+      </form>
+      ${
+        view.operations.length > 0
+          ? html`<table>
+              <thead>
+                <tr>
+                  <th>Дата</th>
+                  <th>Мешок</th>
+                  <th>Запись</th>
+                  <th>Заметка</th>
+                  <th>Сумма</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${view.operations.map(
+                  (operation) =>
+                    html`<tr>
+                      <td>${dateForField(operation.date)}</td>
+                      <td>${operationPouches(operation)}</td>
+                      <td>${KIND_LABELS[operation.kind]}</td>
+                      <td>${operation.note}</td>
+                      <td>${signedAmount(operation, money)}</td>
+                      <td>
+                        <a href="/saeckel/operations/${operation.id}" aria-label="Открыть запись"
+                          >›</a
+                        >
+                      </td>
+                    </tr>`,
+                )}
+              </tbody>
+            </table>`
+          : view.page === 1
+            ? html`<p>${EMPTY_POUCH_HISTORY}</p>`
+            : ''
+      }
+      <p>
+        ${view.page > 1 ? html`<a href="${historyHref(view.pouch, view.page - 1)}">Назад</a>` : ''}
+        ${
+          view.hasNext
+            ? html`<a href="${historyHref(view.pouch, view.page + 1)}">Следующие 50</a>`
+            : ''
+        }
+      </p>`,
+  );
+}
+
+// A record of «Летопись», to read: its kind and date, its amount, its pouches and its note.
+function operationPage(operation: Operation, money: MoneyFormat) {
+  return page(
+    'Säckel — запись',
+    html`<p><a href="/saeckel/history">Летопись</a></p>
+      <h1>${KIND_LABELS[operation.kind]} · ${dateForField(operation.date)}</h1>
+      <dl>
+        <dt>Сумма</dt>
+        <dd>${money.format(operation.cents)}</dd>
+        <dt>Дата</dt>
+        <dd>${dateForField(operation.date)}</dd>
+        ${
+          operation.fromName === null
+            ? ''
+            : html`<dt>Из мешка</dt>
+                <dd>${operation.fromName}</dd>`
+        }
+        ${
+          operation.toName === null
+            ? ''
+            : html`<dt>В мешок</dt>
+                <dd>${operation.toName}</dd>`
+        }
+        ${
+          operation.note === ''
+            ? ''
+            : html`<dt>Заметка</dt>
+                <dd>${operation.note}</dd>`
+        }
+      </dl>`,
+  );
+}
+
+// The pouch, its balance, the form of an expense and its last movements; «Переложить» and, in
 // debt, «Покрыть из другого мешка». A pouch in the storeroom has none of these, only «Вернуть»:
 // it is brought back first.
 function pouchPage(pouch: Pouch, view: PouchView, money: MoneyFormat) {
@@ -546,10 +746,12 @@ function pouchPage(pouch: Pouch, view: PouchView, money: MoneyFormat) {
           : expenseForm(pouch, view.form, money)
       }
       ${
-        view.expenses.length === 0
+        view.movements.length === 0
           ? ''
           : html`<ul>
-              ${view.expenses.map((expense) => expenseRow(expense, view.fresh, money))}
+              ${view.movements.map((movement) =>
+                movementRow(movement, pouch.id, view.fresh, money),
+              )}
             </ul>`
       }`,
   );
@@ -719,6 +921,52 @@ async function balanceOf(db: Pool | PoolClient, pouchId: number, userId: number)
   return centsFrom(rows[0]!.balance);
 }
 
+// The records of one user with the names of their pouches, by one statement; the callers add
+// their own condition, order and limit. A pouch is joined by its user too, not by its id alone.
+// The date comes as ISO text, as PostgreSQL keeps it, with no time zone to move it.
+const OPERATIONS = `
+  SELECT o.id, o.kind, o.amount::text AS amount, to_char(o.date, 'YYYY-MM-DD') AS date, o.note,
+         o.from_pouch_id, o.to_pouch_id, f.name AS from_name, t.name AS to_name
+    FROM operations o
+    LEFT JOIN pouches f ON f.id = o.from_pouch_id AND f.user_id = o.user_id
+    LEFT JOIN pouches t ON t.id = o.to_pouch_id AND t.user_id = o.user_id
+   WHERE o.user_id = $1`;
+
+interface OperationRow {
+  id: number;
+  kind: Kind;
+  amount: string;
+  date: string;
+  note: string;
+  from_pouch_id: number | null;
+  to_pouch_id: number | null;
+  from_name: string | null;
+  to_name: string | null;
+}
+
+function operationFrom(row: OperationRow): Operation {
+  return {
+    id: row.id,
+    kind: row.kind,
+    cents: centsFrom(row.amount),
+    date: row.date,
+    note: row.note,
+    fromPouchId: row.from_pouch_id,
+    toPouchId: row.to_pouch_id,
+    fromName: row.from_name,
+    toName: row.to_name,
+  };
+}
+
+// §4.7: `page` of «Летопись» — none is the first; otherwise digits without a leading zero, from 1
+// to the last page. Anything else is null, and the caller answers 404.
+function parsePage(input: string | undefined): number | null {
+  if (input === undefined) return 1;
+  if (!/^[1-9][0-9]{0,3}$/.test(input)) return null;
+  const page = Number(input);
+  return page <= HISTORY_LAST_PAGE ? page : null;
+}
+
 // «Нераспределено», the treasury (§5.6): what came in minus what was laid out into pouches, over
 // the records of one user. Text, as pg gives numeric.
 const TREASURY = `
@@ -807,26 +1055,17 @@ export function createSaeckelApp(
     return rows[0] ?? null;
   }
 
-  // The balance of one pouch of this user and its last expenses, for its page.
+  // The balance of one pouch of this user and its last movements, for its page: every record
+  // into or out of it — laid out, spent, moved in, moved out; an income touches no pouch.
   async function pouchState(pouchId: number, userId: number) {
     const balance = await balanceOf(pool, pouchId, userId);
-    const recent = await pool.query<{ id: number; amount: string; date: string; note: string }>(
-      `SELECT id, amount::text AS amount, to_char(date, 'YYYY-MM-DD') AS date, note
-         FROM operations
-        WHERE user_id = $1 AND kind = 'expense' AND from_pouch_id = $2
-        ORDER BY date DESC, id DESC
-        LIMIT ${RECENT_EXPENSES}`,
+    const recent = await pool.query<OperationRow>(
+      `${OPERATIONS} AND (o.from_pouch_id = $2 OR o.to_pouch_id = $2)
+        ORDER BY o.date DESC, o.id DESC
+        LIMIT ${RECENT_MOVEMENTS}`,
       [userId, pouchId],
     );
-    return {
-      balance,
-      expenses: recent.rows.map((row) => ({
-        id: row.id,
-        cents: centsFrom(row.amount),
-        date: row.date,
-        note: row.note,
-      })),
-    };
+    return { balance, movements: recent.rows.map(operationFrom) };
   }
 
   // An expense or an income as its form first shows: the date of today in the time zone of the
@@ -1179,6 +1418,51 @@ export function createSaeckelApp(
       return refuse();
     }
     return c.redirect('/saeckel/', 303);
+  });
+
+  // «Летопись» (§4.1): the records of this user, newest first, 50 a page. `pouch` is a pouch of
+  // this user, active or in the storeroom: then only the records into or out of it, a transfer
+  // under both of its pouches, no income. Somebody else's pouch, a missing one and a wrong id
+  // are the same 404, as is a page outside 1–1000. A page past the last one is empty, not 404.
+  saeckel.get('/saeckel/history', signedIn, async (c) => {
+    const userId = c.get('user').id;
+    const page = parsePage(c.req.query('page'));
+    if (page === null) return c.notFound();
+    const pouches = await pool.query<FilterPouch>(
+      'SELECT id, name, is_archived FROM pouches WHERE user_id = $1 ORDER BY is_archived, id',
+      [userId],
+    );
+    const wanted = c.req.query('pouch') ?? '';
+    const pouch = wanted === '' ? null : parseId(wanted);
+    if (wanted !== '' && !pouches.rows.some((own) => own.id === pouch)) return c.notFound();
+    // One more than a page: whether there is a next one.
+    const { rows } = await pool.query<OperationRow>(
+      `${OPERATIONS} AND ($2::int IS NULL OR o.from_pouch_id = $2 OR o.to_pouch_id = $2)
+        ORDER BY o.date DESC, o.id DESC
+        LIMIT ${HISTORY_PAGE_SIZE + 1} OFFSET $3`,
+      [userId, pouch, HISTORY_PAGE_SIZE * (page - 1)],
+    );
+    const view: HistoryView = {
+      operations: rows.slice(0, HISTORY_PAGE_SIZE).map(operationFrom),
+      page,
+      pouch,
+      pouches: pouches.rows,
+      hasNext: rows.length > HISTORY_PAGE_SIZE && page < HISTORY_LAST_PAGE,
+    };
+    return c.html(historyPage(view, money));
+  });
+
+  // A record of this user, to read. Somebody else's, a missing one and a wrong id are the same
+  // 404; a record of a pouch in the storeroom is shown like any other.
+  saeckel.get('/saeckel/operations/:id', signedIn, async (c) => {
+    const id = parseId(c.req.param('id'));
+    if (id === null) return c.notFound();
+    const { rows } = await pool.query<OperationRow>(`${OPERATIONS} AND o.id = $2`, [
+      c.get('user').id,
+      id,
+    ]);
+    if (rows[0] === undefined) return c.notFound();
+    return c.html(operationPage(operationFrom(rows[0]), money));
   });
 
   // «Изменить»: only an active pouch of this user. A pouch in the storeroom is the same 404 as
