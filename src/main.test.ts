@@ -478,6 +478,22 @@ describe('Säckel in the court', () => {
     assert.ok(!hersList.includes('Хозяйство'));
   });
 
+  test('the administrator cannot change a pouch of anybody else', async () => {
+    const owner = await person('owner', { admin: true });
+    const anna = await person('anna');
+    const hers = await makePouch('Анины деньги', anna.cookie);
+    const missing = await (await get('/saeckel/pouches/99/edit', owner.cookie)).text();
+    const page = await get(`${hers}/edit`, owner.cookie);
+    assert.equal(page.status, 404);
+    const text = await page.text();
+    assert.ok(text.includes('<h1>Такой тропы во дворе нет</h1>'));
+    assert.equal(text, missing);
+    const save = await post(`${hers}/edit`, { name: 'Чужое', icon: 'cart' }, owner.cookie);
+    assert.equal(save.status, 404);
+    const { rows } = await saeckelPool.query('SELECT name, icon FROM pouches');
+    assert.deepEqual(rows, [{ name: 'Анины деньги', icon: 'pouch' }]);
+  });
+
   test('addresses that are not routes of Säckel: the common 404, with or without a session', async () => {
     const { cookie } = await person('anna');
     for (const path of ['/saeckel', '/saeckel/x', '/saeckel/pouches/', '/saeckel/pouches/1/x']) {
@@ -515,6 +531,31 @@ describe('Säckel in the court', () => {
     );
     for (const secret of ['Тайный', encodeURIComponent('Тайный'), token, 'name=']) {
       assert.ok(!lines[0]!.includes(secret), secret);
+    }
+  });
+
+  test('an unexpected error in «Изменить»: the common 500, no name or session in the log', async (t) => {
+    const lines = captureLog(t);
+    const { token, cookie } = await person('anna');
+    const pouch = await makePouch('Продукты', cookie);
+    await saeckelPool.query(
+      'ALTER TABLE pouches ADD CONSTRAINT pouches_none CHECK (false) NOT VALID',
+    );
+    try {
+      const res = await post(`${pouch}/edit`, { name: 'Тайное имя', icon: 'cart' }, cookie);
+      assert.equal(res.status, 500);
+      assert.ok(!(await res.text()).includes('Тайное имя'));
+    } finally {
+      await saeckelPool.query('ALTER TABLE pouches DROP CONSTRAINT IF EXISTS pouches_none');
+    }
+    const errors = lines.filter((line) => line.startsWith('error '));
+    assert.equal(errors.length, 1);
+    assert.match(
+      errors[0]!,
+      /^error unexpected_error method=POST path=\/saeckel\/pouches\/\d+\/edit /,
+    );
+    for (const secret of ['Тайное', encodeURIComponent('Тайное'), token, 'name=', 'icon=']) {
+      assert.ok(!errors[0]!.includes(secret), secret);
     }
   });
 });
