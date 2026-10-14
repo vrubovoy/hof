@@ -13,7 +13,15 @@ import { html } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import { DatabaseError, type Pool, type PoolClient } from 'pg';
 import { dateForField, dateForList, parseDate, today } from './dates.ts';
-import { centsFrom, FORMAT_ERROR, moneyFormat, parseAmount, type MoneyFormat } from './money.ts';
+import {
+  AMOUNT_MAX_CENTS,
+  amountForField,
+  centsFrom,
+  FORMAT_ERROR,
+  moneyFormat,
+  parseAmount,
+  type MoneyFormat,
+} from './money.ts';
 
 // Who is signed in, from Core through main.ts: the id and the login, nothing more.
 export interface SaeckelUser {
@@ -53,6 +61,8 @@ const MISSING_ERROR = 'Мешок не найден.';
 const EMPTY_ASSIGN_ERROR = 'Впишите сумму хотя бы для одного мешка.';
 const archivedCreateError = (name: string) =>
   `Мешок «${name}» в Кладовой: записи с ним не создаются.`;
+const CHOOSE_POUCH_ERROR = 'Выберите мешок.';
+const SAME_POUCH_ERROR = 'Нельзя переложить в тот же мешок.';
 
 // §4.7: text of a form is one line; PostgreSQL does not take \0 at all.
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/;
@@ -142,6 +152,17 @@ interface EntryForm {
   date: string;
   note: string;
   errors: Partial<Record<EntryField, string>>;
+}
+
+// The two pouches of «Переложить».
+type PouchField = 'from' | 'to';
+
+// «Переложить» as typed: the ids chosen in the two lists, the three fields of an entry, and the
+// error of each field.
+interface TransferForm extends EntryForm {
+  from: string;
+  to: string;
+  errors: Partial<Record<EntryField | PouchField, string>>;
 }
 
 // The same three fields once they all parse: hundredths, an ISO date, the note.
@@ -430,6 +451,64 @@ function assignPage(
   );
 }
 
+// «Покрыть из другого мешка» (§6, design/preview/PouchEditMobile.html), only under a balance
+// below zero: «Переложить» with this pouch as the target and its debt as the amount. A debt
+// larger than one record can hold is left out, and the form then asks for the amount. Only a
+// hint for the form: the debt may change before it is sent.
+function coverLink(pouchId: number, balance: number) {
+  if (balance >= 0) return '';
+  const debt = -balance;
+  const amount =
+    debt <= AMOUNT_MAX_CENTS ? `&amount=${encodeURIComponent(amountForField(debt))}` : '';
+  return html`<p>
+    <a href="/saeckel/transfer?to=${pouchId}${amount}">Покрыть из другого мешка</a>
+  </p>`;
+}
+
+// One of the two lists of «Переложить»: the active pouches of the user as «Название — остаток»,
+// an empty choice first. Only an id of one of them is ever shown as chosen.
+function pouchSelect(
+  field: PouchField,
+  label: string,
+  pouches: readonly ListedPouch[],
+  form: TransferForm,
+  money: MoneyFormat,
+) {
+  const error = form.errors[field];
+  const describedBy =
+    error === undefined ? '' : html`aria-invalid="true" aria-describedby="${field}-error"`;
+  return html`<p>
+      <label for="${field}">${label}</label>
+      <select id="${field}" name="${field}" ${describedBy}>
+        <option value="">— выберите —</option>
+        ${pouches.map(
+          (pouch) =>
+            html`<option
+              value="${pouch.id}"
+              ${String(pouch.id) === form[field] ? html`selected` : ''}
+            >
+              ${pouch.name} — ${money.format(pouch.balance)}
+            </option>`,
+        )}
+      </select>
+    </p>
+    ${error === undefined ? '' : html`<p id="${field}-error">${error}</p>`}`;
+}
+
+// «Переложить из мешка в мешок», texts from design/preview/SaeckelForms.html.
+function transferPage(pouches: readonly ListedPouch[], form: TransferForm, money: MoneyFormat) {
+  return page(
+    'Säckel — переложить',
+    html`<p><a href="/saeckel/">Мешки</a></p>
+      <h1>Переложить из мешка в мешок</h1>
+      <form method="post" action="/saeckel/transfer">
+        ${pouchSelect('from', 'Из мешка', pouches, form, money)}
+        ${pouchSelect('to', 'В мешок', pouches, form, money)} ${entryFields(form, money)}
+        <button type="submit">Переложить</button>
+      </form>`,
+  );
+}
+
 // One expense of the list: «ДД.ММ · заметка · −X», the note left out when there is none. The
 // record just written is marked.
 function expenseRow(expense: Expense, fresh: string | undefined, money: MoneyFormat) {
@@ -440,8 +519,9 @@ function expenseRow(expense: Expense, fresh: string | undefined, money: MoneyFor
   return html`<li>${String(expense.id) === fresh ? html`<mark>${text}</mark>` : text}</li>`;
 }
 
-// The pouch, its balance, the form of an expense and its last expenses. A pouch in the
-// storeroom has neither «Изменить» nor the form, only «Вернуть»: it is brought back first.
+// The pouch, its balance, the form of an expense and its last expenses; «Переложить» and, in
+// debt, «Покрыть из другого мешка». A pouch in the storeroom has none of these, only «Вернуть»:
+// it is brought back first.
 function pouchPage(pouch: Pouch, view: PouchView, money: MoneyFormat) {
   return page(
     `Säckel — ${pouch.name}`,
@@ -450,9 +530,13 @@ function pouchPage(pouch: Pouch, view: PouchView, money: MoneyFormat) {
       ${
         pouch.is_archived
           ? ''
-          : html`<p><a href="/saeckel/pouches/${pouch.id}/edit">Изменить</a></p>`
+          : html`<p>
+              <a href="/saeckel/transfer?from=${pouch.id}">Переложить</a>
+              <a href="/saeckel/pouches/${pouch.id}/edit">Изменить</a>
+            </p>`
       }
       <p>Остаток ${money.format(view.balance)}</p>
+      ${pouch.is_archived ? '' : coverLink(pouch.id, view.balance)}
       ${view.refusal === undefined ? '' : html`<p id="refusal">${view.refusal}</p>`}
       ${
         pouch.is_archived
@@ -505,7 +589,8 @@ function editPouchPage(pouch: Pouch, form: EditPouchForm, balance: number, money
       ${balance === 0 ? '' : html`<p>${notEmptyError(money.format(balance))}</p>`}
       <form method="post" action="/saeckel/pouches/${pouch.id}/archive">
         <button type="submit" ${balance === 0 ? '' : html`disabled`}>В кладовую</button>
-      </form>`,
+      </form>
+      ${coverLink(pouch.id, balance)}`,
   );
 }
 
@@ -990,6 +1075,106 @@ export function createSaeckelApp(
     }
 
     if (refusal !== null) return refuse(refusal);
+    return c.redirect('/saeckel/', 303);
+  });
+
+  // «Переложить». `from`, `to` and `amount` only fill the form in (§4.1, §4.7): a pouch is
+  // chosen only if it is an active pouch of this user, an amount only if it parses, and then
+  // as Hof writes it, never as it came. Anything else leaves the field empty.
+  saeckel.get('/saeckel/transfer', signedIn, async (c) => {
+    const pouches = await activePouches(c.get('user').id);
+    const own = (name: PouchField) => {
+      const id = parseId(c.req.query(name) ?? '');
+      return pouches.some((pouch) => pouch.id === id) ? String(id) : '';
+    };
+    const amount = parseAmount(c.req.query('amount') ?? '');
+    const form: TransferForm = {
+      ...emptyEntryForm(),
+      amount: 'cents' in amount ? amountForField(amount.cents) : '',
+      from: own('from'),
+      to: own('to'),
+    };
+    return c.html(transferPage(pouches, form, money));
+  });
+
+  // A transfer (§4.1, §4.8): every field first, then one transaction that locks both pouches by
+  // one statement in the order of their ids — whichever way the money goes, so two transfers
+  // in opposite directions wait for each other instead of in a circle — and checks them before
+  // the INSERT. An archiving of either pouch takes the same lock: it either waits and then sees
+  // this record in the balance, or goes first and this is refused. The source may go below
+  // zero; the treasury is not touched.
+  saeckel.post('/saeckel/transfer', signedIn, async (c) => {
+    const userId = c.get('user').id;
+    const body = await c.req.parseBody();
+    const parsed = parseEntry(body, today(settings.timeZone, new Date()));
+    const typed = (name: PouchField) => {
+      const value = body[name];
+      return typeof value === 'string' ? value : '';
+    };
+    const form: TransferForm = {
+      ...parsed.form,
+      from: typed('from'),
+      to: typed('to'),
+      errors: { ...parsed.form.errors },
+    };
+    const pouchId = (field: PouchField): number | null => {
+      if (form[field] === '') {
+        form.errors[field] = CHOOSE_POUCH_ERROR;
+        return null;
+      }
+      const id = parseId(form[field]);
+      if (id === null) form.errors[field] = MISSING_ERROR;
+      return id;
+    };
+    const from = pouchId('from');
+    const to = pouchId('to');
+    if (from !== null && from === to) form.errors.to = SAME_POUCH_ERROR;
+    const refuse = async () => c.html(transferPage(await activePouches(userId), form, money), 400);
+    const entry = parsed.entry;
+    if (entry === null || from === null || to === null || Object.keys(form.errors).length > 0) {
+      return refuse();
+    }
+
+    // Why the pouches under the lock refuse the transfer, and on which field.
+    let refusal: { field: PouchField; text: string } | null = null;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await lockPouches(client, userId, [from, to]);
+      const chosen = [
+        ['from', locked.find((pouch) => pouch.id === from)],
+        ['to', locked.find((pouch) => pouch.id === to)],
+      ] as const;
+      for (const [field, pouch] of chosen) {
+        if (refusal === null && pouch === undefined) refusal = { field, text: MISSING_ERROR };
+      }
+      for (const [field, pouch] of chosen) {
+        if (refusal === null && pouch?.is_archived === true) {
+          refusal = { field, text: archivedCreateError(pouch.name) };
+        }
+      }
+      if (refusal !== null) {
+        await client.query('ROLLBACK');
+      } else {
+        await client.query(
+          `INSERT INTO operations (user_id, kind, amount, currency, from_pouch_id, to_pouch_id, date, note)
+           VALUES ($1, 'transfer', $2, $3, $4, $5, $6, $7)`,
+          [userId, entry.cents, settings.currency, from, to, entry.date, entry.note],
+        );
+        await client.query('COMMIT');
+      }
+    } catch (error) {
+      // The connection may already be broken; the original error matters more.
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    if (refusal !== null) {
+      form.errors[refusal.field] = refusal.text;
+      return refuse();
+    }
     return c.redirect('/saeckel/', 303);
   });
 

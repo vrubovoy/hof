@@ -799,6 +799,98 @@ describe('Säckel in the court', () => {
     assert.equal(rows.length, 0);
   });
 
+  test('the administrator transfers neither out of nor into a pouch of anybody else', async () => {
+    const owner = await person('owner', { admin: true });
+    const anna = await person('anna');
+    const hers = Number((await makePouch('Анины деньги', anna.cookie)).split('/').at(-1));
+    const his = Number((await makePouch('Хозяйство', owner.cookie)).split('/').at(-1));
+    for (const [from, to, field] of [
+      [hers, his, 'from'],
+      [his, hers, 'to'],
+    ] as const) {
+      const res = await post(
+        '/saeckel/transfer',
+        { from: String(from), to: String(to), amount: '1', date: '', note: '' },
+        owner.cookie,
+      );
+      assert.equal(res.status, 400);
+      const page = await res.text();
+      assert.ok(page.includes(`<p id="${field}-error">Мешок не найден.</p>`), field);
+      assert.ok(!page.includes('Анины деньги'));
+    }
+    // Her pouch in his address chooses nothing and names nothing; the page keeps the headers.
+    const form = await get(`/saeckel/transfer?from=${hers}&to=${hers}&amount=5`, owner.cookie);
+    assert.equal(form.status, 200);
+    assert.equal(form.headers.get('content-security-policy'), CSP);
+    assert.equal(form.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(form.headers.get('cache-control'), 'no-store');
+    const page = await form.text();
+    assert.ok(!page.includes('Анины деньги'));
+    assert.ok(!page.includes('selected'));
+    const { rows } = await saeckelPool.query('SELECT 1 FROM operations');
+    assert.equal(rows.length, 0);
+  });
+
+  test('an unexpected error in a transfer: the common 500, no amount, note or name in the log', async (t) => {
+    const lines = captureLog(t);
+    const { token, cookie } = await person('anna');
+    const from = Number((await makePouch('Тайный мешок', cookie)).split('/').at(-1));
+    const to = Number((await makePouch('Тайная цель', cookie)).split('/').at(-1));
+    await saeckelPool.query(
+      "CREATE FUNCTION refuse_for_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused for the test'; END $$",
+    );
+    await saeckelPool.query(
+      'CREATE TRIGGER operations_no_insert BEFORE INSERT ON operations FOR EACH ROW EXECUTE FUNCTION refuse_for_test()',
+    );
+    try {
+      const res = await post(
+        '/saeckel/transfer',
+        {
+          from: String(from),
+          to: String(to),
+          amount: '7 777,77',
+          date: '05.10.2026',
+          note: 'тайная заметка',
+        },
+        cookie,
+      );
+      assert.equal(res.status, 500);
+      assert.equal(res.headers.get('location'), null);
+      const page = await res.text();
+      assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'));
+      assert.ok(!page.includes('тайная') && !page.includes('Тайн'));
+    } finally {
+      await saeckelPool.query('DROP TRIGGER IF EXISTS operations_no_insert ON operations');
+      await saeckelPool.query('DROP FUNCTION IF EXISTS refuse_for_test()');
+    }
+    const errors = lines.filter((line) => line.startsWith('error '));
+    assert.equal(errors.length, 1);
+    assert.match(
+      errors[0]!,
+      /^error unexpected_error method=POST path=\/saeckel\/transfer error="refused for the test" /,
+    );
+    for (const secret of [
+      '7 777',
+      '7777',
+      '777777',
+      'тайная',
+      encodeURIComponent('тайная'),
+      'Тайн',
+      encodeURIComponent('Тайн'),
+      '05.10.2026',
+      '2026-10-05',
+      token,
+      'amount=',
+      'note=',
+      'from=',
+      'to=',
+    ]) {
+      assert.ok(!errors[0]!.includes(secret), secret);
+    }
+    const { rows } = await saeckelPool.query('SELECT 1 FROM operations');
+    assert.equal(rows.length, 0);
+  });
+
   test('the currency of the records: another one than CURRENCY is found', async () => {
     assert.equal(await otherRecordedCurrency(saeckelPool, 'RUB'), null);
     const { cookie } = await person('anna');
