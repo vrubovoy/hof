@@ -30,6 +30,8 @@ services:
     environment:
       HOF_CORE_DB_PASSWORD: ${HOF_CORE_DB_PASSWORD:?set it in .env}
       HOF_SAECKEL_DB_PASSWORD: ${HOF_SAECKEL_DB_PASSWORD:?set it in .env}
+      CURRENCY: ${CURRENCY:?set it in .env}
+      TZ: ${TZ:?set it in .env}
       # Port: the PostgreSQL default 5432 inside the compose network.
       PGHOST: postgres
     depends_on:

@@ -15,7 +15,14 @@ import { hashPassword } from './core/password.ts';
 import { describeError, log } from './log.ts';
 import { migrate } from './migrate.ts';
 import { handleConnectionErrors } from './postgres.ts';
-import { createSaeckelApp, type CurrentUser } from './saeckel/app.ts';
+import {
+  createSaeckelApp,
+  otherRecordedCurrency,
+  type CurrentUser,
+  type SaeckelSettings,
+} from './saeckel/app.ts';
+import { timeZoneError } from './saeckel/dates.ts';
+import { currencyError } from './saeckel/money.ts';
 
 const PORT = 3000;
 const BODY_LIMIT_BYTES = 16 * 1024;
@@ -104,6 +111,7 @@ export function applicationUser(corePool: Pool): CurrentUser {
 export function createApp(
   corePool: Pool,
   saeckelPool: Pool,
+  saeckelSettings: SaeckelSettings,
   firstRun: FirstRun,
   dummyPasswordHash: string,
 ): Hono {
@@ -158,7 +166,7 @@ export function createApp(
   });
 
   app.route('/', createCoreApp(corePool, firstRun, dummyPasswordHash, SERVICES));
-  app.route('/', createSaeckelApp(saeckelPool, applicationUser(corePool)));
+  app.route('/', createSaeckelApp(saeckelPool, applicationUser(corePool), saeckelSettings));
 
   // Unknown paths and methods (§4.1).
   app.notFound((c) => c.html(NOT_FOUND_PAGE, 404));
@@ -182,8 +190,8 @@ export function createApp(
   return app;
 }
 
-// Startup order: configuration, migrations of Core and then of Säckel, first-run state, the
-// dummy password hash, and only then the HTTP port.
+// Startup order: configuration, migrations of Core and then of Säckel, the currency of the
+// records, first-run state, the dummy password hash, and only then the HTTP port.
 // Any failure before listen is logged and ends the process with exit code 1.
 async function start(): Promise<void> {
   const corePassword = process.env.HOF_CORE_DB_PASSWORD;
@@ -198,6 +206,16 @@ async function start(): Promise<void> {
       return;
     }
   }
+  // §5.6, §9: the currency and the time zone of the installation, checked before the database.
+  const currency = process.env.CURRENCY;
+  const timeZone = process.env.TZ;
+  const settingsError = currencyError(currency) ?? timeZoneError(timeZone);
+  if (settingsError !== null) {
+    log('error', 'startup_failed', { error: settingsError });
+    process.exitCode = 1;
+    return;
+  }
+  const saeckelSettings: SaeckelSettings = { currency: currency!, timeZone: timeZone! };
 
   // Host and port come from the standard PGHOST and PGPORT that the pg driver reads itself;
   // without them it connects to localhost:5432. Each module has its own pool under its own
@@ -220,6 +238,14 @@ async function start(): Promise<void> {
     const core = await migrate(corePool, CORE_MIGRATIONS);
     const saeckel = await migrate(saeckelPool, SAECKEL_MIGRATIONS);
     applied = [...core.map((name) => `core/${name}`), ...saeckel.map((name) => `saeckel/${name}`)];
+    // §5.6: the first record fixes the currency; another one in .env would change what every
+    // amount means, so the server does not start.
+    const recorded = await otherRecordedCurrency(saeckelPool, saeckelSettings.currency);
+    if (recorded !== null) {
+      throw new Error(
+        `в .env CURRENCY=${saeckelSettings.currency}, а записи Säckel в ${recorded}; смена валюты не поддерживается`,
+      );
+    }
     // Until the court is founded, this writes the gate key to the log.
     firstRun = await startFirstRun(corePool);
     dummyPasswordHash = await newDummyPasswordHash();
@@ -230,7 +256,7 @@ async function start(): Promise<void> {
     return;
   }
 
-  const app = createApp(corePool, saeckelPool, firstRun, dummyPasswordHash);
+  const app = createApp(corePool, saeckelPool, saeckelSettings, firstRun, dummyPasswordHash);
   serve({ fetch: app.fetch, port: PORT }, (info) => {
     log('info', 'start', { port: info.port, migrations: applied.join(',') || 'none' });
   });
