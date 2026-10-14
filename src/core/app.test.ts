@@ -18,6 +18,8 @@ import { createSession, hashSessionToken, newSessionToken, sessionCookie } from 
 const password = process.env.HOF_CORE_DB_PASSWORD;
 assert.ok(password, 'HOF_CORE_DB_PASSWORD is not set: create .env from .env.example');
 const pool = new Pool({ database: 'hof_test', user: 'hof_core', password });
+// Säckel is mounted in createApp, but no route of Core asks its pool for anything.
+const unusedSaeckelPool = new Pool();
 
 before(() => migrate(pool, join(import.meta.dirname, 'migrations')));
 beforeEach(() => pool.query('TRUNCATE sessions, users RESTART IDENTITY'));
@@ -46,7 +48,7 @@ async function boot(t: TestContext) {
   t.mock.method(console, 'log', (line: string) => lines.push(line));
   const firstRun = await startFirstRun(pool);
   const key = /^info gate_key key=(\S+)$/.exec(lines[0] ?? '')?.[1] ?? '';
-  return { app: createApp(pool, firstRun, DUMMY_HASH), key, lines };
+  return { app: createApp(pool, unusedSaeckelPool, firstRun, DUMMY_HASH), key, lines };
 }
 
 function get(app: App, path: string, headers: Record<string, string> = {}) {

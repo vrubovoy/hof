@@ -1,14 +1,16 @@
 // main.ts: common request checks — Origin (§4.6), POST body (§4.7), response headers (§4.9) —,
-// the common 404 and 500 pages with the unexpected_error log line (§4.1, §4.10), and the failures
-// that stop the server before it opens the HTTP port.
+// the common 404 and 500 pages with the unexpected_error log line (§4.1, §4.10), Säckel in the
+// court (§2), and the failures that stop the server before it opens the HTTP port.
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { after, describe, test, type TestContext } from 'node:test';
+import { after, before, beforeEach, describe, test, type TestContext } from 'node:test';
 import { DatabaseError, Pool } from 'pg';
 import type { FirstRun } from './core/gate-key.ts';
-import { createApp } from './main.ts';
+import { hashSessionToken, newSessionToken } from './core/sessions.ts';
+import { applicationUser, createApp } from './main.ts';
+import { migrate } from './migrate.ts';
 
 const HOST = 'hof.example';
 const FORM = 'application/x-www-form-urlencoded';
@@ -28,7 +30,11 @@ const founded: FirstRun = {
 const unusedPool = new Pool();
 
 function request(method: string, headers: Record<string, string>, body?: string) {
-  return createApp(unusedPool, founded, 'unused').request('/anything', { method, headers, body });
+  return createApp(unusedPool, unusedPool, founded, 'unused').request('/anything', {
+    method,
+    headers,
+    body,
+  });
 }
 
 // Silences log lines during the test and returns what was written.
@@ -188,16 +194,19 @@ describe('500 page and the unexpected_error line', () => {
   const secrets = [COOKIE_TOKEN, 'query-secret', 'body-secret'];
 
   function failing(method: string, error: Error) {
-    return createApp(unusedPool, failingGate(error), 'unused').request('/x?token=query-secret', {
-      method,
-      headers: {
-        host: HOST,
-        origin: `https://${HOST}`,
-        'content-type': FORM,
-        cookie: `__Host-hof=${COOKIE_TOKEN}`,
+    return createApp(unusedPool, unusedPool, failingGate(error), 'unused').request(
+      '/x?token=query-secret',
+      {
+        method,
+        headers: {
+          host: HOST,
+          origin: `https://${HOST}`,
+          'content-type': FORM,
+          cookie: `__Host-hof=${COOKIE_TOKEN}`,
+        },
+        body: method === 'POST' ? 'password=body-secret' : undefined,
       },
-      body: method === 'POST' ? 'password=body-secret' : undefined,
-    });
+    );
   }
 
   test('GET: the page with «Попробовать ещё раз», no details; one log line', async (t) => {
@@ -284,7 +293,7 @@ describe('500 page and the unexpected_error line', () => {
     // Nothing listens on port 1: the session query of Core fails to connect.
     const deadPool = new Pool({ host: '127.0.0.1', port: 1 });
     after(() => deadPool.end());
-    const res = await createApp(deadPool, founded, 'unused').request('/', {
+    const res = await createApp(deadPool, unusedPool, founded, 'unused').request('/', {
       headers: { host: HOST, cookie: `__Host-hof=${COOKIE_TOKEN}` },
     });
     assert.equal(res.status, 500);
@@ -320,9 +329,192 @@ describe('startup', () => {
     );
   });
 
+  test('without HOF_SAECKEL_DB_PASSWORD: exits with 1 and names the variable', () => {
+    const result = start({ HOF_CORE_DB_PASSWORD: 'x' });
+    assert.equal(result.status, 1);
+    assert.equal(
+      result.stdout,
+      'error startup_failed error="HOF_SAECKEL_DB_PASSWORD is not set (see .env.example)"\n',
+    );
+  });
+
   test('database unavailable: exits with 1 before listening', () => {
-    const result = start({ HOF_CORE_DB_PASSWORD: 'x', PGHOST: '127.0.0.1', PGPORT: '1' });
+    const result = start({
+      HOF_CORE_DB_PASSWORD: 'x',
+      HOF_SAECKEL_DB_PASSWORD: 'x',
+      PGHOST: '127.0.0.1',
+      PGPORT: '1',
+    });
     assert.equal(result.status, 1);
     assert.equal(result.stdout, 'error startup_failed error="connect ECONNREFUSED 127.0.0.1:1"\n');
+  });
+});
+
+describe('Säckel in the court', () => {
+  // Both modules against hof_test, each under its own role, as main.ts assembles them.
+  const corePool = new Pool({
+    database: 'hof_test',
+    user: 'hof_core',
+    password: process.env.HOF_CORE_DB_PASSWORD,
+  });
+  const saeckelPool = new Pool({
+    database: 'hof_test',
+    user: 'hof_saeckel',
+    password: process.env.HOF_SAECKEL_DB_PASSWORD,
+  });
+  const app = createApp(corePool, saeckelPool, founded, 'unused');
+  const ORIGIN = `https://${HOST}`;
+
+  before(async () => {
+    await migrate(corePool, join(import.meta.dirname, 'core', 'migrations'));
+    await migrate(saeckelPool, join(import.meta.dirname, 'saeckel', 'migrations'));
+  });
+  beforeEach(async () => {
+    await corePool.query('TRUNCATE sessions, users RESTART IDENTITY');
+    await saeckelPool.query('TRUNCATE pouches RESTART IDENTITY');
+  });
+  after(() => Promise.all([corePool.end(), saeckelPool.end()]));
+
+  // A person of Core with a live session; returns the cookie. Nobody signs in here, so the
+  // password hash is never read.
+  async function person(username: string, { admin = false, disabled = false } = {}) {
+    const { rows } = await corePool.query<{ id: number }>(
+      "INSERT INTO users (username, password_hash, is_admin, is_disabled) VALUES ($1, 'x', $2, $3) RETURNING id",
+      [username, admin, disabled],
+    );
+    const token = newSessionToken();
+    await corePool.query(
+      "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, now() + interval '1 day')",
+      [hashSessionToken(token), rows[0]!.id],
+    );
+    return { id: rows[0]!.id, token, cookie: `__Host-hof=${token}` };
+  }
+
+  function get(path: string, cookie?: string) {
+    return app.request(path, { headers: { host: HOST, ...(cookie ? { cookie } : {}) } });
+  }
+
+  function post(path: string, fields: Record<string, string>, cookie?: string) {
+    return app.request(path, {
+      method: 'POST',
+      headers: { host: HOST, origin: ORIGIN, 'content-type': FORM, ...(cookie ? { cookie } : {}) },
+      body: new URLSearchParams(fields).toString(),
+    });
+  }
+
+  async function makePouch(name: string, cookie: string): Promise<string> {
+    const res = await post('/saeckel/pouches/new', { name }, cookie);
+    assert.equal(res.status, 303);
+    return res.headers.get('location')!;
+  }
+
+  test('the courtyard leads to Säckel', async () => {
+    const { cookie } = await person('anna');
+    const page = await (await get('/', cookie)).text();
+    assert.ok(page.includes('<a href="/saeckel/">Säckel</a>'));
+  });
+
+  test('Säckel gets id and login only, not the role', async () => {
+    const owner = await person('owner', { admin: true });
+    const user = applicationUser(corePool);
+    const request = (headers: Record<string, string>) =>
+      new Request('https://hof.example/saeckel/', { headers });
+    assert.deepEqual(await user(request({ cookie: owner.cookie })), {
+      id: owner.id,
+      username: 'owner',
+    });
+    assert.equal(await user(request({})), null);
+    assert.equal(await user(request({ cookie: '__Host-hof=not-a-token' })), null);
+  });
+
+  test('a session of Core opens Säckel; without one, the way to /login', async () => {
+    const { cookie } = await person('anna');
+    assert.equal((await get('/saeckel/', cookie)).status, 200);
+    const away = await get('/saeckel/?a=1');
+    assert.equal(away.status, 303);
+    assert.equal(away.headers.get('location'), '/login?next=%2Fsaeckel%2F%3Fa%3D1');
+    // A POST with the right Origin and form type passes the common checks and meets the session
+    // check of Säckel.
+    const write = await post('/saeckel/pouches/new', { name: 'Продукты' });
+    assert.equal(write.status, 303);
+    assert.equal(write.headers.get('location'), '/login');
+    const { rows } = await saeckelPool.query('SELECT 1 FROM pouches');
+    assert.equal(rows.length, 0);
+  });
+
+  test('a disabled person loses Säckel as well', async () => {
+    const anna = await person('anna');
+    const pouch = await makePouch('Продукты', anna.cookie);
+    await corePool.query('UPDATE users SET is_disabled = true WHERE id = $1', [anna.id]);
+    for (const path of ['/saeckel/', pouch]) {
+      const res = await get(path, anna.cookie);
+      assert.equal(res.status, 303, path);
+      assert.equal(res.headers.get('location'), `/login?next=${encodeURIComponent(path)}`);
+    }
+    assert.equal((await post('/saeckel/pouches/new', { name: 'Ещё' }, anna.cookie)).status, 303);
+    const { rows } = await saeckelPool.query('SELECT name FROM pouches');
+    assert.deepEqual(rows, [{ name: 'Продукты' }]);
+  });
+
+  test('the administrator has his own pouches and no way into anybody else’s', async () => {
+    const owner = await person('owner', { admin: true });
+    const anna = await person('anna');
+    const hers = await makePouch('Анины деньги', anna.cookie);
+    await makePouch('Хозяйство', owner.cookie);
+    const list = await (await get('/saeckel/', owner.cookie)).text();
+    assert.ok(list.includes('Хозяйство'));
+    assert.ok(!list.includes('Анины деньги'));
+    // Her pouch is the same common 404 as one that does not exist.
+    const foreign = await get(hers, owner.cookie);
+    const missing = await get('/saeckel/pouches/99', owner.cookie);
+    assert.equal(foreign.status, 404);
+    assert.equal(missing.status, 404);
+    const page = await foreign.text();
+    assert.ok(page.includes('<h1>Такой тропы во дворе нет</h1>'));
+    assert.equal(page, await missing.text());
+    assert.ok(!page.includes('Анины деньги'));
+    // And she does not see his.
+    const hersList = await (await get('/saeckel/', anna.cookie)).text();
+    assert.ok(!hersList.includes('Хозяйство'));
+  });
+
+  test('addresses that are not routes of Säckel: the common 404, with or without a session', async () => {
+    const { cookie } = await person('anna');
+    for (const path of ['/saeckel', '/saeckel/x', '/saeckel/pouches/', '/saeckel/pouches/1/x']) {
+      for (const res of [
+        await get(path),
+        await get(path, cookie),
+        await post(path, { name: 'x' }),
+        await post(path, { name: 'x' }, cookie),
+      ]) {
+        assert.equal(res.status, 404, path);
+        assert.ok((await res.text()).includes('<h1>Такой тропы во дворе нет</h1>'), path);
+      }
+    }
+  });
+
+  test('an unexpected error in Säckel: the common 500, no name or session in the log', async (t) => {
+    const lines = captureLog(t);
+    const { token, cookie } = await person('anna');
+    await saeckelPool.query(
+      'ALTER TABLE pouches ADD CONSTRAINT pouches_none CHECK (false) NOT VALID',
+    );
+    try {
+      const res = await post('/saeckel/pouches/new', { name: 'Тайный мешок' }, cookie);
+      assert.equal(res.status, 500);
+      const page = await res.text();
+      assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'));
+      assert.ok(!page.includes('Тайный мешок'));
+    } finally {
+      await saeckelPool.query('ALTER TABLE pouches DROP CONSTRAINT IF EXISTS pouches_none');
+    }
+    assert.equal(lines.length, 1);
+    assert.match(
+      lines[0]!,
+      /^error unexpected_error method=POST path=\/saeckel\/pouches\/new error="new row for relation \\"pouches\\" violates check constraint \\"pouches_none\\"" stack=/,
+    );
+    for (const secret of ['Тайный', encodeURIComponent('Тайный'), token, 'name=']) {
+      assert.ok(!lines[0]!.includes(secret), secret);
+    }
   });
 });

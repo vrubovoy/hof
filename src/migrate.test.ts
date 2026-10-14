@@ -77,8 +77,9 @@ test('a failed migration is rolled back completely and not recorded', async () =
 test('tables belong to hof_core and live in schema core', async () => {
   await writeFiles({ '001_a.sql': CREATE_A });
   await migrate(pool, dir);
+  // The tables of hof_core, wherever they are; Säckel has a schema_migrations of its own.
   const { rows } = await pool.query<{ tablename: string; schemaname: string; tableowner: string }>(
-    "SELECT tablename, schemaname, tableowner FROM pg_tables WHERE tablename IN ('a', 'schema_migrations') ORDER BY tablename",
+    "SELECT tablename, schemaname, tableowner FROM pg_tables WHERE tablename IN ('a', 'schema_migrations') AND tableowner = 'hof_core' ORDER BY tablename",
   );
   assert.deepEqual(rows, [
     { tablename: 'a', schemaname: 'core', tableowner: 'hof_core' },
