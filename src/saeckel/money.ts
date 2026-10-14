@@ -10,7 +10,8 @@ export const AMOUNT_MAX_CENTS = 100_000_000_000;
 // Digits of the largest whole part, 1 000 000 000.
 const WHOLE_MAX_DIGITS = 10;
 
-const FORMAT_ERROR = 'Сумма — число, например 1 240,50.';
+// Also the error of a row of «Разложить» sent twice: one field, one number.
+export const FORMAT_ERROR = 'Сумма — число, например 1 240,50.';
 const ZERO_ERROR = 'Сумма должна быть больше нуля.';
 const TOO_BIG_ERROR = 'Сумма — не больше 1 000 000 000,00.';
 

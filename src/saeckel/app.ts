@@ -13,7 +13,7 @@ import { html } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import { DatabaseError, type Pool, type PoolClient } from 'pg';
 import { dateForField, dateForList, parseDate, today } from './dates.ts';
-import { centsFrom, moneyFormat, parseAmount, type MoneyFormat } from './money.ts';
+import { centsFrom, FORMAT_ERROR, moneyFormat, parseAmount, type MoneyFormat } from './money.ts';
 
 // Who is signed in, from Core through main.ts: the id and the login, nothing more.
 export interface SaeckelUser {
@@ -48,6 +48,11 @@ const notEmptyError = (balance: string) =>
   `Убрать в кладовую можно только пустой мешок. Сейчас в нём ${balance}.`;
 const restoreTakenError = (name: string) =>
   `Среди мешков уже есть «${name}». Переименуйте его и верните этот снова.`;
+// §4.6: a pouch in a form that is not this user's — somebody else's or none at all.
+const MISSING_ERROR = 'Мешок не найден.';
+const EMPTY_ASSIGN_ERROR = 'Впишите сумму хотя бы для одного мешка.';
+const archivedCreateError = (name: string) =>
+  `Мешок «${name}» в Кладовой: записи с ним не создаются.`;
 
 // §4.7: text of a form is one line; PostgreSQL does not take \0 at all.
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/;
@@ -128,14 +133,38 @@ interface Expense {
   note: string;
 }
 
-type ExpenseField = 'amount' | 'date' | 'note';
+type EntryField = 'amount' | 'date' | 'note';
 
-// The form «Записать трату» as typed, with the error of each field it has.
-interface ExpenseForm {
+// The amount, the date and the note of a form — «Записать трату», «Доход» — as typed, with the
+// error of each field it has.
+interface EntryForm {
   amount: string;
   date: string;
   note: string;
-  errors: Partial<Record<ExpenseField, string>>;
+  errors: Partial<Record<EntryField, string>>;
+}
+
+// The same three fields once they all parse: hundredths, an ISO date, the note.
+interface Entry {
+  cents: number;
+  date: string;
+  note: string;
+}
+
+// «Разложить» as sent: what was typed in the row of each pouch, by its id; the amount of each
+// row that parses; the error of each row that does not; a refusal of the whole form.
+interface AssignForm {
+  typed: Map<number, string>;
+  amounts: Map<number, number>;
+  errors: Map<number, string>;
+  refusal?: string;
+}
+
+// A pouch row locked by lockPouches.
+interface LockedPouch {
+  id: number;
+  name: string;
+  is_archived: boolean;
 }
 
 // What a pouch page shows besides the pouch itself.
@@ -145,7 +174,7 @@ interface PouchView {
   // `fresh` as it came in the address: the record of that id, if it is among those shown, is
   // marked as just written.
   fresh?: string;
-  form: ExpenseForm;
+  form: EntryForm;
   // A refusal of the whole form, or of «Вернуть», rather than of one field.
   refusal?: string;
 }
@@ -217,12 +246,21 @@ function storeroom(stored: readonly StoredPouch[]) {
   </details>`;
 }
 
-// Мешки, texts from design/preview/Saeckel.html and SaeckelEmpty.html. The parts of M6 — the
-// treasury, income, laying out, «Летопись» — come with what they do. The empty state is about
-// the active pouches; the storeroom is there either way.
+// «Казна» (design/preview/Saeckel.html): the money not laid out yet. Shown always — at zero,
+// below zero, before the first pouch — with the way to income and to laying out.
+function treasuryBlock(treasury: number, money: MoneyFormat) {
+  return html`<h2>Казна</h2>
+    <p>${money.format(treasury)}</p>
+    <p><a href="/saeckel/assign">Разложить</a> <a href="/saeckel/income">+ Доход</a></p>`;
+}
+
+// Мешки, texts from design/preview/Saeckel.html and SaeckelEmpty.html. «Переложить» and
+// «Летопись» come with what they do. The treasury is always there; the empty state is about the
+// active pouches; the storeroom is there either way.
 function pouchesPage(
   pouches: readonly ListedPouch[],
   stored: readonly StoredPouch[],
+  treasury: number,
   money: MoneyFormat,
 ) {
   return page(
@@ -230,6 +268,7 @@ function pouchesPage(
     html`<nav><a href="/">← Двор</a></nav>
       <h1>Säckel</h1>
       <nav><a href="/saeckel/" aria-current="page">Мешки</a></nav>
+      ${treasuryBlock(treasury, money)}
       ${
         pouches.length === 0
           ? html`<h2>Мешков пока нет</h2>
@@ -263,43 +302,132 @@ function newPouchPage(form: NewPouchForm) {
   );
 }
 
-// The form «Записать трату» (design/preview/Saeckel.html, PouchMobile.html). What was typed
-// stays in the fields; the error of a field is under it.
-function expenseForm(pouch: Pouch, form: ExpenseForm, money: MoneyFormat) {
-  const attributes = (field: ExpenseField) =>
+// «Сумма», «Дата», «Заметка» of a form (design/preview/Saeckel.html, SaeckelForms.html). What
+// was typed stays in the fields; the error of a field is under it.
+function entryFields(form: EntryForm, money: MoneyFormat) {
+  const attributes = (field: EntryField) =>
     form.errors[field] === undefined
       ? ''
       : html`aria-invalid="true" aria-describedby="${field}-error"`;
-  const error = (field: ExpenseField) =>
+  const error = (field: EntryField) =>
     form.errors[field] === undefined ? '' : html`<p id="${field}-error">${form.errors[field]}</p>`;
+  return html`<p>
+      <label for="amount">Сумма, ${money.symbol}</label>
+      <input
+        id="amount"
+        name="amount"
+        type="text"
+        inputmode="decimal"
+        autocomplete="off"
+        required
+        value="${form.amount}"
+        ${attributes('amount')}
+      />
+    </p>
+    ${error('amount')}
+    <p>
+      <label for="date">Дата</label>
+      <input id="date" name="date" type="text" value="${form.date}" ${attributes('date')} />
+    </p>
+    ${error('date')}
+    <p>
+      <label for="note">Заметка</label>
+      <input id="note" name="note" type="text" value="${form.note}" ${attributes('note')} />
+    </p>
+    ${error('note')}`;
+}
+
+// The form «Записать трату» (design/preview/Saeckel.html, PouchMobile.html).
+function expenseForm(pouch: Pouch, form: EntryForm, money: MoneyFormat) {
   return html`<h2>Записать трату</h2>
     <form method="post" action="/saeckel/pouches/${pouch.id}/expense">
-      <p>
-        <label for="amount">Сумма, ${money.symbol}</label>
+      ${entryFields(form, money)}
+      <button type="submit">Записать трату</button>
+    </form>`;
+}
+
+// «Доход», texts from design/preview/SaeckelForms.html and IncomeMobile.html.
+function incomePage(form: EntryForm, money: MoneyFormat) {
+  return page(
+    'Säckel — доход',
+    html`<p><a href="/saeckel/">Мешки</a></p>
+      <h1>Доход</h1>
+      <form method="post" action="/saeckel/income">
+        ${entryFields(form, money)}
+        <p>Деньги лягут в казну. После записи откроется раскладка по мешкам — её можно отложить.</p>
+        <button type="submit">Записать доход</button>
+      </form>`,
+  );
+}
+
+// «Разложить по мешкам», texts from design/preview/SaeckelAssign.html and AssignMobile.html: a
+// row with a field for each active pouch. The income just written, if any, is named above.
+function assignPage(
+  pouches: readonly ListedPouch[],
+  treasury: number,
+  form: AssignForm,
+  income: number | null,
+  money: MoneyFormat,
+) {
+  const row = (pouch: ListedPouch) => {
+    const field = `amount_${pouch.id}`;
+    const error = form.errors.get(pouch.id);
+    const describedBy =
+      error === undefined ? '' : html`aria-invalid="true" aria-describedby="${field}-error"`;
+    return html`<tr>
+      <td>${pouch.name}</td>
+      <td>${money.format(pouch.balance)}</td>
+      <td>
         <input
-          id="amount"
-          name="amount"
+          name="${field}"
           type="text"
           inputmode="decimal"
           autocomplete="off"
-          required
-          value="${form.amount}"
-          ${attributes('amount')}
+          value="${form.typed.get(pouch.id) ?? ''}"
+          aria-label="Положить в мешок ${pouch.name}"
+          ${describedBy}
         />
-      </p>
-      ${error('amount')}
-      <p>
-        <label for="date">Дата</label>
-        <input id="date" name="date" type="text" value="${form.date}" ${attributes('date')} />
-      </p>
-      ${error('date')}
-      <p>
-        <label for="note">Заметка</label>
-        <input id="note" name="note" type="text" value="${form.note}" ${attributes('note')} />
-      </p>
-      ${error('note')}
-      <button type="submit">Записать трату</button>
-    </form>`;
+        ${error === undefined ? '' : html`<p id="${field}-error">${error}</p>`}
+      </td>
+    </tr>`;
+  };
+  return page(
+    'Säckel — разложить',
+    html`<p><a href="/saeckel/">Мешки</a></p>
+      ${
+        income === null
+          ? ''
+          : html`<p>
+              Доход ${money.format(income)} лёг в казну. Разложите его по мешкам или оставьте в
+              казне на потом.
+            </p>`
+      }
+      <h1>Разложить по мешкам</h1>
+      ${form.refusal === undefined ? '' : html`<p id="refusal">${form.refusal}</p>`}
+      ${
+        pouches.length === 0
+          ? html`<p>В казне: ${money.format(treasury)}.</p>
+              <h2>Мешков пока нет</h2>
+              <p><a href="/saeckel/pouches/new">+ Новый мешок</a></p>`
+          : html`<p>В казне: ${money.format(treasury)}. Пустые поля пропускаются.</p>
+              <form method="post" action="/saeckel/assign">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Мешок</th>
+                      <th>Сейчас в мешке</th>
+                      <th>Положить, ${money.symbol}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${pouches.map(row)}
+                  </tbody>
+                </table>
+                <button type="submit">Разложить</button>
+              </form>
+              <p><a href="/saeckel/">Позже — вернуться к мешкам</a></p>`
+      }`,
+  );
 }
 
 // One expense of the list: «ДД.ММ · заметка · −X», the note left out when there is none. The
@@ -398,6 +526,61 @@ function parseNote(input: string): string | null {
   return note;
 }
 
+// The amount, the date and the note of a form (§4.7) — of an expense, of an income. Either all
+// three parse, or the form comes back as typed with the error of each field that does not.
+function parseEntry(
+  body: Record<string, unknown>,
+  todayDate: string,
+): { form: EntryForm; entry: Entry | null } {
+  const text = (name: EntryField) => {
+    const value = body[name];
+    return typeof value === 'string' ? value : '';
+  };
+  const form: EntryForm = {
+    amount: text('amount'),
+    date: text('date'),
+    note: text('note'),
+    errors: {},
+  };
+  const amount = parseAmount(form.amount);
+  const date = parseDate(form.date, todayDate);
+  const note = parseNote(form.note);
+  if ('error' in amount) form.errors.amount = amount.error;
+  if ('error' in date) form.errors.date = date.error;
+  if (note === null) form.errors.note = NOTE_ERROR;
+  if ('error' in amount || 'error' in date || note === null) return { form, entry: null };
+  return { form, entry: { cents: amount.cents, date: date.date, note } };
+}
+
+// The rows of «Разложить» (§4.1): only the fields `amount_<id>` count, anything else is
+// ignored. A row left empty is skipped. A field that comes more than once is one row sent
+// twice: refused, so that nothing is laid out or counted twice. A non-empty field whose id is
+// of the wrong form is a pouch that cannot be the user's.
+function parseAssignForm(body: Record<string, unknown>): AssignForm {
+  const form: AssignForm = { typed: new Map(), amounts: new Map(), errors: new Map() };
+  for (const [name, value] of Object.entries(body)) {
+    if (!name.startsWith('amount_')) continue;
+    const texts = (Array.isArray(value) ? value : [value]).map((item) =>
+      typeof item === 'string' ? item : '',
+    );
+    const id = parseId(name.slice('amount_'.length));
+    if (id === null) {
+      if (texts.some((text) => text.trim() !== '')) form.refusal = MISSING_ERROR;
+      continue;
+    }
+    form.typed.set(id, texts.at(-1)!);
+    if (texts.length > 1) {
+      form.errors.set(id, FORMAT_ERROR);
+      continue;
+    }
+    if (texts[0]!.trim() === '') continue;
+    const amount = parseAmount(texts[0]!);
+    if ('error' in amount) form.errors.set(id, amount.error);
+    else form.amounts.set(id, amount.cents);
+  }
+  return form;
+}
+
 // §4.7: a sign — a key of the set, or null. A form field that is not text is no sign either.
 function parseIcon(input: unknown): Icon | null {
   return typeof input === 'string' && Object.hasOwn(ICONS, input) ? (input as Icon) : null;
@@ -449,6 +632,36 @@ const POUCH_BALANCE = `
 async function balanceOf(db: Pool | PoolClient, pouchId: number, userId: number): Promise<number> {
   const { rows } = await db.query<{ balance: string }>(POUCH_BALANCE, [pouchId, userId]);
   return centsFrom(rows[0]!.balance);
+}
+
+// «Нераспределено», the treasury (§5.6): what came in minus what was laid out into pouches, over
+// the records of one user. Text, as pg gives numeric.
+const TREASURY = `
+  SELECT coalesce(sum(CASE WHEN kind = 'income' THEN amount ELSE -amount END), 0)::text AS treasury
+    FROM operations
+   WHERE user_id = $1 AND kind IN ('income', 'assign')`;
+
+async function treasuryOf(pool: Pool, userId: number): Promise<number> {
+  const { rows } = await pool.query<{ treasury: string }>(TREASURY, [userId]);
+  return centsFrom(rows[0]!.treasury);
+}
+
+// §4.8: the rows of these pouches of this user, locked FOR UPDATE by one statement in the order
+// of their ids. Every transaction that writes money into or out of more than one pouch locks
+// them so, in the same order whatever order a form gave them in, and none waits for another
+// in a circle. Repeated ids and nulls are dropped. Returns the rows found; the caller compares
+// them with the ids it asked for and checks the storeroom.
+async function lockPouches(
+  client: PoolClient,
+  userId: number,
+  ids: readonly (number | null)[],
+): Promise<LockedPouch[]> {
+  const wanted = [...new Set(ids.filter((id) => id !== null))];
+  const { rows } = await client.query<LockedPouch>(
+    'SELECT id, name, is_archived FROM pouches WHERE user_id = $1 AND id = ANY($2) ORDER BY id FOR UPDATE',
+    [userId, wanted],
+  );
+  return rows;
 }
 
 // §5.6: a currency the records of Säckel were written in other than this one, or null. The
@@ -531,35 +744,42 @@ export function createSaeckelApp(
     };
   }
 
-  // The form of an expense as it first shows: the date of today in the time zone of the court.
-  const emptyExpenseForm = (): ExpenseForm => ({
+  // An expense or an income as its form first shows: the date of today in the time zone of the
+  // court.
+  const emptyEntryForm = (): EntryForm => ({
     amount: '',
     date: dateForField(today(settings.timeZone, new Date())),
     note: '',
     errors: {},
   });
 
-  // Мешки: the active pouches of this user, in the order they were made, with their balances,
-  // and the storeroom in the same order.
-  saeckel.get('/saeckel/', signedIn, async (c) => {
-    const userId = c.get('user').id;
+  // The active pouches of this user, in the order they were made, with their balances.
+  async function activePouches(userId: number): Promise<ListedPouch[]> {
     const { rows } = await pool.query<{
       id: number;
       name: string;
       balance: string;
       last_expense: string | null;
     }>(POUCHES_WITH_BALANCES, [userId]);
-    const pouches = rows.map((row) => ({
+    return rows.map((row) => ({
       id: row.id,
       name: row.name,
       balance: centsFrom(row.balance),
       lastExpense: row.last_expense === null ? null : centsFrom(row.last_expense),
     }));
+  }
+
+  // Мешки: the treasury, the active pouches of this user with their balances, and the
+  // storeroom, both in the order the pouches were made.
+  saeckel.get('/saeckel/', signedIn, async (c) => {
+    const userId = c.get('user').id;
+    const pouches = await activePouches(userId);
+    const treasury = await treasuryOf(pool, userId);
     const stored = await pool.query<StoredPouch>(
       'SELECT id, name FROM pouches WHERE user_id = $1 AND is_archived ORDER BY id',
       [userId],
     );
-    return c.html(pouchesPage(pouches, stored.rows, money));
+    return c.html(pouchesPage(pouches, stored.rows, treasury, money));
   });
 
   // Registered before /saeckel/pouches/:id, which would match it too.
@@ -600,7 +820,7 @@ export function createSaeckelApp(
     const pouch = await findPouch(c.req.param('id'), userId);
     if (pouch === null) return c.notFound();
     const state = await pouchState(pouch.id, userId);
-    const view = { ...state, fresh: c.req.query('fresh'), form: emptyExpenseForm() };
+    const view = { ...state, fresh: c.req.query('fresh'), form: emptyEntryForm() };
     return c.html(pouchPage(pouch, view, money));
   });
 
@@ -618,28 +838,19 @@ export function createSaeckelApp(
     // that is refused whatever was typed in it, as its page has no fields to show errors in.
     const refuseArchived = async () => {
       const state = await pouchState(pouch.id, userId);
-      const view = { ...state, form: emptyExpenseForm(), refusal: ARCHIVED_ERROR };
+      const view = { ...state, form: emptyEntryForm(), refusal: ARCHIVED_ERROR };
       return c.html(pouchPage({ ...pouch, is_archived: true }, view, money), 400);
     };
     // Already seen by the look-up. The check that counts is the one under the lock below.
     if (pouch.is_archived) return refuseArchived();
 
-    const fields = await c.req.parseBody();
-    const text = (name: ExpenseField) => {
-      const value = fields[name];
-      return typeof value === 'string' ? value : '';
-    };
-    const typed = { amount: text('amount'), date: text('date'), note: text('note') };
-    const amount = parseAmount(typed.amount);
-    const date = parseDate(typed.date, today(settings.timeZone, new Date()));
-    const note = parseNote(typed.note);
-    if ('error' in amount || 'error' in date || note === null) {
-      const errors: ExpenseForm['errors'] = {};
-      if ('error' in amount) errors.amount = amount.error;
-      if ('error' in date) errors.date = date.error;
-      if (note === null) errors.note = NOTE_ERROR;
+    const { form, entry } = parseEntry(
+      await c.req.parseBody(),
+      today(settings.timeZone, new Date()),
+    );
+    if (entry === null) {
       const state = await pouchState(pouch.id, userId);
-      return c.html(pouchPage(pouch, { ...state, form: { ...typed, errors } }, money), 400);
+      return c.html(pouchPage(pouch, { ...state, form }, money), 400);
     }
 
     // The new record's id, or why there is none.
@@ -659,7 +870,7 @@ export function createSaeckelApp(
         const inserted = await client.query<{ id: number }>(
           `INSERT INTO operations (user_id, kind, amount, currency, from_pouch_id, date, note)
            VALUES ($1, 'expense', $2, $3, $4, $5, $6) RETURNING id`,
-          [userId, amount.cents, settings.currency, pouch.id, date.date, note],
+          [userId, entry.cents, settings.currency, pouch.id, entry.date, entry.note],
         );
         await client.query('COMMIT');
         outcome = inserted.rows[0]!.id;
@@ -676,6 +887,110 @@ export function createSaeckelApp(
     // The pouch went into the storeroom since it was looked up.
     if (outcome === 'archived') return refuseArchived();
     return c.redirect(`/saeckel/pouches/${pouch.id}?fresh=${outcome}`, 303);
+  });
+
+  // «Доход» (§4.1): the form, and on success «Разложить» with this income named.
+  saeckel.get('/saeckel/income', signedIn, (c) => c.html(incomePage(emptyEntryForm(), money)));
+
+  // An income: into the treasury, out of no pouch. One INSERT and no transaction of our own:
+  // an income touches no pouch, so there is nothing to lock (§4.8). The user is the one signed
+  // in; a user_id, a kind or pouches in the form are ignored.
+  saeckel.post('/saeckel/income', signedIn, async (c) => {
+    const { form, entry } = parseEntry(
+      await c.req.parseBody(),
+      today(settings.timeZone, new Date()),
+    );
+    if (entry === null) return c.html(incomePage(form, money), 400);
+    const { rows } = await pool.query<{ id: number }>(
+      `INSERT INTO operations (user_id, kind, amount, currency, date, note)
+       VALUES ($1, 'income', $2, $3, $4, $5) RETURNING id`,
+      [c.get('user').id, entry.cents, settings.currency, entry.date, entry.note],
+    );
+    return c.redirect(`/saeckel/assign?income=${rows[0]!.id}`, 303);
+  });
+
+  // The page «Разложить» for this user: the treasury and the rows of the active pouches.
+  async function assignView(
+    userId: number,
+    form: AssignForm,
+    income: number | null,
+  ): Promise<HtmlEscapedString | Promise<HtmlEscapedString>> {
+    const pouches = await activePouches(userId);
+    const treasury = await treasuryOf(pool, userId);
+    // An error of a row the page does not show — somebody else's pouch, one in the storeroom or
+    // none at all — is told without its name.
+    const shown = new Set(pouches.map((pouch) => pouch.id));
+    const hidden = [...form.errors.keys()].some((id) => !shown.has(id));
+    const refusal = form.refusal ?? (hidden ? MISSING_ERROR : undefined);
+    return assignPage(pouches, treasury, { ...form, refusal }, income, money);
+  }
+
+  // «Разложить по мешкам». `income` is the id of an income of this user (§4.7): its amount is
+  // named above the rows. Anything else — somebody else's record, another kind, a wrong id — is
+  // ignored, as if there were none.
+  saeckel.get('/saeckel/assign', signedIn, async (c) => {
+    const userId = c.get('user').id;
+    const id = parseId(c.req.query('income') ?? '');
+    let income: number | null = null;
+    if (id !== null) {
+      const { rows } = await pool.query<{ amount: string }>(
+        "SELECT amount::text AS amount FROM operations WHERE id = $1 AND user_id = $2 AND kind = 'income'",
+        [id, userId],
+      );
+      income = rows[0] === undefined ? null : centsFrom(rows[0].amount);
+    }
+    const form: AssignForm = { typed: new Map(), amounts: new Map(), errors: new Map() };
+    return c.html(await assignView(userId, form, income));
+  });
+
+  // Laying out (§4.1, §4.8): every row first, then one transaction that locks all its pouches
+  // by one statement in the order of their ids and checks them before the first INSERT. Either
+  // every row is written or none: a pouch that is not the user's, a pouch in the storeroom, a
+  // failure of any INSERT or of the COMMIT leaves nothing. An archiving of one of the pouches
+  // takes the same lock: it either waits and then sees these records in the balance, or goes
+  // first and this is refused. The treasury is not compared with: it may go below zero.
+  saeckel.post('/saeckel/assign', signedIn, async (c) => {
+    const userId = c.get('user').id;
+    const form = parseAssignForm(await c.req.parseBody({ all: true }));
+    const refuse = async (refusal?: string) =>
+      c.html(
+        await assignView(userId, refusal === undefined ? form : { ...form, refusal }, null),
+        400,
+      );
+    if (form.refusal !== undefined || form.errors.size > 0) return refuse();
+    if (form.amounts.size === 0) return refuse(EMPTY_ASSIGN_ERROR);
+
+    const date = today(settings.timeZone, new Date());
+    let refusal: string | null = null;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await lockPouches(client, userId, [...form.amounts.keys()]);
+      const archived = locked.find((pouch) => pouch.is_archived);
+      if (locked.length < form.amounts.size) refusal = MISSING_ERROR;
+      else if (archived !== undefined) refusal = archivedCreateError(archived.name);
+      if (refusal !== null) {
+        await client.query('ROLLBACK');
+      } else {
+        for (const pouch of locked) {
+          await client.query(
+            `INSERT INTO operations (user_id, kind, amount, currency, to_pouch_id, date)
+             VALUES ($1, 'assign', $2, $3, $4, $5)`,
+            [userId, form.amounts.get(pouch.id), settings.currency, pouch.id, date],
+          );
+        }
+        await client.query('COMMIT');
+      }
+    } catch (error) {
+      // The connection may already be broken; the original error matters more.
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    if (refusal !== null) return refuse(refusal);
+    return c.redirect('/saeckel/', 303);
   });
 
   // «Изменить»: only an active pouch of this user. A pouch in the storeroom is the same 404 as
@@ -801,7 +1116,7 @@ export function createSaeckelApp(
       const pouch = await findPouch(c.req.param('id'), userId);
       if (pouch === null) return c.notFound();
       const state = await pouchState(pouch.id, userId);
-      const view = { ...state, form: emptyExpenseForm(), refusal: restoreTakenError(pouch.name) };
+      const view = { ...state, form: emptyEntryForm(), refusal: restoreTakenError(pouch.name) };
       return c.html(pouchPage(pouch, view, money), 400);
     }
     if (restored === 0) return c.notFound();
