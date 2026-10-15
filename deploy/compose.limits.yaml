@@ -20,3 +20,9 @@ services:
     # command is a second Node process in the same container.
     mem_limit: 256m
     memswap_limit: 256m
+  nginx:
+    # About 5 MiB idle and 9 MiB after hundreds of short TLS connections and HTTP/2 requests. Each
+    # connection held open costs about 40 KiB: with 32m, 900 open connections made the kernel end a
+    # worker. On a server with one CPU nginx has one worker of 1024 connections, about 45 MiB.
+    mem_limit: 64m
+    memswap_limit: 64m

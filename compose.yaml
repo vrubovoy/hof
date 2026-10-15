@@ -1,6 +1,7 @@
-# Hof on one server: PostgreSQL and the application (ARCHITECTURE.md §1, §9).
-# No service publishes ports. Secrets are passed to each service separately, not through a
-# shared env_file: every container gets only what it needs.
+# Hof on one server: nginx, the application and PostgreSQL (ARCHITECTURE.md §1, §9).
+# Only nginx publishes ports, 80 and 443 on IPv4; hof and postgres are reachable inside the
+# compose network only. Secrets are passed to each service separately, not through a shared
+# env_file: every container gets only what it needs.
 # Every container comes back by itself after a crash or a restart of Docker, but not after
 # `docker compose stop`. Docker keeps at most three log files of 10 MB per container.
 # deploy/compose.limits.yaml adds memory limits for a small server shared with other services;
@@ -52,6 +53,50 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+  nginx:
+    image: nginx:1.30.6-alpine3.24
+    restart: unless-stopped
+    # IPv4 only: with an IPv6 address Docker would pass connections through its proxy, and nginx
+    # would see the address of the proxy instead of the client's.
+    ports:
+      - 0.0.0.0:80:80
+      - 0.0.0.0:443:443
+    environment:
+      # The one domain of Hof; nginx gets nothing else. It is not required by the whole file, so
+      # postgres and hof run without it, as in development. Without it nginx is not created:
+      # Docker stops at the missing /etc/letsencrypt/live/set-HOF_DOMAIN-in-.env.
+      HOF_DOMAIN: ${HOF_DOMAIN:-set-HOF_DOMAIN-in-.env}
+    volumes:
+      # The image fills its templates in with the environment at start and writes the result over
+      # its own default.conf.
+      - ./deploy/nginx.conf:/etc/nginx/templates/default.conf.template:ro
+      # The certificate of certbot on the host: live/ holds links to ../../archive/, so both are
+      # mounted at the same paths. A missing directory stops `docker compose up` with an error;
+      # Docker must not create an empty one, or certbot would refuse to issue the certificate.
+      - type: bind
+        source: /etc/letsencrypt/live/${HOF_DOMAIN:-set-HOF_DOMAIN-in-.env}
+        target: /etc/letsencrypt/live/${HOF_DOMAIN:-set-HOF_DOMAIN-in-.env}
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /etc/letsencrypt/archive/${HOF_DOMAIN:-set-HOF_DOMAIN-in-.env}
+        target: /etc/letsencrypt/archive/${HOF_DOMAIN:-set-HOF_DOMAIN-in-.env}
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      hof:
+        condition: service_started
+        # nginx finds the address of hof when it starts; after Compose recreates hof, it restarts
+        # nginx as well.
+        restart: true
     logging:
       driver: json-file
       options:

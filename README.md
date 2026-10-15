@@ -91,18 +91,24 @@ docker compose -f compose.dev.yaml exec postgres psql -U postgres -d hof -c 'TRU
 
 ### Production compose локально
 
-`compose.yaml` — то, что будет работать на сервере: `postgres` и `hof` из образа по `Dockerfile`.
-Пароли берутся из того же `.env`; каждый контейнер получает только свои.
+`compose.yaml` — то, что будет работать на сервере: `nginx`, `postgres` и `hof` из образа по
+`Dockerfile`. Пароли берутся из того же `.env`; каждый контейнер получает только свои.
+
+Локально сертификата нет, поэтому запускают только `postgres` и `hof`. `HOF_DOMAIN` для этого не
+нужен: его читает только `nginx`. Без `HOF_DOMAIN` полный `docker compose up` создаёт `postgres` и
+`hof`, а на `nginx` останавливается: Docker сообщает, что нет каталога
+`/etc/letsencrypt/live/set-HOF_DOMAIN-in-.env`.
 
 ```sh
-docker compose up -d --build  # собрать образ hof и запустить оба контейнера
-docker compose logs hof       # строка `info start` и применённые миграции
-docker compose stop           # остановить; контейнеры и данные остаются
-docker compose start          # запустить остановленные контейнеры снова
-docker compose down           # удалить контейнеры; том с данными остаётся
+docker compose up -d --build postgres hof  # собрать образ hof и запустить оба контейнера
+docker compose logs hof                    # строка `info start` и применённые миграции
+docker compose stop                        # остановить; контейнеры и данные остаются
+docker compose start                       # запустить остановленные контейнеры снова
+docker compose down                        # удалить контейнеры; том с данными остаётся
 ```
 
-Наружу порты пока не открыты, сервер виден только внутри сети compose. Данные лежат в томе
+`postgres` и `hof` портов наружу не открывают, их видно только внутри сети compose; на сервере
+снаружи доступен только `nginx` на 80 и 443 по IPv4. Данные лежат в томе
 `hof_pgdata`, отдельно от dev-тома `hof-dev_pgdata`, так что обе базы могут работать одновременно.
 `docker compose down -v` удаляет и этот том со всеми записями, поэтому для production эта команда
 не используется.
