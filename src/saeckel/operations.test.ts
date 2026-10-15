@@ -1,4 +1,4 @@
-// M6.4: «Исправить запись» (ARCHITECTURE.md §4.1, §4.8, §5.4, §5.5). Database: hof_test as
+// M6.4 and M6.5: «Исправить запись», «Удалить запись» (ARCHITECTURE.md §4.1, §4.8, §5.4, §5.5). Database: hof_test as
 // hof_saeckel; who is signed in comes from the stand-in of test-helpers. Races are put in order
 // by real locks and pg_stat_activity, never by waiting a while.
 
@@ -21,6 +21,7 @@ import {
   operations,
   pool,
   post,
+  pouches,
   waitingQueries,
 } from './test-helpers.ts';
 
@@ -155,7 +156,7 @@ describe('the page of a record', () => {
         `<h1>${heading}</h1>`,
         `<form method="post" action="/saeckel/operations/${id}">`,
         '<label for="amount">Сумма, ₽</label>',
-        '<p>Вид записи не меняется.</p>',
+        '<p>Вид записи не меняется. Удаление попросит подтверждения.</p>',
         '<button type="submit">Сохранить</button>',
       ]) {
         assert.ok(folded.includes(text), `${heading}: ${text}`);
@@ -645,5 +646,398 @@ describe('the date of a record in its form', () => {
     const spent = await addOperation(1, 'expense', 100, { from: food }, '2024-02-29');
     const page = await (await get(`/saeckel/operations/${spent}`, 'anna')).text();
     assert.equal(values(page)[1], dateForField('2024-02-29'));
+  });
+});
+
+// M6.5: «Удалить запись».
+
+function remove(id: number | string, who = 'anna', fields: Record<string, string> = {}) {
+  return post(`/saeckel/operations/${id}/delete`, fields, who);
+}
+
+// Hundredths from money as a page shows it: «−1 240,50 ₽» is −124050.
+function cents(text: string): number {
+  const bare = text.replace(/[\s  ₽]/g, '');
+  const sign = bare.startsWith('−') ? -1 : 1;
+  return sign * Number(bare.replace(/^[−+]/, '').replace(',', ''));
+}
+
+describe('Удалить: the page', () => {
+  test('a record to change has «Удалить» folded, with «Удалить запись»', async () => {
+    const food = await addPouch(1, 'Продукты');
+    for (const id of [
+      await addOperation(1, 'expense', 100, { from: food }),
+      await addOperation(1, 'income', 100),
+    ]) {
+      const page = fold(await (await get(`/saeckel/operations/${id}`, 'anna')).text());
+      assert.ok(
+        page.includes(
+          `<details> <summary>Удалить</summary> <form method="post" action="/saeckel/operations/${id}/delete"> <button type="submit">Удалить запись</button> </form> </details>`,
+        ),
+        String(id),
+      );
+      assert.ok(page.includes('<p>Вид записи не меняется. Удаление попросит подтверждения.</p>'));
+    }
+  });
+
+  test('a record of a pouch in the storeroom has neither the form nor «Удалить»', async () => {
+    const old = await addPouch(1, 'Старый');
+    const spent = await addOperation(1, 'expense', 100, { from: old });
+    await pool.query('UPDATE pouches SET is_archived = true WHERE id = $1', [old]);
+    const page = await (await get(`/saeckel/operations/${spent}`, 'anna')).text();
+    assert.ok(!page.includes('<form'));
+    assert.ok(!page.includes('Удалить запись') && !page.includes('/delete'));
+  });
+});
+
+describe('Удалить', () => {
+  test('each kind: 303 to Летопись, gone; the treasury and the balances follow', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const trip = await addPouch(1, 'Отпуск');
+    const income = await addOperation(1, 'income', 100_000);
+    const laid = await addOperation(1, 'assign', 30_000, { to: food });
+    const spent = await addOperation(1, 'expense', 12_345, { from: food });
+    const moved = await addOperation(1, 'transfer', 5_000, { from: food, to: trip });
+    assert.deepEqual(
+      [await treasury(), await balance(food), await balance(trip)],
+      ['700,00 ₽', '126,55 ₽', '50,00 ₽'],
+    );
+    const gone = async (id: number) => {
+      // Fields of the form are not read: no owner, kind or currency comes from there.
+      const res = await remove(id, 'anna', { user_id: '2', kind: 'income', currency: 'EUR' });
+      assert.equal(res.status, 303, String(id));
+      assert.equal(res.headers.get('location'), '/saeckel/history');
+      assert.equal(await record(id), undefined, String(id));
+    };
+    await gone(moved); // the source gets it back, the target loses it
+    assert.deepEqual([await balance(food), await balance(trip)], ['176,55 ₽', '0,00 ₽']);
+    await gone(spent); // the pouch gets it back
+    assert.equal(await balance(food), '300,00 ₽');
+    await gone(laid); // back into the treasury
+    assert.deepEqual([await treasury(), await balance(food)], ['1 000,00 ₽', '0,00 ₽']);
+    // An income laid out already: the treasury goes below zero.
+    await addOperation(1, 'assign', 40_000, { to: trip });
+    await gone(income);
+    assert.deepEqual([await treasury(), await balance(trip)], ['−400,00 ₽', '400,00 ₽']);
+    assert.equal((await operations()).length, 1);
+  });
+
+  test('twice: the second time 404; somebody else’s, a missing one and a wrong id: the same 404', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const spent = await addOperation(1, 'expense', 100, { from: food });
+    const his = await addPouch(2, 'Тайный мешок Бориса');
+    const hisRecord = await addOperation(2, 'expense', 100, { from: his });
+    assert.equal((await remove(spent)).status, 303);
+    const missing = await (await remove(99_999)).text();
+    for (const value of [
+      String(spent),
+      String(hisRecord),
+      '99999',
+      'abc',
+      '01',
+      '0',
+      '2147483648',
+    ]) {
+      const res = await remove(value);
+      assert.equal(res.status, 404, value);
+      assert.equal(await res.text(), missing, value);
+    }
+    assert.deepEqual(
+      (await operations()).map((row) => row.id),
+      [hisRecord],
+    );
+    await assertNothingHeld(his);
+  });
+
+  test('a pouch of the record in the storeroom, either one of a transfer: 400, to read, kept', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const old = await addPouch(1, 'Старый');
+    const laid = await addOperation(1, 'assign', 100, { to: old });
+    const spent = await addOperation(1, 'expense', 100, { from: old });
+    const out = await addOperation(1, 'transfer', 100, { from: old, to: food });
+    const into = await addOperation(1, 'transfer', 100, { from: food, to: old });
+    await pool.query('UPDATE pouches SET is_archived = true WHERE id = $1', [old]);
+    for (const id of [laid, spent, out, into]) {
+      const res = await remove(id);
+      assert.equal(res.status, 400, String(id));
+      const page = await res.text();
+      assert.ok(!page.includes('<form'), String(id));
+      assert.ok(fold(page).includes('в Кладовой: запись с ним не исправляется и не удаляется.'));
+      assert.notEqual(await record(id), undefined, String(id));
+    }
+    // An income has no pouch: it goes, whatever is in the storeroom.
+    const income = await addOperation(1, 'income', 100);
+    assert.equal((await remove(income)).status, 303);
+    await assertNothingHeld(food);
+    await assertNothingHeld(old);
+  });
+
+  test('without a session: POST goes to /login, nothing is queried', async () => {
+    const res = await post('/saeckel/operations/1/delete', {}, undefined, appWithoutDatabase);
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), '/login');
+    assert.equal((await get('/saeckel/operations/1/delete', 'anna')).status, 404);
+  });
+});
+
+describe('Удалить: failures', () => {
+  for (const atCommit of [false, true]) {
+    test(`the ${atCommit ? 'COMMIT' : 'DELETE'} fails: 500, no Location, the record kept, nothing held`, async (t: TestContext) => {
+      t.mock.method(console, 'error', () => undefined);
+      const a = await addPouch(1, 'А');
+      const b = await addPouch(1, 'Б');
+      const moved = await addOperation(1, 'transfer', 100, { from: a, to: b });
+      const drop = await failingTrigger('operations', 'DELETE', { atCommit });
+      try {
+        const res = await remove(moved);
+        assert.equal(res.status, 500);
+        assert.equal(res.headers.get('location'), null);
+        await assertNothingHeld(a);
+        await assertNothingHeld(b);
+      } finally {
+        await drop();
+      }
+      assert.notEqual(await record(moved), undefined);
+      // It goes once the database lets it.
+      assert.equal((await remove(moved)).status, 303);
+    });
+  }
+});
+
+describe('Удалить and others at once', () => {
+  for (const first of ['delete', 'edit'] as const) {
+    test(`a deletion and a change of one record, ${first} first`, async () => {
+      const a = await addPouch(1, 'А');
+      const b = await addPouch(1, 'Б');
+      const spent = await addOperation(1, 'expense', 100, { from: a });
+      const answers = await holder(async (rival) => {
+        await rival.query('SELECT 1 FROM operations WHERE id = $1 FOR UPDATE', [spent]);
+        const order =
+          first === 'delete' ? (['delete', 'edit'] as const) : (['edit', 'delete'] as const);
+        const pending: Record<string, Promise<Response>> = {};
+        for (const [i, action] of order.entries()) {
+          pending[action] = Promise.resolve(
+            action === 'delete' ? remove(spent) : edit(spent, { from: String(b), amount: '5' }),
+          );
+          const waiting = await waitingQueries(i + 1);
+          for (const query of waiting) assert.match(query, RECORD_LOCK);
+        }
+        await rival.query('COMMIT');
+        return { delete: await pending.delete!, edit: await pending.edit! };
+      });
+      if (first === 'delete') {
+        assert.deepEqual([answers.delete.status, answers.edit.status], [303, 404]);
+      } else {
+        // The change goes first; then the changed record is deleted.
+        assert.deepEqual([answers.edit.status, answers.delete.status], [303, 303]);
+      }
+      assert.equal(await record(spent), undefined);
+      assert.deepEqual([await balance(a), await balance(b)], ['0,00 ₽', '0,00 ₽']);
+      await assertNothingHeld(a);
+      await assertNothingHeld(b);
+    });
+  }
+
+  test('the pouches of a deletion come from the locked row: a record moved meanwhile', async () => {
+    const a = await addPouch(1, 'А');
+    const c = await addPouch(1, 'В');
+    const spent = await addOperation(1, 'expense', 100, { from: a });
+    let res: Response | undefined;
+    await holder(async (onC) => {
+      await onC.query('SELECT 1 FROM pouches WHERE id = $1 FOR NO KEY UPDATE', [c]);
+      await holder(async (mover) => {
+        // Another tab moves the expense to C and has not committed yet.
+        await mover.query('UPDATE operations SET from_pouch_id = $1 WHERE id = $2', [c, spent]);
+        const pending = remove(spent);
+        await waitingFor(RECORD_LOCK);
+        await mover.query('COMMIT');
+        // Locked, the row says C: the deletion waits for C, and A is free.
+        await waitingFor(POUCHES_LOCK);
+        await holder(async (probe) => {
+          await probe.query('SELECT 1 FROM pouches WHERE id = $1 FOR UPDATE NOWAIT', [a]);
+        });
+        await onC.query('COMMIT');
+        res = await pending;
+      });
+    });
+    assert.equal(res!.status, 303);
+    assert.equal(await record(spent), undefined);
+    assert.deepEqual([await balance(a), await balance(c)], ['0,00 ₽', '0,00 ₽']);
+    await assertNothingHeld(a);
+    await assertNothingHeld(c);
+  });
+
+  test('two deletions of one record: 303, then 404', async () => {
+    const a = await addPouch(1, 'А');
+    const spent = await addOperation(1, 'expense', 100, { from: a });
+    const answers = await holder(async (rival) => {
+      await rival.query('SELECT 1 FROM operations WHERE id = $1 FOR UPDATE', [spent]);
+      const one = remove(spent);
+      await waitingQueries(1);
+      const two = remove(spent);
+      await waitingQueries(2);
+      await rival.query('COMMIT');
+      return Promise.all([one, two]);
+    });
+    assert.deepEqual(
+      answers.map((res) => res.status),
+      [303, 404],
+    );
+    await assertNothingHeld(a);
+  });
+
+  test('the deletion first: the archiving waits and counts the balance without the record', async () => {
+    // The pouch is in debt by its one expense; deleted, it is empty and may go.
+    const food = await addPouch(1, 'Продукты');
+    const spent = await addOperation(1, 'expense', 100, { from: food });
+    const answers = await holder(async (rival) => {
+      await rival.query('SELECT 1 FROM pouches WHERE id = $1 FOR UPDATE', [food]);
+      const deleting = remove(spent);
+      await waitingFor(POUCHES_LOCK);
+      const archiving = archive(food);
+      const waiting = await waitingQueries(2);
+      assert.ok(
+        waiting.some((query) => ARCHIVE_LOCK.test(query)),
+        waiting.join('\n'),
+      );
+      await rival.query('COMMIT');
+      return { delete: await deleting, archive: await archiving };
+    });
+    assert.deepEqual([answers.delete.status, answers.archive.status], [303, 303]);
+    assert.equal(await record(spent), undefined);
+    assert.equal((await pouches()).find((row) => row.id === food)!.is_archived, true);
+    await assertNothingHeld(food);
+  });
+
+  test('the archiving first: the deletion waits, finds the storeroom, 400, the record kept', async () => {
+    // The pouch comes to zero; it may go into the storeroom while the expense stays its record.
+    const food = await addPouch(1, 'Продукты');
+    await addOperation(1, 'assign', 100, { to: food });
+    const spent = await addOperation(1, 'expense', 100, { from: food });
+    const answers = await holder(async (rival) => {
+      await rival.query('SELECT 1 FROM pouches WHERE id = $1 FOR UPDATE', [food]);
+      const archiving = archive(food);
+      await waitingFor(ARCHIVE_LOCK);
+      const deleting = remove(spent);
+      await waitingFor(POUCHES_LOCK);
+      await rival.query('COMMIT');
+      return { archive: await archiving, delete: await deleting };
+    });
+    assert.deepEqual([answers.archive.status, answers.delete.status], [303, 400]);
+    assert.ok((await answers.delete.text()).includes('в Кладовой: запись с ним не'));
+    assert.notEqual(await record(spent), undefined);
+    assert.equal(await balance(food), '0,00 ₽');
+    await assertNothingHeld(food);
+  });
+});
+
+describe('the whole budget adds up', () => {
+  test('income, laying out, expenses, transfers, changes and deletions of each kind, the storeroom', async () => {
+    // Every step through the forms of Säckel.
+    const ok = async (res: Response | Promise<Response>) => assert.equal((await res).status, 303);
+    for (const name of ['Продукты', 'Транспорт', 'Отпуск', 'Пустой']) {
+      await ok(post('/saeckel/pouches/new', { name }, 'anna'));
+    }
+    const [food, cart, trip, empty] = (await pouches()).map((row) => row.id) as [
+      number,
+      number,
+      number,
+      number,
+    ];
+    await ok(post('/saeckel/income', { amount: '1 000', date: '', note: 'зарплата' }, 'anna'));
+    await ok(post('/saeckel/income', { amount: '250,37', date: '', note: 'премия' }, 'anna'));
+    await ok(post('/saeckel/income', { amount: '0,01', date: '', note: '' }, 'anna'));
+    await ok(
+      post(
+        '/saeckel/assign',
+        {
+          [`amount_${food}`]: '600',
+          [`amount_${cart}`]: '300',
+          [`amount_${trip}`]: '100',
+          [`amount_${empty}`]: '0,29',
+        },
+        'anna',
+      ),
+    );
+    const spend = (pouch: number, amount: string, note = '') =>
+      post(`/saeckel/pouches/${pouch}/expense`, { amount, date: '', note }, 'anna');
+    await ok(spend(food, '123,45', 'рынок'));
+    await ok(spend(food, '0,01'));
+    await ok(spend(cart, '400'));
+    await ok(spend(trip, '50,50'));
+    const move = (from: number, to: number, amount: string) =>
+      post(
+        '/saeckel/transfer',
+        { from: String(from), to: String(to), amount, date: '', note: '' },
+        'anna',
+      );
+    await ok(move(trip, food, '20'));
+    await ok(move(food, cart, '10,10'));
+
+    const find = async (kind: string, amount: string) =>
+      (await operations()).find((row) => row.kind === kind && row.amount === amount)!.id;
+    // A change of each kind.
+    await ok(edit(await find('income', '25037'), { amount: '250,38', note: 'премия' }));
+    await ok(edit(await find('assign', '60000'), { to: String(food), amount: '599,99' }));
+    await ok(edit(await find('expense', '12345'), { from: String(trip), amount: '123,46' }));
+    await ok(
+      edit(await find('transfer', '1010'), {
+        from: String(cart),
+        to: String(food),
+        amount: '10,11',
+      }),
+    );
+    // A deletion of each kind.
+    await ok(remove(await find('income', '1')));
+    await ok(remove(await find('assign', '29')));
+    await ok(remove(await find('expense', '1')));
+    await ok(remove(await find('transfer', '2000')));
+    // The empty pouch goes into the storeroom.
+    await ok(archive(empty));
+
+    // By hand: incomes 1 000,00 + 250,38; laid out 599,99 + 300 + 100; spent 123,46 + 400 +
+    // 50,50; the transfer of 10,11 goes from Транспорт to Продукты.
+    const expected = { treasury: 25_039, food: 61_010, cart: -11_011, trip: -7_396, empty: 0 };
+    const shown = {
+      treasury: cents((await treasury())!),
+      food: cents((await balance(food))!),
+      cart: cents((await balance(cart))!),
+      trip: cents((await balance(trip))!),
+      empty: cents((await balance(empty))!),
+    };
+    assert.deepEqual(shown, expected);
+    assert.equal((await pouches()).find((row) => row.id === empty)!.is_archived, true);
+
+    // The same sums by SQL, apart from the code of Säckel.
+    const { rows } = await pool.query<{
+      income: string;
+      spent: string;
+      treasury: string;
+      pouches: string;
+    }>(
+      `SELECT
+         (SELECT coalesce(sum(amount), 0) FROM operations WHERE user_id = 1 AND kind = 'income')::text AS income,
+         (SELECT coalesce(sum(amount), 0) FROM operations WHERE user_id = 1 AND kind = 'expense')::text AS spent,
+         (SELECT coalesce(sum(CASE kind WHEN 'income' THEN amount ELSE -amount END), 0)
+            FROM operations WHERE user_id = 1 AND kind IN ('income', 'assign'))::text AS treasury,
+         (SELECT coalesce(sum(CASE WHEN to_pouch_id IS NOT NULL THEN amount ELSE 0 END)
+                        - sum(CASE WHEN from_pouch_id IS NOT NULL THEN amount ELSE 0 END), 0)
+            FROM operations WHERE user_id = 1)::text AS pouches`,
+    );
+    const sums = rows[0]!;
+    assert.equal(Number(sums.treasury), expected.treasury);
+    assert.equal(
+      Number(sums.pouches),
+      expected.food + expected.cart + expected.trip + expected.empty,
+    );
+    // The treasury and every pouch, those in the storeroom too, are what came in less what was spent.
+    assert.equal(
+      Number(sums.treasury) + Number(sums.pouches),
+      Number(sums.income) - Number(sums.spent),
+    );
+    assert.equal(
+      shown.treasury + shown.food + shown.cart + shown.trip + shown.empty,
+      Number(sums.income) - Number(sums.spent),
+    );
   });
 });

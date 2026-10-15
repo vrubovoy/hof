@@ -755,6 +755,7 @@ function operationPage(operation: Operation, money: MoneyFormat) {
 // A record to change (design/preview/SaeckelForms.html, «Трата · 05.10.2026»): the lists of its
 // pouches by its kind — the active pouches by name, the chosen one first chosen — then the
 // amount, the date and the note. The heading keeps the stored date; the kind does not change.
+// Below, «Удалить» folded in <details> (§4.1): opening it is the confirmation, no script.
 function operationEditPage(
   operation: Operation,
   pouches: readonly { id: number; name: string }[],
@@ -771,9 +772,15 @@ function operationEditPage(
         ${fields.includes('from') ? pouchSelect('from', 'Из мешка', choices, form, false) : ''}
         ${fields.includes('to') ? pouchSelect('to', 'В мешок', choices, form, false) : ''}
         ${entryFields(form, money)}
-        <p>Вид записи не меняется.</p>
+        <p>Вид записи не меняется. Удаление попросит подтверждения.</p>
         <button type="submit">Сохранить</button>
-      </form>`,
+      </form>
+      <details>
+        <summary>Удалить</summary>
+        <form method="post" action="/saeckel/operations/${operation.id}/delete">
+          <button type="submit">Удалить запись</button>
+        </form>
+      </details>`,
   );
 }
 
@@ -1020,6 +1027,11 @@ function operationFrom(row: OperationRow): Operation {
     toArchived: row.to_archived,
   };
 }
+
+// §4.8: a record of this user locked FOR UPDATE, before any of its pouches — by a change and by
+// a deletion alike, so neither waits for the other in a circle. Its pouches as they are now.
+const LOCK_OPERATION =
+  'SELECT from_pouch_id, to_pouch_id FROM operations WHERE id = $1 AND user_id = $2 FOR UPDATE';
 
 // A list of pouches of a form, as sent (§4.6, §4.7): nothing chosen, an id of the wrong form,
 // or the id to look for under the lock. The error goes under the list.
@@ -1601,10 +1613,7 @@ export function createSaeckelApp(
       const current = await client.query<{
         from_pouch_id: number | null;
         to_pouch_id: number | null;
-      }>(
-        'SELECT from_pouch_id, to_pouch_id FROM operations WHERE id = $1 AND user_id = $2 FOR UPDATE',
-        [found.id, userId],
-      );
+      }>(LOCK_OPERATION, [found.id, userId]);
       const row = current.rows[0];
       if (row === undefined) {
         refusal = 'missing';
@@ -1664,6 +1673,55 @@ export function createSaeckelApp(
     if (refusal !== null) {
       form.errors[refusal.field] = refusal.text;
       return refuse();
+    }
+    return c.redirect('/saeckel/history', 303);
+  });
+
+  // A record deleted (§4.1, §4.8): for real, no bin. The same order as a change: the record
+  // locked FOR UPDATE first; then its pouches as that locked row has them now — not as any page
+  // saw them — by one statement in the order of their ids; then the storeroom; then DELETE. An
+  // income has no pouch, so nothing but the record is locked. An archiving of a pouch of the
+  // record takes the same lock: it either waits and then counts the balance without this
+  // record, or goes first and this is refused. A form sends nothing that is read.
+  saeckel.post('/saeckel/operations/:id/delete', signedIn, async (c) => {
+    const userId = c.get('user').id;
+    const id = parseId(c.req.param('id'));
+    if (id === null) return c.notFound();
+
+    // Why the record is not deleted: gone, or of a pouch in the storeroom.
+    let refusal: 'missing' | 'stored' | null = null;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const current = await client.query<{
+        from_pouch_id: number | null;
+        to_pouch_id: number | null;
+      }>(LOCK_OPERATION, [id, userId]);
+      const row = current.rows[0];
+      if (row === undefined) {
+        refusal = 'missing';
+      } else {
+        // The pouches of a record are the user's: the composite foreign keys make sure of it.
+        const locked = await lockPouches(client, userId, [row.from_pouch_id, row.to_pouch_id]);
+        if (locked.some((pouch) => pouch.is_archived)) {
+          refusal = 'stored';
+        } else {
+          await client.query('DELETE FROM operations WHERE id = $1 AND user_id = $2', [id, userId]);
+        }
+      }
+      await client.query(refusal === null ? 'COMMIT' : 'ROLLBACK');
+    } catch (error) {
+      // The connection may already be broken; the original error matters more.
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    if (refusal === 'missing') return c.notFound();
+    if (refusal === 'stored') {
+      const now = await findOperation(String(id), userId);
+      return now === null ? c.notFound() : c.html(operationPage(now, money), 400);
     }
     return c.redirect('/saeckel/history', 303);
   });
