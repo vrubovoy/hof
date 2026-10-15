@@ -933,6 +933,98 @@ describe('Säckel in the court', () => {
     assert.equal(res.headers.get('location'), `/login?next=${encodeURIComponent(path)}`);
   });
 
+  test('the administrator neither opens nor changes a record of anybody else', async () => {
+    const owner = await person('owner', { admin: true });
+    const anna = await person('anna');
+    const hers = await makePouch('Анины деньги', anna.cookie);
+    const spent = await post(
+      `${hers}/expense`,
+      { amount: '100', date: '', note: 'её' },
+      anna.cookie,
+    );
+    const record = Number(
+      new URL(spent.headers.get('location')!, ORIGIN).searchParams.get('fresh'),
+    );
+    const pouch = hers.split('/').at(-1)!;
+    const missing = await (await get('/saeckel/operations/99999', owner.cookie)).text();
+    for (const res of [
+      await get(`/saeckel/operations/${record}`, owner.cookie),
+      await post(
+        `/saeckel/operations/${record}`,
+        { from: pouch, amount: '1', date: '', note: 'чужое' },
+        owner.cookie,
+      ),
+    ]) {
+      assert.equal(res.status, 404);
+      const page = await res.text();
+      assert.ok(page.includes('<h1>Такой тропы во дворе нет</h1>'));
+      assert.equal(page, missing);
+    }
+    const { rows } = await saeckelPool.query('SELECT amount::text, note FROM operations');
+    assert.deepEqual(rows, [{ amount: '10000', note: 'её' }]);
+  });
+
+  test('an unexpected error in a change of a record: the common 500, no amount, note or name in the log', async (t) => {
+    const lines = captureLog(t);
+    const { token, cookie } = await person('anna');
+    const pouch = await makePouch('Тайный мешок', cookie);
+    const spent = await post(`${pouch}/expense`, { amount: '1', date: '', note: '' }, cookie);
+    const record = Number(
+      new URL(spent.headers.get('location')!, ORIGIN).searchParams.get('fresh'),
+    );
+    await saeckelPool.query(
+      "CREATE FUNCTION refuse_for_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused for the test'; END $$",
+    );
+    await saeckelPool.query(
+      'CREATE TRIGGER operations_no_update BEFORE UPDATE ON operations FOR EACH ROW EXECUTE FUNCTION refuse_for_test()',
+    );
+    try {
+      const res = await post(
+        `/saeckel/operations/${record}`,
+        {
+          from: pouch.split('/').at(-1)!,
+          amount: '7 777,77',
+          date: '05.10.2026',
+          note: 'тайная заметка',
+        },
+        cookie,
+      );
+      assert.equal(res.status, 500);
+      assert.equal(res.headers.get('location'), null);
+      const page = await res.text();
+      assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'));
+      assert.ok(!page.includes('тайная') && !page.includes('Тайный'));
+    } finally {
+      await saeckelPool.query('DROP TRIGGER IF EXISTS operations_no_update ON operations');
+      await saeckelPool.query('DROP FUNCTION IF EXISTS refuse_for_test()');
+    }
+    const errors = lines.filter((line) => line.startsWith('error '));
+    assert.equal(errors.length, 1);
+    assert.match(
+      errors[0]!,
+      /^error unexpected_error method=POST path=\/saeckel\/operations\/\d+ error="refused for the test" /,
+    );
+    for (const secret of [
+      '7 777',
+      '7777',
+      '777777',
+      'тайная',
+      encodeURIComponent('тайная'),
+      'Тайный',
+      encodeURIComponent('Тайный'),
+      '05.10.2026',
+      '2026-10-05',
+      token,
+      'amount=',
+      'note=',
+      'from=',
+    ]) {
+      assert.ok(!errors[0]!.includes(secret), secret);
+    }
+    const { rows } = await saeckelPool.query('SELECT amount::text, note FROM operations');
+    assert.deepEqual(rows, [{ amount: '100', note: '' }]);
+  });
+
   test('the currency of the records: another one than CURRENCY is found', async () => {
     assert.equal(await otherRecordedCurrency(saeckelPool, 'RUB'), null);
     const { cookie } = await person('anna');

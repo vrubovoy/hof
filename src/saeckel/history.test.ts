@@ -321,15 +321,12 @@ describe('Летопись: the rows', () => {
 });
 
 describe('a record', () => {
-  test('each kind: its kind and date, the amount, its pouches, the note; no form', async () => {
+  // Since M6.4 a record whose pouches are active opens as a form (operations.test.ts); the page
+  // to read stays for a record of a pouch in the storeroom, and that is what is checked here.
+  test('to read: each kind with a pouch — its kind and date, the amount, its pouches, the note; no form', async () => {
     const food = await addPouch(1, 'Продукты');
     const trip = await addPouch(1, 'Отпуск');
     const cases: [number, string[], string[]][] = [
-      [
-        await addOperation(1, 'income', 8_000_000, {}, '2026-09-30', 'зарплата'),
-        ['Доход · 30.09.2026', 'Сумма', '80 000,00 ₽', 'Дата', '30.09.2026', 'Заметка', 'зарплата'],
-        ['Из мешка', 'В мешок'],
-      ],
       [
         await addOperation(1, 'assign', 800_000, { to: food }, '2026-10-01'),
         ['Из казны · 01.10.2026', '8 000,00 ₽', 'В мешок', 'Продукты'],
@@ -346,6 +343,7 @@ describe('a record', () => {
         ['Заметка'],
       ],
     ];
+    await pool.query('UPDATE pouches SET is_archived = true');
     for (const [id, present, absent] of cases) {
       const res = await get(`/saeckel/operations/${id}`, 'anna');
       assert.equal(res.status, 200, String(id));
@@ -355,7 +353,7 @@ describe('a record', () => {
       for (const text of present.slice(1)) assert.ok(page.includes(text), `${id}: ${text}`);
       for (const text of absent) assert.ok(!page.includes(`<dt>${text}</dt>`), `${id}: ${text}`);
       assert.ok(!page.includes('<form'), String(id));
-      assert.ok(!page.includes('+') && !page.includes('−'), `${id}: an amount with a sign`);
+      assert.ok(!page.includes(' +') && !page.includes('−'), `${id}: an amount with a sign`);
     }
   });
 
