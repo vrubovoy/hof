@@ -1,11 +1,17 @@
 # Hof on one server: PostgreSQL and the application (ARCHITECTURE.md §1, §9).
 # No service publishes ports. Secrets are passed to each service separately, not through a
 # shared env_file: every container gets only what it needs.
+# Every container comes back by itself after a crash or a restart of Docker, but not after
+# `docker compose stop`. Docker keeps at most three log files of 10 MB per container.
+# deploy/compose.limits.yaml adds memory limits for a small server shared with other services;
+# a standard installation runs without it.
 name: hof
 
 services:
   postgres:
-    image: postgres:18
+    # The exact version, like the Node image in the Dockerfile: an update is a commit.
+    image: postgres:18.6-trixie
+    restart: unless-stopped
     environment:
       POSTGRES_DB: hof
       # Superuser and both role passwords: the init script creates the roles on first start.
@@ -24,9 +30,18 @@ services:
       interval: 2s
       timeout: 5s
       retries: 30
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
 
   hof:
     build: .
+    restart: unless-stopped
+    # PID 1 is Docker's init, not Node: as PID 1 Node would ignore SIGTERM and be killed after
+    # 10 s. The init passes the signal on, and Node, which has no handler for it, ends at once.
+    init: true
     environment:
       HOF_CORE_DB_PASSWORD: ${HOF_CORE_DB_PASSWORD:?set it in .env}
       HOF_SAECKEL_DB_PASSWORD: ${HOF_SAECKEL_DB_PASSWORD:?set it in .env}
@@ -37,6 +52,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
 
 volumes:
+  # All the data of Hof. `docker compose down -v` deletes this volume with every record in it.
   pgdata:
