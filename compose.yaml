@@ -94,8 +94,8 @@ services:
     depends_on:
       hof:
         condition: service_started
-        # nginx finds the address of hof when it starts; after Compose recreates hof, it restarts
-        # nginx as well.
+        # nginx asks Docker's DNS for the address of hof every 10 seconds; after Compose recreates
+        # hof it restarts nginx as well, so nginx does not wait for that.
         restart: true
     logging:
       driver: json-file

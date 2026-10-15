@@ -12,6 +12,11 @@
 # The container is found by the labels Compose puts on it, so a recreated container is found as
 # well. Nothing but that one container is touched; when the labels match more than one, nothing at
 # all. A nginx stopped on purpose leaves no flag and stays stopped.
+#
+# After a failed post the flag stays in /run until post succeeds. If nginx is then started another
+# way, finish with `hof-certbot-hook post`: with nginx running it only checks the network and
+# removes the flag. A flag left behind makes the next renewal start nginx even if it was stopped
+# on purpose in the meantime. A reboot clears /run.
 
 PROJECT=${HOF_COMPOSE_PROJECT:-hof}
 DOCKER=/usr/bin/docker
@@ -50,7 +55,7 @@ post)
   ids=$(nginx_ids --all) || fail "docker не ответил; nginx не запущен, флаг $FLAG оставлен"
   set -- $ids
   [ $# -eq 1 ] || fail "под метки проекта $PROJECT подходит не один nginx ($#); ничего не запущено, флаг $FLAG оставлен"
-  "$DOCKER" start "$1" > /dev/null || fail "nginx $1 не запущен; флаг $FLAG оставлен, повторите: $0 post"
+  "$DOCKER" start "$1" > /dev/null || fail "nginx $1 не запущен; флаг $FLAG оставлен. Повторите: $0 post (и после запуска nginx вручную тоже: при работающем nginx он только снимет флаг)"
   # After a start that failed on the network (a port taken), Docker leaves the container without
   # its network, and a later start succeeds with none: nginx cannot reach hof and publishes no
   # port. Only recreating the container helps.
