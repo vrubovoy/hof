@@ -1,0 +1,22 @@
+# Memory limits for a small server shared with other services (README «Лимиты памяти для
+# маленького сервера»). Not part of a standard installation: compose.yaml has no limits, and this
+# file takes effect only through a line in that server's .env:
+#
+#   COMPOSE_FILE=compose.yaml:deploy/compose.limits.yaml
+#
+# When a container reaches its limit, the kernel ends a process inside that container only: if it
+# is the server of Hof, Docker restarts the container; if it is a process of PostgreSQL, PostgreSQL
+# recovers by itself. This lowers the risk for the other services of the server, but does not
+# guarantee them memory. memswap_limit equal to mem_limit gives the containers no swap; the swap of
+# the server itself is not changed. The values are the peaks measured for M7.1 with a margin.
+services:
+  postgres:
+    # 89 MiB while the first start creates the database, about 60 MiB under load later.
+    mem_limit: 128m
+    memswap_limit: 128m
+  hof:
+    # 164 MiB after 11 sign-ins at once (Argon2 in four threads), 220 MiB with
+    # `docker compose exec hof node src/cli.ts reset-password` running beside the server: the
+    # command is a second Node process in the same container.
+    mem_limit: 256m
+    memswap_limit: 256m
