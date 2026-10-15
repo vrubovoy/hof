@@ -61,6 +61,8 @@ const MISSING_ERROR = 'Мешок не найден.';
 const EMPTY_ASSIGN_ERROR = 'Впишите сумму хотя бы для одного мешка.';
 const archivedCreateError = (name: string) =>
   `Мешок «${name}» в Кладовой: записи с ним не создаются.`;
+const archivedEditError = (name: string) =>
+  `Мешок «${name}» в Кладовой: запись с ним не исправляется и не удаляется. Сначала верните мешок.`;
 const CHOOSE_POUCH_ERROR = 'Выберите мешок.';
 const SAME_POUCH_ERROR = 'Нельзя переложить в тот же мешок.';
 
@@ -163,7 +165,18 @@ interface Operation {
   toPouchId: number | null;
   fromName: string | null;
   toName: string | null;
+  // Whether a pouch of the record is in the storeroom; false where it has none.
+  fromArchived: boolean;
+  toArchived: boolean;
 }
+
+// The pouches of a record by its kind (§5.5): the lists its form has.
+const POUCH_FIELDS: Record<Kind, readonly PouchField[]> = {
+  income: [],
+  assign: ['to'],
+  expense: ['from'],
+  transfer: ['from', 'to'],
+};
 
 // A pouch of the filter of «Летопись»: active ones and those in the storeroom alike.
 interface FilterPouch {
@@ -193,12 +206,12 @@ interface EntryForm {
   errors: Partial<Record<EntryField, string>>;
 }
 
-// The two pouches of «Переложить».
+// The two pouches of «Переложить» and of a record.
 type PouchField = 'from' | 'to';
 
-// «Переложить» as typed: the ids chosen in the two lists, the three fields of an entry, and the
-// error of each field.
-interface TransferForm extends EntryForm {
+// «Переложить», or a record, as typed: the ids chosen in the lists, the three fields of an
+// entry, and the error of each field.
+interface PouchesForm extends EntryForm {
   from: string;
   to: string;
   errors: Partial<Record<EntryField | PouchField, string>>;
@@ -513,14 +526,14 @@ function coverLink(pouchId: number, balance: number) {
   </p>`;
 }
 
-// One of the two lists of «Переложить»: the active pouches of the user as «Название — остаток»,
-// an empty choice first. Only an id of one of them is ever shown as chosen.
+// One list of pouches of a form: the active pouches of the user, each with its text, and in
+// «Переложить» an empty choice first. Only an id of one of them is ever shown as chosen.
 function pouchSelect(
   field: PouchField,
   label: string,
-  pouches: readonly ListedPouch[],
-  form: TransferForm,
-  money: MoneyFormat,
+  choices: readonly { id: number; text: string }[],
+  form: PouchesForm,
+  empty: boolean,
 ) {
   const error = form.errors[field];
   const describedBy =
@@ -528,14 +541,14 @@ function pouchSelect(
   return html`<p>
       <label for="${field}">${label}</label>
       <select id="${field}" name="${field}" ${describedBy}>
-        <option value="">— выберите —</option>
-        ${pouches.map(
-          (pouch) =>
+        ${empty ? html`<option value="">— выберите —</option>` : ''}
+        ${choices.map(
+          (choice) =>
             html`<option
-              value="${pouch.id}"
-              ${String(pouch.id) === form[field] ? html`selected` : ''}
+              value="${choice.id}"
+              ${String(choice.id) === form[field] ? html`selected` : ''}
             >
-              ${pouch.name} — ${money.format(pouch.balance)}
+              ${choice.text}
             </option>`,
         )}
       </select>
@@ -544,14 +557,18 @@ function pouchSelect(
 }
 
 // «Переложить из мешка в мешок», texts from design/preview/SaeckelForms.html.
-function transferPage(pouches: readonly ListedPouch[], form: TransferForm, money: MoneyFormat) {
+function transferPage(pouches: readonly ListedPouch[], form: PouchesForm, money: MoneyFormat) {
+  const choices = pouches.map((pouch) => ({
+    id: pouch.id,
+    text: `${pouch.name} — ${money.format(pouch.balance)}`,
+  }));
   return page(
     'Säckel — переложить',
     html`<p><a href="/saeckel/">Мешки</a></p>
       <h1>Переложить из мешка в мешок</h1>
       <form method="post" action="/saeckel/transfer">
-        ${pouchSelect('from', 'Из мешка', pouches, form, money)}
-        ${pouchSelect('to', 'В мешок', pouches, form, money)} ${entryFields(form, money)}
+        ${pouchSelect('from', 'Из мешка', choices, form, true)}
+        ${pouchSelect('to', 'В мешок', choices, form, true)} ${entryFields(form, money)}
         <button type="submit">Переложить</button>
       </form>`,
   );
@@ -686,12 +703,28 @@ function historyPage(view: HistoryView, money: MoneyFormat) {
   );
 }
 
-// A record of «Летопись», to read: its kind and date, its amount, its pouches and its note.
+// Whether a pouch of the record is in the storeroom: then the record is not changed (§5.4).
+const inStoreroom = (operation: Operation) => operation.fromArchived || operation.toArchived;
+
+// A record of «Летопись», to read: its kind and date, its amount, its pouches and its note. For
+// each of its pouches in the storeroom, why it is not changed, with the way to that pouch.
 function operationPage(operation: Operation, money: MoneyFormat) {
+  const stored = [
+    [operation.fromArchived, operation.fromPouchId, operation.fromName],
+    [operation.toArchived, operation.toPouchId, operation.toName],
+  ] as const;
   return page(
     'Säckel — запись',
     html`<p><a href="/saeckel/history">Летопись</a></p>
       <h1>${KIND_LABELS[operation.kind]} · ${dateForField(operation.date)}</h1>
+      ${stored.map(([archived, id, name]) =>
+        archived
+          ? html`<p>
+              Мешок «<a href="/saeckel/pouches/${id}">${name}</a>» в Кладовой: запись с ним не
+              исправляется и не удаляется. Сначала верните мешок.
+            </p>`
+          : '',
+      )}
       <dl>
         <dt>Сумма</dt>
         <dd>${money.format(operation.cents)}</dd>
@@ -716,6 +749,31 @@ function operationPage(operation: Operation, money: MoneyFormat) {
                 <dd>${operation.note}</dd>`
         }
       </dl>`,
+  );
+}
+
+// A record to change (design/preview/SaeckelForms.html, «Трата · 05.10.2026»): the lists of its
+// pouches by its kind — the active pouches by name, the chosen one first chosen — then the
+// amount, the date and the note. The heading keeps the stored date; the kind does not change.
+function operationEditPage(
+  operation: Operation,
+  pouches: readonly { id: number; name: string }[],
+  form: PouchesForm,
+  money: MoneyFormat,
+) {
+  const choices = pouches.map((pouch) => ({ id: pouch.id, text: pouch.name }));
+  const fields = POUCH_FIELDS[operation.kind];
+  return page(
+    'Säckel — запись',
+    html`<p><a href="/saeckel/history">Летопись</a></p>
+      <h1>${KIND_LABELS[operation.kind]} · ${dateForField(operation.date)}</h1>
+      <form method="post" action="/saeckel/operations/${operation.id}">
+        ${fields.includes('from') ? pouchSelect('from', 'Из мешка', choices, form, false) : ''}
+        ${fields.includes('to') ? pouchSelect('to', 'В мешок', choices, form, false) : ''}
+        ${entryFields(form, money)}
+        <p>Вид записи не меняется.</p>
+        <button type="submit">Сохранить</button>
+      </form>`,
   );
 }
 
@@ -926,7 +984,8 @@ async function balanceOf(db: Pool | PoolClient, pouchId: number, userId: number)
 // The date comes as ISO text, as PostgreSQL keeps it, with no time zone to move it.
 const OPERATIONS = `
   SELECT o.id, o.kind, o.amount::text AS amount, to_char(o.date, 'YYYY-MM-DD') AS date, o.note,
-         o.from_pouch_id, o.to_pouch_id, f.name AS from_name, t.name AS to_name
+         o.from_pouch_id, o.to_pouch_id, f.name AS from_name, t.name AS to_name,
+         coalesce(f.is_archived, false) AS from_archived, coalesce(t.is_archived, false) AS to_archived
     FROM operations o
     LEFT JOIN pouches f ON f.id = o.from_pouch_id AND f.user_id = o.user_id
     LEFT JOIN pouches t ON t.id = o.to_pouch_id AND t.user_id = o.user_id
@@ -942,6 +1001,8 @@ interface OperationRow {
   to_pouch_id: number | null;
   from_name: string | null;
   to_name: string | null;
+  from_archived: boolean;
+  to_archived: boolean;
 }
 
 function operationFrom(row: OperationRow): Operation {
@@ -955,7 +1016,21 @@ function operationFrom(row: OperationRow): Operation {
     toPouchId: row.to_pouch_id,
     fromName: row.from_name,
     toName: row.to_name,
+    fromArchived: row.from_archived,
+    toArchived: row.to_archived,
   };
+}
+
+// A list of pouches of a form, as sent (§4.6, §4.7): nothing chosen, an id of the wrong form,
+// or the id to look for under the lock. The error goes under the list.
+function parsePouchField(form: PouchesForm, field: PouchField): number | null {
+  if (form[field] === '') {
+    form.errors[field] = CHOOSE_POUCH_ERROR;
+    return null;
+  }
+  const id = parseId(form[field]);
+  if (id === null) form.errors[field] = MISSING_ERROR;
+  return id;
 }
 
 // §4.7: `page` of «Летопись» — none is the first; otherwise digits without a leading zero, from 1
@@ -990,6 +1065,7 @@ async function lockPouches(
   ids: readonly (number | null)[],
 ): Promise<LockedPouch[]> {
   const wanted = [...new Set(ids.filter((id) => id !== null))];
+  if (wanted.length === 0) return [];
   const { rows } = await client.query<LockedPouch>(
     'SELECT id, name, is_archived FROM pouches WHERE user_id = $1 AND id = ANY($2) ORDER BY id FOR UPDATE',
     [userId, wanted],
@@ -1066,6 +1142,24 @@ export function createSaeckelApp(
       [userId, pouchId],
     );
     return { balance, movements: recent.rows.map(operationFrom) };
+  }
+
+  // The record of the :id in the path, if it is the user's, with its pouches: no such record, a
+  // wrong id and the record of somebody else are all null, and the caller answers the same 404.
+  async function findOperation(idInPath: string, userId: number): Promise<Operation | null> {
+    const id = parseId(idInPath);
+    if (id === null) return null;
+    const { rows } = await pool.query<OperationRow>(`${OPERATIONS} AND o.id = $2`, [userId, id]);
+    return rows[0] === undefined ? null : operationFrom(rows[0]);
+  }
+
+  // The active pouches of this user by name, in the order they were made: the lists of a record.
+  async function namedPouches(userId: number): Promise<{ id: number; name: string }[]> {
+    const { rows } = await pool.query<{ id: number; name: string }>(
+      'SELECT id, name FROM pouches WHERE user_id = $1 AND NOT is_archived ORDER BY id',
+      [userId],
+    );
+    return rows;
   }
 
   // An expense or an income as its form first shows: the date of today in the time zone of the
@@ -1327,7 +1421,7 @@ export function createSaeckelApp(
       return pouches.some((pouch) => pouch.id === id) ? String(id) : '';
     };
     const amount = parseAmount(c.req.query('amount') ?? '');
-    const form: TransferForm = {
+    const form: PouchesForm = {
       ...emptyEntryForm(),
       amount: 'cents' in amount ? amountForField(amount.cents) : '',
       from: own('from'),
@@ -1351,23 +1445,14 @@ export function createSaeckelApp(
       const value = body[name];
       return typeof value === 'string' ? value : '';
     };
-    const form: TransferForm = {
+    const form: PouchesForm = {
       ...parsed.form,
       from: typed('from'),
       to: typed('to'),
       errors: { ...parsed.form.errors },
     };
-    const pouchId = (field: PouchField): number | null => {
-      if (form[field] === '') {
-        form.errors[field] = CHOOSE_POUCH_ERROR;
-        return null;
-      }
-      const id = parseId(form[field]);
-      if (id === null) form.errors[field] = MISSING_ERROR;
-      return id;
-    };
-    const from = pouchId('from');
-    const to = pouchId('to');
+    const from = parsePouchField(form, 'from');
+    const to = parsePouchField(form, 'to');
     const refuse = async () => c.html(transferPage(await activePouches(userId), form, money), 400);
     const entry = parsed.entry;
     if (entry === null || from === null || to === null || Object.keys(form.errors).length > 0) {
@@ -1455,14 +1540,132 @@ export function createSaeckelApp(
   // A record of this user, to read. Somebody else's, a missing one and a wrong id are the same
   // 404; a record of a pouch in the storeroom is shown like any other.
   saeckel.get('/saeckel/operations/:id', signedIn, async (c) => {
-    const id = parseId(c.req.param('id'));
-    if (id === null) return c.notFound();
-    const { rows } = await pool.query<OperationRow>(`${OPERATIONS} AND o.id = $2`, [
-      c.get('user').id,
-      id,
-    ]);
-    if (rows[0] === undefined) return c.notFound();
-    return c.html(operationPage(operationFrom(rows[0]), money));
+    const userId = c.get('user').id;
+    const operation = await findOperation(c.req.param('id'), userId);
+    if (operation === null) return c.notFound();
+    if (inStoreroom(operation)) return c.html(operationPage(operation, money));
+    const form: PouchesForm = {
+      amount: amountForField(operation.cents),
+      date: dateForField(operation.date),
+      note: operation.note,
+      from: operation.fromPouchId === null ? '' : String(operation.fromPouchId),
+      to: operation.toPouchId === null ? '' : String(operation.toPouchId),
+      errors: {},
+    };
+    return c.html(operationEditPage(operation, await namedPouches(userId), form, money));
+  });
+
+  // A record changed (§4.1, §4.8): its amount, date, note and pouches; never its kind, user or
+  // currency. The look-up before only tells which lists the form has, and refuses early a
+  // record already of a pouch in the storeroom. Then one transaction: the record locked FOR
+  // UPDATE first; its pouches as that locked row has them now — not as the page or the
+  // look-up saw them, another tab may have moved it meanwhile — together with the pouches of
+  // the form, locked by one statement in the order of their ids; then the checks and the
+  // UPDATE. The order «record, then pouches» is the one deleting takes too, so neither waits
+  // for the other in a circle. An archiving of an old or a new pouch takes the same lock as
+  // here: it either waits and then sees the record as changed, or goes first and this is
+  // refused. Two tabs: the second waits for the row and writes over — the last one wins.
+  saeckel.post('/saeckel/operations/:id', signedIn, async (c) => {
+    const userId = c.get('user').id;
+    const found = await findOperation(c.req.param('id'), userId);
+    if (found === null) return c.notFound();
+    if (inStoreroom(found)) return c.html(operationPage(found, money), 400);
+
+    const body = await c.req.parseBody();
+    const parsed = parseEntry(body, today(settings.timeZone, new Date()));
+    const fields = POUCH_FIELDS[found.kind];
+    // Only the lists this kind has; any other field — `kind`, `user_id`, `currency` — is not read.
+    const typed = (name: PouchField) => {
+      const value = body[name];
+      return fields.includes(name) && typeof value === 'string' ? value : '';
+    };
+    const form: PouchesForm = {
+      ...parsed.form,
+      from: typed('from'),
+      to: typed('to'),
+      errors: { ...parsed.form.errors },
+    };
+    const from = fields.includes('from') ? parsePouchField(form, 'from') : null;
+    const to = fields.includes('to') ? parsePouchField(form, 'to') : null;
+    const refuse = async () =>
+      c.html(operationEditPage(found, await namedPouches(userId), form, money), 400);
+    const entry = parsed.entry;
+    if (entry === null || Object.keys(form.errors).length > 0) return refuse();
+
+    // Why the record under its lock is not changed: gone, of a pouch in the storeroom now, or a
+    // list of the form refused.
+    let refusal: 'missing' | 'stored' | { field: PouchField; text: string } | null = null;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const current = await client.query<{
+        from_pouch_id: number | null;
+        to_pouch_id: number | null;
+      }>(
+        'SELECT from_pouch_id, to_pouch_id FROM operations WHERE id = $1 AND user_id = $2 FOR UPDATE',
+        [found.id, userId],
+      );
+      const row = current.rows[0];
+      if (row === undefined) {
+        refusal = 'missing';
+      } else {
+        const locked = await lockPouches(client, userId, [
+          row.from_pouch_id,
+          row.to_pouch_id,
+          from,
+          to,
+        ]);
+        const pouchOf = (id: number | null) => locked.find((pouch) => pouch.id === id);
+        const chosen = [
+          ['from', from],
+          ['to', to],
+        ] as const;
+        if ([row.from_pouch_id, row.to_pouch_id].some((id) => pouchOf(id)?.is_archived === true)) {
+          refusal = 'stored';
+        }
+        for (const [field, id] of chosen) {
+          if (refusal === null && id !== null && pouchOf(id) === undefined) {
+            refusal = { field, text: MISSING_ERROR };
+          }
+        }
+        // One pouch in both lists of a transfer, now known to be this user's.
+        if (refusal === null && from !== null && from === to) {
+          refusal = { field: 'to', text: SAME_POUCH_ERROR };
+        }
+        for (const [field, id] of chosen) {
+          const pouch = pouchOf(id);
+          if (refusal === null && pouch?.is_archived === true) {
+            refusal = { field, text: archivedEditError(pouch.name) };
+          }
+        }
+        if (refusal === null) {
+          await client.query(
+            `UPDATE operations
+                SET amount = $3, date = $4, note = $5, from_pouch_id = $6, to_pouch_id = $7
+              WHERE id = $1 AND user_id = $2`,
+            [found.id, userId, entry.cents, entry.date, entry.note, from, to],
+          );
+        }
+      }
+      await client.query(refusal === null ? 'COMMIT' : 'ROLLBACK');
+    } catch (error) {
+      // The connection may already be broken; the original error matters more.
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    if (refusal === 'missing') return c.notFound();
+    if (refusal === 'stored') {
+      const now = await findOperation(String(found.id), userId);
+      return now === null ? c.notFound() : c.html(operationPage(now, money), 400);
+    }
+    if (refusal !== null) {
+      form.errors[refusal.field] = refusal.text;
+      return refuse();
+    }
+    return c.redirect('/saeckel/history', 303);
   });
 
   // «Изменить»: only an active pouch of this user. A pouch in the storeroom is the same 404 as
