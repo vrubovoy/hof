@@ -1,6 +1,6 @@
-# Memory limits for a small server shared with other services (README «Лимиты памяти для
-# маленького сервера»). Not part of a standard installation: compose.yaml has no limits, and this
-# file takes effect only through a line in that server's .env:
+# Memory limits for a small server shared with other services (docs/OPERATIONS.md «Маломощный
+# сервер с соседними сервисами»). Not part of a standard installation: compose.yaml has no
+# limits, and this file takes effect only through a line in that server's .env:
 #
 #   COMPOSE_FILE=compose.yaml:deploy/compose.limits.yaml
 #
