@@ -345,6 +345,11 @@ a {
 .input-key {
   letter-spacing: 0.08em;
 }
+/* у основания на телефоне свои, короче, тексты SetupMobile; виден один вариант, его же читает
+   screen reader */
+.gate-setup .text-phone {
+  display: none;
+}
 
 /* кляксы ворот на компьютере: в кадре 1440×900 Main и Setup, от правого края */
 .blot-login-small {
@@ -489,8 +494,11 @@ a {
 
   /* основание: знак в строку, сцена полосой — кадр SetupMobile (картинка 760 px при ширине 390,
      ворота и кот у нижнего края), верх растворяется в бумаге */
+  /* как в SetupMobile: полоса стоит у нижнего края и на 1–2 px заходит под кнопку (её верх
+     прозрачен), поэтому на 390×844 всё помещается в экран */
   .gate-setup .gate-paper {
     padding: 20px 24px 0;
+    margin-bottom: -2px;
   }
   .gate-setup .gate-card,
   .gate-setup .gate-card form {
@@ -505,6 +513,12 @@ a {
   }
   .gate-setup .logo b {
     font-size: 30px;
+  }
+  .gate-setup .text-desktop {
+    display: none;
+  }
+  .gate-setup .text-phone {
+    display: inline;
   }
   .gate-setup .gate-scene {
     position: relative;

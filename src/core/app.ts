@@ -170,8 +170,9 @@ const LOGO = html`<div class="logo">
 </div>`;
 
 // Texts and pictures from design/preview/Setup.html and SetupMobile.html: the gate closed, its
-// key in the lock. The gate key and the passwords are never written back into the page; the
-// login is, as typed.
+// key in the lock. The phone has the shorter texts of SetupMobile: the key hint without the
+// command, the hints of the login and the password only for a screen reader. The gate key and
+// the passwords are never written back into the page; the login is, as typed.
 function setupPage(form: SetupForm) {
   const describedBy = (field: SetupField, hint: string) =>
     form.error?.field === field
@@ -192,7 +193,8 @@ function setupPage(form: SetupForm) {
           <div class="gate-title">
             <h1 class="title t-2">Основание двора</h1>
             <p class="small muted">
-              Станьте хозяином двора: вы принимаете приближённых и присматриваете за Hof.
+              Станьте хозяином<span class="text-desktop"> двора</span>: вы принимаете приближённых и
+              присматриваете за Hof.
             </p>
           </div>
           <form method="post" action="/setup">
@@ -208,7 +210,9 @@ function setupPage(form: SetupForm) {
                 ${describedBy('code', 'code-hint')}
               />
               <p id="code-hint" class="hint">
-                Одноразовый код из лога сервера: <code>docker compose logs hof</code>
+                <span class="text-desktop"
+                  >Одноразовый код из лога сервера: <code>docker compose logs hof</code></span
+                ><span class="text-phone">Код из лога сервера</span>
               </p>
               ${error('code')}
             </div>
@@ -225,7 +229,7 @@ function setupPage(form: SetupForm) {
                 value="${form.username}"
                 ${describedBy('username', 'username-hint')}
               />
-              <p id="username-hint" class="hint">
+              <p id="username-hint" class="hint visually-hidden-phone">
                 Латиница, цифры, точка, дефис и подчёркивание, до 32 символов.
               </p>
               ${error('username')}
@@ -241,7 +245,9 @@ function setupPage(form: SetupForm) {
                 required
                 ${describedBy('password', 'password-hint')}
               />
-              <p id="password-hint" class="hint">Не короче ${PASSWORD_MIN_LENGTH} символов.</p>
+              <p id="password-hint" class="hint visually-hidden-phone">
+                Не короче ${PASSWORD_MIN_LENGTH} символов.
+              </p>
               ${error('password')}
             </div>
             <div class="${fieldClass('password2')}">
