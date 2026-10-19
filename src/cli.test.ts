@@ -1,7 +1,7 @@
 // cli.ts reset-password (ARCHITECTURE.md §4.3, §4.8): the checks before the database as a separate
 // process, the command against hof_test. Its transaction is the shared one of
 // core/reset-password.ts and is tested there. The hidden input needs a real terminal and is
-// checked by hand (README, «Восстановление доступа»).
+// checked by hand (docs/OPERATIONS.md, «Восстановление доступа»).
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
