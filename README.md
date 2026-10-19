@@ -170,3 +170,147 @@ node --env-file=.env src/cli.ts reset-password <логин>
 ввода (`< файл`, `|`, `docker compose exec -T`) команда его не примет и откажется работать. Ctrl+C
 отменяет сброс, ничего не меняя. Строка `info password_reset` печатается в этом же терминале, в
 `docker compose logs` её нет: команда — отдельный процесс.
+
+## Резервная копия
+
+Копия — один файл формата custom от `pg_dump` со всей базой `hof`: схемы `core` и `saeckel` с
+владельцами, таблицы, данные, индексы и обе таблицы `schema_migrations`. Ролей и их паролей в копии
+нет: на новом томе их создаёт `deploy/postgres-init.sh` из `.env`. Зато в копии есть хеши паролей и
+все бюджеты, поэтому файл хранят как секрет: права 600, вне каталога Hof (иначе он попадёт в
+контекст сборки образа), не в Git и не в облаке.
+
+Команды выполняются в каталоге Hof, где лежат `compose.yaml` и `.env`. Hof останавливать не нужно:
+`pg_dump` читает согласованный снимок базы. Пароль суперпользователя тоже не нужен: `pg_dump`
+работает внутри контейнера `postgres` через локальный сокет.
+
+```sh
+umask 077
+mkdir -p ~/hof-backups && chmod 700 ~/hof-backups
+f=~/hof-backups/hof-$(date +%Y-%m-%d-%H%M%S)-$(git rev-parse --short HEAD).dump
+docker compose exec -T postgres pg_dump --username=postgres --dbname=hof --format=custom > "$f.part" \
+  && docker compose exec -T postgres pg_restore --list < "$f.part" > /dev/null \
+  && mv "$f.part" "$f" && echo "Копия готова: $f" \
+  || { rm -f "$f.part"; echo "Копия НЕ сделана"; false; }
+```
+
+Пока `pg_dump` пишет, файл называется `.part`. Имя `.dump` он получает, только если `pg_dump`
+завершился с кодом 0 и `pg_restore --list` прочитал оглавление архива; иначе файл удаляется, а
+команда завершается с ошибкой. В имени — дата, время и коммит кода, с которым сделана копия:
+восстанавливают её с этим же кодом или новее.
+
+Читаемый архив ещё не доказывает, что из него поднимется двор. Это проверяют учения (раздел
+«Проверить копию»).
+
+### Перенести копию на свой компьютер
+
+Копия на том же сервере пропадёт вместе с ним, а места на небольшом сервере мало. Поэтому копию
+сразу переносят к себе, сверяют контрольную сумму и на сервере оставляют только последние. На своём
+компьютере:
+
+```sh
+umask 077
+mkdir -p ~/hof-backups && chmod 700 ~/hof-backups
+scp <сервер>:hof-backups/<файл>.dump ~/hof-backups/
+shasum -a 256 ~/hof-backups/<файл>.dump
+ls -l ~/hof-backups/<файл>.dump
+```
+
+На сервере та же сумма — `sha256sum ~/hof-backups/<файл>.dump`; суммы должны совпасть. `ls -l`
+показывает `-rw-------`. Старые копии на сервере удаляют по имени:
+`rm ~/hof-backups/<старый файл>.dump`.
+
+## Проверить копию
+
+Учения: копию восстанавливают на своём компьютере в отдельный проект `hof-drill` со своим томом, а
+не на сервере и не в рабочий проект. Нужен этот же репозиторий с кодом того же коммита, что в
+имени копии, или новее, и `.env` — тот, что для разработки, подходит: роли учебной базы создаются из
+его паролей. `CURRENCY` в нём должна совпадать с валютой записей в копии. Учебная база одна: проект
+всегда называется `hof-drill`.
+
+```sh
+copy=~/hof-backups/<файл>.dump
+docker compose -p hof-drill up -d --wait postgres
+docker compose -p hof-drill exec -T postgres dropdb --username=postgres --force hof
+docker compose -p hof-drill exec -T postgres createdb --username=postgres hof
+docker compose -p hof-drill exec -T postgres pg_restore --username=postgres --dbname=hof --single-transaction < "$copy"
+docker compose -p hof-drill up -d hof
+docker compose -p hof-drill logs hof
+```
+
+Через несколько секунд после запуска в логе должна быть строка `info start … migrations=none` (или
+только миграции новее копии); если её ещё нет, команду `logs` повторяют. Строк `gate_key` и
+`startup_failed` быть не должно: двор уже основан, база цела. Затем сравнивают отпечаток учебной
+базы с отпечатком исходной, снятым сразу после копии, — та же команда без `-p hof-drill`:
+
+```sh
+docker compose -p hof-drill exec -T postgres psql --username=postgres --dbname=hof --no-psqlrc <<'SQL'
+SELECT (SELECT count(*) FROM core.users)                          AS users,
+       (SELECT count(*) FROM core.sessions)                       AS sessions,
+       (SELECT count(*) FROM saeckel.pouches)                     AS pouches,
+       (SELECT count(*) FROM saeckel.operations)                  AS operations,
+       (SELECT coalesce(sum(amount), 0) FROM saeckel.operations)  AS amount;
+SELECT schemaname, tablename, tableowner FROM pg_tables
+ WHERE schemaname IN ('core', 'saeckel') ORDER BY 1, 2;
+SQL
+```
+
+Владельцы таблиц — `hof_core` в `core` и `hof_saeckel` в `saeckel`. После учений проект и его том
+удаляют; том — по точному имени, а не через `down -v`:
+
+```sh
+docker compose -p hof-drill down
+docker volume rm hof-drill_pgdata
+```
+
+## Восстановление из копии
+
+Восстановление заменяет базу `hof` целиком. Команды выполняются в каталоге Hof, где лежат
+`compose.yaml` и `.env` того проекта, который восстанавливают.
+
+1. Выбрать копию и проверить, что архив читается:
+
+   ```sh
+   copy=~/hof-backups/<файл>.dump
+   docker compose exec -T postgres pg_restore --list < "$copy" > /dev/null && echo "Архив читается"
+   ```
+
+   Проверка ловит нечитаемый файл и мусор, но может не заметить обрезанный конец архива: такой
+   файл упадёт уже на `pg_restore`, после `dropdb`. Поэтому копию после переноса сверяют по SHA-256,
+   а заранее проверяют учениями.
+
+2. Убедиться, что это нужный проект: `docker compose ps` показывает его контейнеры, на сервере —
+   `hof-nginx-1`, `hof-hof-1`, `hof-postgres-1`.
+3. Остановить Hof: `docker compose stop hof`. `nginx` продолжает работать и отвечает 502.
+4. Если в базе есть что терять, сделать копию текущего состояния командами раздела «Резервная
+   копия». Они пишут имя новой копии в `f`, а восстанавливаемая копия остаётся в `copy`.
+5. **Следующие команды уничтожают всё содержимое базы `hof` этого проекта.** От `dropdb` до
+   успешного `pg_restore` база пуста. Если `pg_restore` завершится ошибкой, база так и останется
+   пустой: ничего частичного он не оставит, но и прежних данных уже нет. Тогда исправляют причину и
+   повторяют три команды с той же или другой копией.
+
+   ```sh
+   docker compose exec -T postgres dropdb --username=postgres --force hof
+   docker compose exec -T postgres createdb --username=postgres hof
+   docker compose exec -T postgres pg_restore --username=postgres --dbname=hof --single-transaction < "$copy"
+   ```
+
+6. Сравнить отпечаток с тем, что был снят после копии (команда раздела «Проверить копию» без
+   `-p hof-drill`).
+7. Запустить Hof и через несколько секунд посмотреть лог: `docker compose up -d hof`,
+   `docker compose logs hof` — строка `info start`, без `gate_key` и `startup_failed`. Затем в
+   браузере войти и открыть Мешки и Летопись.
+
+Почему база создаётся заново, а не восстанавливается поверх:
+
+- на новом томе `postgres-init.sh` уже создал пустые схемы `core` и `saeckel`, и `pg_restore` поверх
+  них падает на «schema already exists»;
+- `pg_restore --clean` удаляет только объекты из копии: если после неудачного обновления в схеме
+  есть новая таблица, схема не удалится, и восстановление не пройдёт;
+- в пустую базу схемы с владельцами, таблицы, данные и `schema_migrations` приносит сама копия, а
+  роли с паролями из `.env` уже есть в кластере;
+- `--single-transaction` — всё или ничего: при ошибке не остаётся половины архива;
+- без `--no-owner`: владельцами должны остаться `hof_core` и `hof_saeckel`, иначе роли модулей не
+  прочитают свои таблицы и не применят следующие миграции.
+
+После восстановления Hof применяет только миграции новее копии. Если `CURRENCY` в `.env` не
+совпадает с валютой записей в копии, Hof не стартует и называет обе валюты.
