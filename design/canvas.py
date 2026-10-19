@@ -157,17 +157,18 @@ def select(sid, options, cls='input'):
 
 
 def rel(pose, btn):
-    """Кадр позы (x, y, w, h в px исходника) относительно кнопки-кота (тоже в px исходника) — в процентах."""
+    """Кадр позы (x, y, w, h в px исходника) относительно области кота (тоже в px исходника) — в процентах."""
     (px, py, pw, ph), (bx, by, bw, bh) = pose, btn
     return f'left: {(px - bx) / bw * 100:.2f}%; top: {(py - by) / bh * 100:.2f}%; width: {pw / bw * 100:.2f}%; height: {ph / bh * 100:.2f}%'
 
 
-def cat(style, label='Кот', pose='', attrs=''):
-    """Кот на картинке — прозрачная кнопка; pose — (ключ кадра, его место относительно кнопки)."""
+def cat(style, pose='', attrs=''):
+    """Кот на картинке — прозрачная область без фокуса, скрыта от чтения с экрана (украшение);
+    pose — (ключ кадра, его место относительно области)."""
     k = pose[0] if pose else ''
     srcset = f' srcset="{A[k]} 1x, {A[k + "2"]} 2x"' if k + '2' in A else ''   # кадр в разрешении фона, иначе на Retina мутный
     img = f'<img class="pose" src="{A[k]}"{srcset} alt="" style="{pose[1]}">' if pose else ''
-    return f'<button type="button" class="cat" aria-label="{label}" style="{style}"{attrs}>{img}</button>'
+    return f'<span class="cat" aria-hidden="true" style="{style}"{attrs}>{img}</span>'
 
 
 SNIFF_CAT = cat('left: 39%; top: 7%; width: 52%; height: 51%', attrs=' data-act="sniff"')   # кот у пустых мешков: нюхает
@@ -261,7 +262,7 @@ def login_page(demo=False):
   <div class="zoom"{zoom}>
     <img class="scene" src="{A['login']}" srcset="{A['login']} 1x, {A['login2']} 2x" alt="Открытые ворота замка, кот смотрит во двор" style="position: absolute; inset: 0; object-position: left center">
     <i class="spot" id="gate" style="{sc(556, 600)}"></i>
-    {cat(sc(656, 770, 124, 126), pose=('pose_login', rel((576, 696, 258, 245), (656, 770, 124, 126))))}
+    {cat(sc(656, 770, 124, 126), pose=('pose_login', rel((630, 758, 171, 160), (656, 770, 124, 126))))}
   </div>
   <div style="position: absolute; top: 0; right: 0; bottom: 0; width: 560px; display: flex; align-items: center; padding: 0 56px 0 24px">
     <form class="framed stack" style="gap: 22px; width: 100%">
@@ -286,7 +287,7 @@ def setup_page(demo=False):
     {img2('setup', 'Ворота замка закрыты, в замке ключ, кот ждёт у ворот', style='position: absolute; inset: 0; object-position: left center')}
     <img class="gate-open" id="gate-open" src="{A['gate_open']}" alt="" style="{sc(424, 440, 264, 350)}">
     <i class="spot" id="gate" style="{sc(556, 600)}"></i>
-    {cat(sc(574, 740, 100, 124), pose=('pose_setup', rel((514, 680, 225, 215), (574, 740, 100, 124))))}
+    {cat(sc(574, 740, 100, 124), pose=('pose_setup', rel((565, 740, 128, 129), (574, 740, 100, 124))))}
   </div>
   <div style="position: absolute; top: 0; right: 0; bottom: 0; width: 580px; display: flex; align-items: center; padding: 0 56px 0 24px">
     <form class="framed stack" style="gap: 14px; width: 100%">
@@ -458,7 +459,7 @@ error403 = error_page('e403', 'Тяжёлая дверь с висячим за�
 error500 = error_page('e500', 'Опрокинутая бочка, по двору раскатились яблоки, кот разглядывает беспорядок', 'Во дворе что-то стряслось',
                       'Мы уже прибираемся. Попробуйте ещё раз через минуту — записанное раньше на месте.',
                       f'<a class="btn btn-blue" href="{H("Home")}">Попробовать ещё раз</a><a class="link" href="{H("Home")}">Во двор</a>',
-                      [('blot_m', 1350, 60, 56, 20, 0.6), ('spl_a', 1240, 810, 70, -10, 0.5)], cat(sc(680, 736, 210, 160), pose=('pose_500', rel((606, 676, 336, 261), (680, 736, 210, 160)))))
+                      [('blot_m', 1350, 60, 56, 20, 0.6), ('spl_a', 1240, 810, 70, -10, 0.5)], cat(sc(680, 736, 210, 160), pose=('pose_500', rel((648, 796, 112, 115), (680, 736, 210, 160)))))
 
 users_empty = f'''<div class="hof" style="width: 1440px; height: 900px">
   <div class="shell" style="grid-template-columns: 288px 420px minmax(0, 1fr)">
@@ -724,7 +725,7 @@ history_empty = f'''<div class="hof" style="width: 1440px; height: 900px">
 login_m = f'''<div class="hof" style="width: 390px; height: 844px">
   <div class="zoom" style="position: absolute; left: 0; bottom: 0; width: 390px; height: 390px">
     <img src="{A['login_m']}" alt="Открытые ворота замка, кот смотрит во двор" style="display: block; width: 390px; height: 390px">
-    <i class="spot" id="m-gate" style="left: 205px; top: 288px"></i>{cat('left: 230px; top: 311px; width: 47px; height: 47px', pose=('pose_login_m', rel((692, 961, 247, 238), (740, 1000, 150, 150))))}
+    <i class="spot" id="m-gate" style="left: 205px; top: 288px"></i>{cat('left: 230px; top: 311px; width: 47px; height: 47px', pose=('pose_login_m', rel((738, 1013, 96, 106), (740, 1000, 150, 150))))}
   </div>
   <form class="stack" style="position: relative; gap: 18px; padding: 34px 28px 0">
     <div class="stack" style="align-items: center; gap: 4px"><img src="{A['mark']}" width="72" height="72" alt=""><span style="font-weight: 600; font-size: 52px; line-height: 1; letter-spacing: 0.06em">Hof</span><span class="caps" style="font-size: 11px; letter-spacing: 0.24em">Ваш личный двор</span></div>
@@ -847,7 +848,7 @@ setup_m = f'''<div class="hof" style="width: 390px; height: 844px">
     <img src="{A['setup']}" srcset="{A['setup']} 1x, {A['setup2']} 2x" alt="Ворота замка закрыты, в замке ключ, кот ждёт у ворот" style="position: absolute; left: -85px; top: -160px; width: 760px; max-width: none">
     <img class="gate-open" id="sm-gate-open" src="{A['gate_open']}" alt="" style="{at(424, 440, 264, 350, SK, -85, -160)}">
     <i class="spot" id="sm-gate" style="{at(556, 600, k=SK, ox=-85, oy=-160)}"></i>
-    {cat(at(574, 740, 100, 124, SK, -85, -160), pose=('pose_setup', rel((514, 680, 225, 215), (574, 740, 100, 124))))}
+    {cat(at(574, 740, 100, 124, SK, -85, -160), pose=('pose_setup', rel((565, 740, 128, 129), (574, 740, 100, 124))))}
   </div>
 </div>'''
 
@@ -1029,7 +1030,7 @@ small_demo = f'''<div class="hof demo" style="width: 1440px; height: 900px; padd
 </div>'''
 
 empty_demo = f'''<div class="hof demo" style="width: 1440px; height: 560px; padding: 44px 60px; display: grid; justify-items: center; align-content: start">
-  <div class="stack" style="gap: 12px; align-items: center"><span class="caps">Мешков пока нет — нажатие на кота: нюхает мешки (3 с, звук нюханья)</span>{vstack('empty_sk', ['sniff_1', 'sniff_2'], 'Кот обнюхивает пустые мешочки', 520, extra=' loop-sniff')}</div>
+  <div class="stack" style="gap: 12px; align-items: center"><span class="caps">Мешков пока нет — нажатие на кота: нюхает средний мешок, потом лежащий (3 с, звук нюханья)</span>{vstack('empty_sk', ['sniff_1', 'sniff_2'], 'Кот обнюхивает пустые мешочки', 520, extra=' loop-sniff')}</div>
 </div>'''
 
 slide_demo = f'''<div class="hof slide-demo" style="width: 1440px; height: 900px">
