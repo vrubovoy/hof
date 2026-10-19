@@ -23,6 +23,7 @@ import {
 } from './saeckel/app.ts';
 import { timeZoneError } from './saeckel/dates.ts';
 import { currencyError } from './saeckel/money.ts';
+import { staticFiles } from './static.ts';
 
 const PORT = 3000;
 const BODY_LIMIT_BYTES = 16 * 1024;
@@ -30,6 +31,7 @@ const BODY_LIMIT_BYTES = 16 * 1024;
 export const DATABASE = 'hof';
 export const CORE_DB_ROLE = 'hof_core';
 const CORE_MIGRATIONS = join(import.meta.dirname, 'core', 'migrations');
+const CORE_STATIC = join(import.meta.dirname, 'core', 'static');
 // The role of Säckel, in the same database (§5).
 const SAECKEL_DB_ROLE = 'hof_saeckel';
 const SAECKEL_MIGRATIONS = join(import.meta.dirname, 'saeckel', 'migrations');
@@ -106,8 +108,8 @@ export function applicationUser(corePool: Pool): CurrentUser {
   };
 }
 
-// Request order: response headers, Origin, POST body (common checks below), then the first-run
-// gate, then the modules' own routes, and finally the common 404.
+// Request order: response headers, Origin, POST body (common checks below), then static files,
+// then the first-run gate, then the modules' own routes, and finally the common 404.
 export function createApp(
   corePool: Pool,
   saeckelPool: Pool,
@@ -157,6 +159,9 @@ export function createApp(
     }
     return limitBody(c, next);
   });
+
+  // Static files (§4.1) before the first-run gate: the pages of /setup need them before founding.
+  app.use('/static/*', staticFiles('/static/', CORE_STATIC));
 
   // First run (§4.1, §4.4): until the court is founded, every path leads to /setup, for every
   // module. /setup itself decides what it does before and after founding.

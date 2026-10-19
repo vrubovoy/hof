@@ -1,6 +1,7 @@
 // main.ts: common request checks — Origin (§4.6), POST body (§4.7), response headers (§4.9) —,
-// the common 404 and 500 pages with the unexpected_error log line (§4.1, §4.10), Säckel in the
-// court (§2), and the failures that stop the server before it opens the HTTP port.
+// static files of Core before the first-run gate (§4.1), the common 404 and 500 pages with the
+// unexpected_error log line (§4.1, §4.10), Säckel in the court (§2), and the failures that stop
+// the server before it opens the HTTP port.
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -164,6 +165,63 @@ describe('response headers', () => {
     assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(res.headers.get('referrer-policy'), 'same-origin');
     assert.equal(res.headers.get('cache-control'), null);
+  });
+});
+
+describe('static files of Core', () => {
+  // The first-run gate fails if anybody asks it: static files come before it (§4.1).
+  const gateNotAsked: FirstRun = {
+    isFounded: () => Promise.reject(new Error('the first-run gate was asked')),
+    keyMatches: () => false,
+    markFounded: () => undefined,
+  };
+  function staticRequest(path: string, headers: Record<string, string> = {}) {
+    return createApp(unusedPool, unusedPool, SETTINGS, gateNotAsked, 'unused').request(path, {
+      headers: { host: HOST, ...headers },
+    });
+  }
+
+  test('before the first-run gate: no session lookup, no SQL, the common headers', async (t) => {
+    const query = t.mock.method(unusedPool, 'query');
+    const connect = t.mock.method(unusedPool, 'connect');
+    const res = await staticRequest('/static/hof.css', { cookie: `__Host-hof=${'C'.repeat(43)}` });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'text/css; charset=utf-8');
+    assert.equal(res.headers.get('content-security-policy'), CSP);
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(res.headers.get('referrer-policy'), 'same-origin');
+    assert.equal(res.headers.get('cache-control'), 'no-cache');
+    assert.ok(res.headers.get('last-modified'));
+    assert.ok((await res.text()).length > 0);
+    assert.equal(query.mock.callCount(), 0);
+    assert.equal(connect.mock.callCount(), 0);
+  });
+
+  test('each kind of file with its type', async () => {
+    for (const [path, type] of [
+      ['/static/fonts/eb-garamond-latin.woff2', 'font/woff2'],
+      ['/static/fonts/OFL.txt', 'text/plain; charset=utf-8'],
+      ['/static/img/hof-mark.svg', 'image/svg+xml'],
+      ['/static/img/frame.webp', 'image/webp'],
+    ]) {
+      const res = await staticRequest(path!);
+      assert.equal(res.status, 200, path);
+      assert.equal(res.headers.get('content-type'), type, path);
+    }
+  });
+
+  test('an unknown address under /static/: the common 404, not /setup', async () => {
+    for (const path of [
+      '/static/',
+      '/static/img/',
+      '/static/nope.css',
+      '/static/%2e%2e%2fmain.ts',
+    ]) {
+      const res = await staticRequest(path);
+      assert.equal(res.status, 404, path);
+      assert.equal(res.headers.get('cache-control'), 'no-store', path);
+      assert.ok((await res.text()).includes('<h1>Такой тропы во дворе нет</h1>'), path);
+    }
   });
 });
 
