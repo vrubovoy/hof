@@ -10,6 +10,10 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 # Application code. Files stay owned by root, so the server process cannot change them.
 COPY src ./src
+# Readable for the node user whatever umask the checkout had: with umask 077 git writes new files
+# with mode 600, and Node could read neither its code nor package.json ("type"). Nobody gets write
+# access.
+RUN chmod -R a+rX package.json src
 
 # The node user (uid 1000) comes with the base image.
 USER node

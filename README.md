@@ -400,22 +400,36 @@ docker image rm "$oldimage"
 
 ## Если обновление не удалось
 
-Сначала выясняют, какие миграции нового тега уже применились. Команда выводит миграции, которые
-есть в базе, но которых нет в прежнем теге:
+Сначала выясняют, какие миграции нового тега уже применились: команда берёт список миграций
+прежнего тега из Git и список применённых миграций из базы и сравнивает их, только если оба списка
+получены.
 
 ```sh
-comm -13 \
-  <(git ls-tree --name-only -r "$old" -- src/core/migrations src/saeckel/migrations \
-      | sed 's|^src/||; s|/migrations/|/|' | sort) \
-  <(docker compose exec -T postgres psql --username=postgres --dbname=hof -At \
-      -c "SELECT 'core/' || name FROM core.schema_migrations UNION ALL SELECT 'saeckel/' || name FROM saeckel.schema_migrations" \
-      | sort)
+if known=$(git ls-tree --name-only -r "$old" -- src/core/migrations src/saeckel/migrations) \
+  && [ -n "$known" ] \
+  && applied=$(docker compose exec -T postgres psql --username=postgres --dbname=hof -At \
+      -c "SELECT 'core/' || name FROM core.schema_migrations UNION ALL SELECT 'saeckel/' || name FROM saeckel.schema_migrations") \
+  && [ -n "$applied" ]
+then
+  added=$(comm -13 <(printf '%s\n' "$known" | sed 's|^src/||; s|/migrations/|/|' | sort) \
+    <(printf '%s\n' "$applied" | sort))
+  if [ -n "$added" ]; then printf 'В базе есть новые миграции:\n%s\n' "$added"
+  else echo 'Новых миграций в базе нет'; fi
+else
+  echo 'ПРОВЕРКА НЕ УДАЛАСЬ: откат не выбирают'
+fi
 ```
 
-- **Пусто** — ни одна новая миграция не применилась, схема базы та же, что у прежнего тега:
-  достаточно вернуть код (откат A).
-- **Есть строки** — эти миграции применились. С такой базой прежний код не проверялся, поэтому
-  возвращают и код, и базу (откат B). Миграций вниз нет: откат схемы — это копия.
+- **«Новых миграций в базе нет»** — ни одна новая миграция не применилась, схема базы та же, что у
+  прежнего тега: можно вернуть только код (откат A). Это не доказывает, что прежний код понимает
+  всё, что успела записать новая версия: если она могла изменить данные так, как прежняя не
+  поддерживает, или совместимость не подтверждена, безопаснее откат B.
+- **«В базе есть новые миграции»** — эти миграции применились. С такой базой прежний код не
+  проверялся, поэтому возвращают и код, и базу (откат B). Миграций вниз нет: откат схемы — это
+  копия.
+- **«ПРОВЕРКА НЕ УДАЛАСЬ»** — список не получен: PostgreSQL не отвечает (`docker compose ps`),
+  неверный `old` (`git tag`) или ошибка запроса. Никакой откат не выбирают, пока проверка не
+  пройдёт.
 
 Откат A — только код:
 
