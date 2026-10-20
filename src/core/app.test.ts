@@ -75,13 +75,14 @@ function setupFields(key: string, username = 'owner') {
 }
 
 // A form error under its field: the field drawn as an error, the message right in it, the input
-// pointing at its hint and the message, and no other field marked.
+// pointing at its hint (if the field has one) and the message, and no other field marked.
 function assertFieldError(page: string, field: string, hint: string, message: string) {
   assert.ok(page.includes(`<p id="${field}-error" class="err-text">${message}</p>`), message);
   assert.match(page, new RegExp(`<div class="field err">\\s*<label for="${field}">`), field);
+  const ids = [hint, `${field}-error`].filter(Boolean).join(' ');
   assert.match(
     page,
-    new RegExp(`name="${field}"[^>]*aria-invalid="true" aria-describedby="${hint} ${field}-error"`),
+    new RegExp(`name="${field}"[^>]*aria-invalid="true" aria-describedby="${ids}"`),
   );
   assert.equal((page.match(/aria-invalid/g) ?? []).length, 1);
   assert.equal((page.match(/class="field err"/g) ?? []).length, 1);
@@ -107,6 +108,32 @@ function linksIn(piece: string): string[] {
       .trim();
     return `${href} ${label ?? text}`;
   });
+}
+
+// The text of a piece of a page as it is read: no tags, the spaces squeezed.
+function plain(piece: string): string {
+  return piece
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// The markup with the spaces squeezed and none left next to a tag.
+function squeeze(piece: string): string {
+  return piece.replace(/\s+/g, ' ').replace(/ ?> ?/g, '>').replace(/ </g, '<');
+}
+
+// The key board of «Приближённые», one entry a person: "picture | text | address of the card".
+function keysIn(page: string): string[] {
+  return [...page.matchAll(/<li class="key">([\s\S]*?)<\/li>/g)].map(([, key]) =>
+    [
+      /src="\/static\/img\/(key-tag|hook-empty)\.webp"\s+alt=""/.exec(key!)?.[1],
+      plain(key!),
+      /href="([^"]*)"/.exec(key!)?.[1],
+    ]
+      .filter(Boolean)
+      .join(' | '),
+  );
 }
 
 async function count(table: 'users' | 'sessions'): Promise<number> {
@@ -858,38 +885,43 @@ describe('my chambers', () => {
     const page = await res.text();
     assert.ok(linksIn(part(page, '<nav class="banner"', '</nav>')).includes('/ Двор'));
     for (const text of [
-      'Мои покои',
-      'owner · хозяин двора',
-      'Сменить пароль',
-      '<form method="post" action="/account/password">',
-      'Текущий пароль',
+      '<h1 class="ribbon ribbon-md"><span>Мои покои</span></h1>',
+      '<span class="muted">owner · хозяин двора</span>',
+      '<form class="framed chambers-password" method="post" action="/account/password">',
+      '<h2 class="title t-3">Сменить пароль</h2>',
+      '<label for="current">Текущий пароль</label>',
       'name="current"',
-      'Новый пароль',
+      '<label for="password">Новый пароль</label>',
       'name="password"',
-      'Ещё раз',
+      '<label for="password2">Ещё раз</label>',
       'name="password2"',
       'Не короче 15 символов. На других устройствах вы выйдете со двора.',
-      '<form method="post" action="/logout">',
-      'Покинуть двор',
+      '<button type="submit" class="btn btn-blue">Сменить пароль</button>',
+      '<form class="chambers-out" method="post" action="/logout">',
+      '<button type="submit" class="btn" aria-describedby="logout-hint">',
       'на этом устройстве; всё во дворе останется на месте',
     ]) {
-      assert.ok(page.includes(text), text);
+      assert.ok(squeeze(page).includes(text), text);
     }
+    assert.match(page, /name="current"\s+type="password"\s+autocomplete="current-password"/);
+    assert.match(page, /name="password2?"\s+type="password"\s+autocomplete="new-password"/);
     assert.ok(!page.includes('Пароль сменён.'));
+    // «Звуки и движение» comes with the effects (M10).
+    assert.ok(!page.includes('Звуки и движение'));
   });
 
   test('anyone else: only the login', async (t) => {
     const { app } = await found(t);
     const anna = await addSession(await addUser('anna'));
     const page = await (await get(app, '/account', { cookie: `__Host-hof=${anna}` })).text();
-    assert.ok(page.includes('<p>anna</p>'));
+    assert.ok(squeeze(page).includes('<span class="muted">anna</span>'));
     assert.ok(!page.includes('хозяин двора'));
   });
 
   test('done=password shows the message; any other done is ignored', async (t) => {
     const { app, cookie } = await found(t);
     const done = await (await get(app, '/account?done=password', { cookie })).text();
-    assert.ok(done.includes('Пароль сменён.'));
+    assert.ok(done.includes('<p class="note">Пароль сменён.</p>'));
     for (const path of ['/account?done=x', '/account?done=Password', '/account?created=1']) {
       const page = await (await get(app, path, { cookie })).text();
       assert.ok(!page.includes('Пароль сменён.'), path);
@@ -1005,9 +1037,7 @@ describe('change of my password', () => {
       assert.equal(res.status, 400);
       assert.equal(res.headers.get('set-cookie'), null);
       const page = await res.text();
-      assert.ok(page.includes(`<p id="${field}-error">${message}</p>`), message);
-      assert.match(page, new RegExp(`name="${field}"[^>]*aria-invalid="true"`));
-      assert.equal((page.match(/aria-invalid/g) ?? []).length, 1);
+      assertFieldError(page, field, field === 'current' ? '' : 'password-hint', message);
       for (const typed of Object.values(fields)) {
         assert.ok(!page.includes(typed), `page shows ${typed}`);
       }
@@ -1026,7 +1056,11 @@ describe('change of my password', () => {
     // The stored string is refused before Argon2, and no new hash is made.
     assert.equal(argon2, 0);
     assert.equal(res.status, 400);
-    assert.ok((await res.text()).includes('<p id="current-error">Текущий пароль не подходит.</p>'));
+    assert.ok(
+      (await res.text()).includes(
+        '<p id="current-error" class="err-text">Текущий пароль не подходит.</p>',
+      ),
+    );
     assert.deepEqual(lines.slice(logged), ['error password_hash_unreadable user_id=1']);
     assert.equal(await hashOf(1), 'not an argon2 hash');
     assert.deepEqual(await sessionTokens(token), { known: [token], other: 0 });
@@ -1335,24 +1369,30 @@ describe('Приближённые', () => {
     for (const text of [
       '<title>Hof — приближённые</title>',
       '<nav class="banner" aria-label="Hof">',
-      '<h1>Приближённые</h1>',
-      '<h2>Пока у двора только хозяин</h2>',
-      'На ключнице один ключ — ваш. Примите ко двору семью или друзей: у каждого будет свой',
-      'ключ и свои мешки.',
-      '<h2>Принять ко двору</h2>',
-      '<form method="post" action="/admin/users">',
+      '<h1 class="ribbon ribbon-md"><span>Приближённые</span></h1>',
+      '<img class="vignette" src="/static/img/empty-residents.webp" alt="" />',
+      '<h2 class="title t-2">Пока у двора только хозяин</h2>',
+      '<form class="framed residents-new" method="post" action="/admin/users">',
+      '<h2 class="title t-3">Принять ко двору</h2>',
       '<label for="username">Логин</label>',
       '<label for="password">Начальный пароль</label>',
-      'Пароль виден, чтобы его можно было передать. Человек сменит его в своих покоях.',
-      '<button type="submit">Принять</button>',
+      '<button type="submit" class="btn btn-blue">Принять</button>',
     ]) {
       assert.ok(page.includes(text), text);
+    }
+    for (const text of [
+      'На ключнице один ключ — ваш. Примите ко двору семью или друзей: у каждого будет свой ключ и свои мешки.',
+      'Пароль виден, чтобы его можно было передать. Человек сменит его в своих покоях.',
+    ]) {
+      assert.ok(plain(page).includes(text), text);
     }
     // Both fields are plain text without autofill; the password is shown while it is typed.
     assert.match(page, /name="username"\s+type="text"\s+autocomplete="off"/);
     assert.match(page, /name="password"\s+type="text"\s+autocomplete="off"/);
-    assert.ok(!page.includes('<a href="/admin/users">'), 'no link to the page itself');
-    assert.ok(!page.includes('<li>'));
+    assert.ok(!page.includes('<a class="link-plain'), 'no card to open');
+    // The empty board instead of the list.
+    assert.ok(!page.includes('class="keys"'));
+    assert.deepEqual(keysIn(page), []);
     assert.ok(!page.includes('хозяин, это вы'));
   });
 
@@ -1362,16 +1402,18 @@ describe('Приближённые', () => {
     await addUser('anna', PASSWORD_HASH, true);
     await addUser('boris');
     const page = await (await get(app, '/admin/users', { cookie })).text();
-    const items = [...page.matchAll(/<li>\s*([\s\S]*?)\s*<\/li>/g)].map((m) =>
-      m[1]!.replace(/\s+/g, ' '),
-    );
-    // Each person has a way to their card; the administrator has none.
-    assert.deepEqual(items, [
-      'owner · хозяин, это вы',
-      'anna · Ключ взят <a href="/admin/users/3">Открыть ›</a>',
-      'boris · С ключом <a href="/admin/users/4">Открыть ›</a>',
-      'zoe · С ключом <a href="/admin/users/2">Открыть ›</a>',
+    // A key with its tag, or the empty hook of a person without the key; each person has a way
+    // to their card, the administrator has none.
+    assert.ok(page.includes('<ul class="keys" aria-label="Ключница">'));
+    assert.deepEqual(keysIn(page), [
+      'key-tag | owner хозяин, это вы',
+      'hook-empty | anna Ключ взят Открыть › | /admin/users/3',
+      'key-tag | boris С ключом Открыть › | /admin/users/4',
+      'key-tag | zoe С ключом Открыть › | /admin/users/2',
     ]);
+    assert.ok(
+      squeeze(page).includes('<a class="link-plain small" href="/admin/users/3">Открыть ›</a>'),
+    );
     assert.ok(!page.includes('href="/admin/users/1"'));
     assert.ok(!page.includes('Пока у двора только хозяин'));
   });
@@ -1405,9 +1447,11 @@ describe('Принять ко двору', () => {
 
     const page = await (await get(app, '/admin/users?created=2', { cookie })).text();
     assert.ok(
-      page.includes('<p>Ключ для anna готов. Передайте логин и начальный пароль лично.</p>'),
+      squeeze(page).includes(
+        '<p class="note">Ключ для anna готов. Передайте логин и начальный пароль лично.</p>',
+      ),
     );
-    assert.ok(page.replace(/\s+/g, ' ').includes('anna · С ключом'));
+    assert.ok(keysIn(page).includes('key-tag | anna С ключом Открыть › | /admin/users/2'));
     assert.ok(!page.includes(NEW_PASSWORD));
 
     // The new person signs in with the initial password.
@@ -1474,16 +1518,17 @@ describe('Принять ко двору', () => {
       assert.equal(argon2, expectedArgon2);
       assert.equal(res.status, 400);
       const page = await res.text();
-      assert.ok(page.includes(`<p id="${field}-error">${message}</p>`), message);
-      assert.match(page, new RegExp(`name="${field}"[^>]*aria-invalid="true"`));
-      assert.equal((page.match(/aria-invalid/g) ?? []).length, 1);
+      assertFieldError(page, field, field === 'password' ? 'password-hint' : '', message);
       // The login as typed, escaped; the password never.
       const escaped = fields.username!.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
       assert.ok(page.includes(`value="${escaped}"`), escaped);
-      assert.ok(!page.includes('<b>anna</b>'));
       assert.ok(!page.includes(fields.password!), 'page shows the password');
+      assert.ok(!page.includes('class="note"'), 'no message of a new key');
       // The same page: the list is there.
-      assert.ok(page.replace(/\s+/g, ' ').includes('anna · С ключом'));
+      assert.deepEqual(keysIn(page), [
+        'key-tag | owner хозяин, это вы',
+        'key-tag | anna С ключом Открыть › | /admin/users/2',
+      ]);
       assert.equal(await count('users'), 2);
       assert.deepEqual(lines.slice(logged), []);
     });
@@ -1509,7 +1554,9 @@ describe('Принять ко двору', () => {
       await rival.query('COMMIT');
       const res = await pending;
       assert.equal(res.status, 400);
-      assert.ok((await res.text()).includes('<p id="username-error">Логин занят.</p>'));
+      assert.ok(
+        (await res.text()).includes('<p id="username-error" class="err-text">Логин занят.</p>'),
+      );
     } finally {
       rival.release();
     }
@@ -1575,7 +1622,8 @@ async function waitingQuery(): Promise<string> {
   return rows[0]!.query;
 }
 
-const RESET_MESSAGE = '<p>Пароль для anna сброшен. Передайте новый пароль лично.</p>';
+// Compared with the page squeezed (squeeze).
+const RESET_MESSAGE = '<p class="note">Пароль для anna сброшен. Передайте новый пароль лично.</p>';
 
 describe('the card of a person: who gets in', () => {
   test('no session: GET keeps the way back, POST goes to /login, nothing changed, no Argon2', async (t) => {
@@ -1670,17 +1718,22 @@ describe('the card of a person', () => {
     for (const text of [
       '<title>Hof — anna</title>',
       '<nav class="banner" aria-label="Hof">',
-      '<p><a href="/admin/users">Приближённые</a></p>',
-      '<h1>anna</h1>',
-      '<p>С ключом</p>',
-      '<h2>Сбросить пароль</h2>',
-      '<form method="post" action="/admin/users/2/password">',
+      '<a class="back" href="/admin/users"><span>Приближённые</span></a>',
+      '<img src="/static/img/key-tag.webp" alt="" />',
+      '<h1 class="title t-1">anna</h1>',
+      '<span class="badge">С ключом</span>',
+      '<h2 class="title t-3">Сбросить пароль</h2>',
+      'action="/admin/users/2/password"',
       '<label for="password">Новый начальный пароль</label>',
-      'anna выйдет со двора на всех устройствах. Передайте новый пароль лично.',
-      '<button type="submit">Сбросить пароль</button>',
+      '<button type="submit" class="btn btn-blue">Сбросить пароль</button>',
     ]) {
       assert.ok(page.includes(text), text);
     }
+    assert.ok(
+      plain(page).includes(
+        'anna выйдет со двора на всех устройствах. Передайте новый пароль лично.',
+      ),
+    );
     // Plain text without autofill: the administrator sees what is typed. No repeat field.
     assert.match(page, /name="password"\s+type="text"\s+autocomplete="off"/);
     assert.equal((page.match(/<input/g) ?? []).length, 1);
@@ -1691,15 +1744,17 @@ describe('the card of a person', () => {
     const { app, cookie } = await found(t);
     await addUser('anna', PASSWORD_HASH, true);
     const page = await (await get(app, '/admin/users/2', { cookie })).text();
-    assert.ok(page.includes('<p>Ключ взят</p>'));
+    assert.ok(page.includes('<span class="badge">Ключ взят</span>'));
+    assert.ok(page.includes('<img src="/static/img/hook-empty.webp" alt="" />'));
     assert.ok(!page.includes('С ключом'));
+    assert.ok(!page.includes('key-tag'));
   });
 
   test('done=password shows the message; any other done is ignored', async (t) => {
     const { app, cookie } = await found(t);
     await addUser('anna');
     const done = await (await get(app, '/admin/users/2?done=password', { cookie })).text();
-    assert.ok(done.includes(RESET_MESSAGE));
+    assert.ok(squeeze(done).includes(RESET_MESSAGE));
     for (const query of ['?done=x', '?done=Password', '?created=2', '']) {
       const page = await (await get(app, `/admin/users/2${query}`, { cookie })).text();
       assert.ok(!page.includes('сброшен'), query);
@@ -1813,7 +1868,7 @@ describe('reset of a password by the administrator', () => {
 
     // After the redirect: the message, once more only as a page.
     const page = await (await get(app, res.headers.get('location')!, { cookie })).text();
-    assert.ok(page.includes(RESET_MESSAGE));
+    assert.ok(squeeze(page).includes(RESET_MESSAGE));
     assert.equal(await hashOf(anna), row.password_hash);
 
     assert.equal((await signIn(app, 'anna', PASSWORD)).status, 400);
@@ -1860,9 +1915,8 @@ describe('reset of a password by the administrator', () => {
       assert.equal(argon2, 0);
       assert.equal(res.status, 400);
       const page = await res.text();
-      assert.ok(page.includes('<h1>anna</h1>'));
-      assert.ok(page.includes('<p id="password-error">Пароль — от 15 до 256 символов.</p>'));
-      assert.match(page, /name="password"[^>]*aria-invalid="true"/);
+      assert.ok(page.includes('<h1 class="title t-1">anna</h1>'));
+      assertFieldError(page, 'password', 'password-hint', 'Пароль — от 15 до 256 символов.');
       if (fields.password !== undefined) assert.ok(!page.includes(fields.password));
       assert.ok(!page.includes('сброшен'));
       assert.equal(await hashOf(anna), PASSWORD_HASH);
@@ -2147,10 +2201,10 @@ describe('Забрать ключ', () => {
 
     // The card after the redirect, and the list.
     const card = await (await get(app, '/admin/users/2', { cookie })).text();
-    assert.ok(card.includes('<p>Ключ взят</p>'));
-    assert.ok(card.includes('<form method="post" action="/admin/users/2/enable">'));
+    assert.ok(card.includes('<span class="badge">Ключ взят</span>'));
+    assert.ok(card.includes('action="/admin/users/2/enable"'));
     const list = await (await get(app, '/admin/users', { cookie })).text();
-    assert.ok(list.replace(/\s+/g, ' ').includes('anna · Ключ взят'));
+    assert.ok(keysIn(list).includes('hook-empty | anna Ключ взят Открыть › | /admin/users/2'));
   });
 
   test('again for a person already disabled: UPDATE and DELETE again, 303, a new log line', async (t) => {
@@ -2250,8 +2304,8 @@ describe('Вернуть ключ', () => {
     // She signs in herself, with the password she had.
     assert.equal((await signIn(app, 'anna', PASSWORD)).status, 303);
     const card = await (await get(app, '/admin/users/2', { cookie })).text();
-    assert.ok(card.includes('<p>С ключом</p>'));
-    assert.ok(card.includes('<form method="post" action="/admin/users/2/disable">'));
+    assert.ok(card.includes('<span class="badge">С ключом</span>'));
+    assert.ok(card.includes('action="/admin/users/2/disable"'));
   });
 
   test('again for a person who has the key: 303, a new log line, the sessions untouched', async (t) => {
@@ -2277,17 +2331,22 @@ describe('the card: the key of the court', () => {
     assert.equal(res.headers.get('cache-control'), 'no-store');
     assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
     assert.match(res.headers.get('content-security-policy') ?? '', /^default-src 'none'/);
-    const page = (await res.text()).replace(/\s+/g, ' ');
+    const page = squeeze(await res.text());
     for (const text of [
-      '<p><a href="/admin/users">Приближённые</a></p>',
-      '<p>С ключом</p>',
-      '<form method="post" action="/admin/users/2/password">',
-      '<h2>Ключ от двора</h2>',
-      'У anna есть ключ от двора. Если забрать ключ, вход закроется сразу, а мешки и записи останутся. Вернуть ключ можно в любой момент.',
-      '<form method="post" action="/admin/users/2/disable"> <button type="submit">Забрать ключ</button> </form>',
+      '<a class="back" href="/admin/users"><span>Приближённые</span></a>',
+      '<span class="badge">С ключом</span>',
+      'action="/admin/users/2/password"',
+      // The frame is the form: its heading, its text and one button, nothing else to send.
+      '<form class="framed card-frame" method="post" action="/admin/users/2/disable"><h2 class="title t-3">Ключ от двора</h2><p class="card-text">',
+      '</p><button type="submit" class="btn btn-danger">Забрать ключ</button></form>',
     ]) {
       assert.ok(page.includes(text), text);
     }
+    assert.ok(
+      plain(page).includes(
+        'У anna есть ключ от двора. Если забрать ключ, вход закроется сразу, а мешки и записи останутся. Вернуть ключ можно в любой момент.',
+      ),
+    );
     assert.ok(!page.includes('Вернуть ключ</button>'));
     assert.ok(!page.includes('/enable'));
   });
@@ -2295,16 +2354,20 @@ describe('the card: the key of the court', () => {
   test('without the key: «Ключ взят», the text, «Вернуть ключ»; the reset stays', async (t) => {
     const { app, cookie } = await found(t);
     await addUser('anna', PASSWORD_HASH, true);
-    const page = (await (await get(app, '/admin/users/2', { cookie })).text()).replace(/\s+/g, ' ');
+    const page = squeeze(await (await get(app, '/admin/users/2', { cookie })).text());
     for (const text of [
-      '<p>Ключ взят</p>',
-      '<form method="post" action="/admin/users/2/password">',
-      '<h2>Ключ от двора</h2>',
-      'Ключ у anna забран: вход закрыт, мешки и записи на месте. Если вернуть ключ, anna войдёт со своим паролем.',
-      '<form method="post" action="/admin/users/2/enable"> <button type="submit">Вернуть ключ</button> </form>',
+      '<span class="badge">Ключ взят</span>',
+      'action="/admin/users/2/password"',
+      '<form class="framed card-frame" method="post" action="/admin/users/2/enable"><h2 class="title t-3">Ключ от двора</h2><p class="card-text">',
+      '</p><button type="submit" class="btn btn-blue">Вернуть ключ</button></form>',
     ]) {
       assert.ok(page.includes(text), text);
     }
+    assert.ok(
+      plain(page).includes(
+        'Ключ у anna забран: вход закрыт, мешки и записи на месте. Если вернуть ключ, anna войдёт со своим паролем.',
+      ),
+    );
     assert.ok(!page.includes('Забрать ключ</button>'));
     assert.ok(!page.includes('/disable'));
   });
@@ -2641,8 +2704,9 @@ describe('the look of Hof: pages, CSS and static files', () => {
   }
 
   // Each drawn page in each of its states — the gates with the form and every refusal, the
-  // courtyard of the administrator alone and with a person, of a person, and the other pages in
-  // the shell — and the app, founded by then.
+  // courtyard of the administrator alone and with a person, of a person, my chambers,
+  // «Приближённые» empty and with people and the card with the key and without it, each with its
+  // message and its refusal — and the app, founded by then.
   async function drawnPages(t: TestContext) {
     const { app, key } = await boot(t);
     const pages: [string, Response][] = [
@@ -2659,14 +2723,28 @@ describe('the look of Hof: pages, CSS and static files', () => {
       ['GET /login', await get(app, '/login?next=%2Faccount')],
       ['refused sign-in', await signIn(app, 'owner', 'a wrong password')],
       ['courtyard, alone', await get(app, '/', owner)],
+      ['Приближённые, empty', await get(app, '/admin/users', owner)],
+      ['wrong new login', await post(app, '/admin/users', newUserFields('-x'), owner)],
     );
     const annaId = await addUser('anna');
+    const borisId = await addUser('boris', PASSWORD_HASH, true);
     const anna = { cookie: `__Host-hof=${await addSession(annaId)}` };
+    const card = `/admin/users/${annaId}`;
     pages.push(
       ['courtyard', await get(app, '/', owner)],
       ['my chambers', await get(app, '/account', owner)],
+      ['password changed', await get(app, '/account?done=password', owner)],
+      ['short new password', await changePassword(app, owner.cookie, passwordFields('x', 'short'))],
       ['Приближённые', await get(app, '/admin/users', owner)],
-      ['the card of anna', await get(app, `/admin/users/${annaId}`, owner)],
+      ['a key made', await get(app, `/admin/users?created=${annaId}`, owner)],
+      [
+        'short initial password',
+        await post(app, '/admin/users', newUserFields('clara', 'short'), owner),
+      ],
+      ['the card of anna', await get(app, card, owner)],
+      ['password reset', await get(app, `${card}?done=password`, owner)],
+      ['short reset', await post(app, `${card}/password`, { password: 'short' }, owner)],
+      ['the card of boris, no key', await get(app, `/admin/users/${borisId}`, owner)],
       ['courtyard of anna', await get(app, '/', anna)],
       ['chambers of anna', await get(app, '/account', anna)],
     );

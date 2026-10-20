@@ -95,6 +95,9 @@ a {
   line-height: 1.12;
   color: var(--ink);
 }
+.t-1 {
+  font-size: 42px;
+}
 .t-2 {
   font-size: 33px;
 }
@@ -241,16 +244,22 @@ a {
   transform: translateY(1px);
   filter: brightness(0.74);
 }
+.btn-danger {
+  border-image-source: url(img/btn-danger.webp);
+  color: var(--red);
+}
 .btn-wide {
   width: 100%;
 }
 
-/* уведомление — записка, запечатанная сургучом: красная печать — отказ */
+/* уведомление — записка, запечатанная сургучом: синяя печать — сообщение, красная — отказ.
+   Печать выступает влево за край записки, как в прототипах */
 .note {
   position: relative;
-  margin: 0 0 0 14px;
+  margin: 0;
   padding: 12px 16px 12px 48px;
   border: 2px solid transparent;
+  border-image-source: url(img/pen-note-info.svg);
   border-image-slice: 16 fill;
   border-image-width: 16px;
   border-image-repeat: stretch;
@@ -266,7 +275,7 @@ a {
   width: 52px;
   height: 52px;
   margin-top: -27px;
-  background: 0 0 / 52px no-repeat;
+  background: url(img/seal-blue.webp) 0 0 / 52px no-repeat;
   transform: rotate(-9deg);
 }
 .note-error {
@@ -282,6 +291,98 @@ a {
   border: 22px solid transparent;
   border-image: url(img/frame.webp) 107 / 54px stretch;
   padding: 30px 34px 28px;
+}
+
+/* «назад» — стрелка-маникула и подчёркивание пером */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  min-height: 36px;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--blue);
+}
+.back::before {
+  content: '';
+  flex: none;
+  width: 40px;
+  height: 27px;
+  background: url(img/manicule.webp) 0 0 / 40px 27px;
+}
+.back span {
+  padding-bottom: 3px;
+  background: url(img/pen-underline.svg) left bottom / 100% 5px no-repeat;
+}
+.link-plain {
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--blue);
+}
+
+/* бирка состояния: контур пером */
+.badge {
+  display: inline-block;
+  padding: 1px 10px;
+  border: 2px solid transparent;
+  border-image: url(img/pen-badge.svg) 14 fill / 12px stretch;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* виньетка: бумага картинки белая, multiply «печатает» рисунок прямо на бумагу страницы */
+.vignette {
+  display: block;
+  height: auto;
+  mix-blend-mode: multiply;
+}
+
+/* ключница: у приближённого ключ с биркой, «ключ взят» — пустой крючок на том же месте. Логин
+   до 32 символов переносится внутри ключа */
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 18px 30px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.key {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  width: 128px;
+  text-align: center;
+}
+.key img {
+  display: block;
+  width: 84px;
+  height: 172px;
+  margin-bottom: 6px;
+}
+.key b {
+  max-width: 100%;
+  font-size: 19px;
+  overflow-wrap: anywhere;
+}
+
+/* поля в ряд с кнопкой: кнопка стоит вровень с полями, и когда под полем ошибка; где места
+   мало, кнопка уходит на следующую строку */
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+.form-row .field {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.form-row .btn {
+  margin-top: calc(15px * 1.42 + 5px);
 }
 
 /* кляксы: только на пустой бумаге, бледно; у каждой страницы свои */
@@ -319,6 +420,14 @@ a {
   line-height: 32px;
   text-align: center;
   white-space: nowrap;
+}
+.ribbon-md {
+  height: 60px;
+  padding-top: 13px;
+  border-width: 0 106px 0 101px;
+  border-image-width: 0 106px 0 101px;
+  font-size: 25px;
+  line-height: 28px;
 }
 
 /* вывеска: концы с цепями неизменны, доска и перекладина тянутся; надпись на доске. Фокус с
@@ -435,7 +544,9 @@ a {
 .nav-who {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 .nav-who .small {
   opacity: 0.8;
@@ -476,11 +587,6 @@ a {
   display: block;
 }
 
-/* Покои и Приближённые пока без своего облика (M8.3): только отступы внутри оболочки */
-.room {
-  padding: 32px 40px;
-}
-
 @media (min-width: 1024px) {
   .shell {
     display: grid;
@@ -512,8 +618,16 @@ a {
   .banner {
     display: none;
   }
-  .room {
-    padding: 20px 16px;
+  /* короткие тексты телефона (UserMobile, UsersMobile, AccountMobile): лишняя часть не видна и
+     не читается */
+  .text-full {
+    display: none;
+  }
+  /* печать у края экрана не уходит за него: записка отступает на 22 px, как в AssignMobile */
+  .chambers .note,
+  .residents .note,
+  .card .note {
+    margin-left: 22px;
   }
 }
 
@@ -734,6 +848,523 @@ a {
   .blot-court-drip,
   .blot-court-splatter-b,
   .blot-court-ring {
+    display: none;
+  }
+}
+
+/* картина комнаты на компьютере — во всю высоту окна рядом с бумагой, на телефоне — полоса
+   170 px сверху с линией пером, лента заходит на неё снизу. Край картины не ловит нажатия */
+.room-scene {
+  pointer-events: none;
+}
+.room-scene img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+@media (min-width: 1024px) {
+  .room-scene {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
+}
+@media (max-width: 1023.98px) {
+  .room-scene {
+    order: -1;
+    position: relative;
+    height: 170px;
+    overflow: hidden;
+  }
+  .room-scene::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -3px;
+    height: 6px;
+    background: url(img/pen-rule-light.svg) 0 0 / 100% 6px no-repeat;
+  }
+}
+
+/* Мои покои — Account и AccountMobile */
+.chambers-main {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.chambers-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.chambers-head .muted {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.chambers-password {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 22px 30px 20px;
+}
+.chambers-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.chambers-password .btn {
+  align-self: flex-start;
+}
+.chambers-out {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0;
+  padding-left: 8px;
+}
+.chambers-out p {
+  margin: 0;
+}
+.chambers-out .btn img {
+  display: block;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+
+@media (min-width: 1024px) {
+  /* бумага не уже, чем в прототипе (552 px); картина — 600 px, на узком окне уже */
+  .chambers {
+    display: grid;
+    grid-template-columns: minmax(552px, 1fr) minmax(0, 600px);
+    min-height: 100vh;
+  }
+  .chambers-main {
+    padding: 24px 8px 20px 40px;
+  }
+  .chambers-head .ribbon {
+    margin-left: -10px;
+  }
+  .chambers-scene {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 56px);
+    mask-image: linear-gradient(to right, transparent, #000 56px);
+  }
+  /* кляксы в кадре 1440×900, от краёв бумаги */
+  .blot-chambers-drip {
+    right: 14px;
+    top: 120px;
+    width: 20px;
+    opacity: 0.7;
+  }
+  .blot-chambers-small {
+    left: 472px;
+    bottom: -1px;
+    width: 40px;
+    opacity: 0.7;
+  }
+  .blot-chambers-splatter {
+    left: 42px;
+    bottom: -15px;
+    width: 70px;
+    opacity: 0.5;
+    transform: rotate(15deg);
+  }
+}
+
+@media (max-width: 1023.98px) {
+  .chambers {
+    display: flex;
+    flex-direction: column;
+  }
+  .chambers-scene img {
+    object-position: 50% 72.33%;
+  }
+  /* лента заходит на картину сверху, клякс на телефоне нет — ничего не обрезается */
+  .chambers-main {
+    overflow: visible;
+    gap: 14px;
+    padding: 0 16px 16px;
+  }
+  .chambers-head {
+    position: relative;
+    z-index: 1;
+    flex-direction: column;
+    gap: 2px;
+    margin: -28px 0 -4px;
+    text-align: center;
+  }
+  .chambers-head .muted {
+    font-size: 15px;
+  }
+  .chambers-password {
+    gap: 10px;
+    padding: 20px 20px 18px;
+  }
+  .chambers-fields {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  /* подсказка — сразу под последним полем, как в AccountMobile */
+  .chambers-password .hint {
+    margin-top: -5px;
+  }
+  .chambers-password .btn,
+  .chambers-out .btn {
+    width: 100%;
+  }
+  .chambers-out {
+    padding-left: 0;
+  }
+  .blot-chambers-drip,
+  .blot-chambers-small,
+  .blot-chambers-splatter {
+    display: none;
+  }
+}
+
+/* Приближённые — Users, UsersMobile, UsersEmpty. Как в прототипе, бумага заходит под край
+   картины: лента и ключи — под её растворяющимся краем, записка с печатью и рамка — поверх.
+   Кляксы обрезает край страницы (clip, в отличие от hidden, не мешает картине стоять на месте) */
+.residents {
+  position: relative;
+  overflow: clip;
+}
+.residents-main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.residents-main .ribbon {
+  align-self: flex-start;
+}
+.residents-new {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.residents-empty {
+  display: grid;
+  grid-template-columns: 330px minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
+  margin: -2px 0;
+}
+.residents-empty .vignette {
+  width: 100%;
+}
+.residents-empty-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.residents-empty .sprig {
+  width: 170px;
+  margin: 0;
+}
+.residents-empty p {
+  margin: 0;
+}
+
+@media (min-width: 1024px) {
+  /* картина слева — 420 px, на узком окне уже: форма «Принять ко двору» остаётся в одну строку;
+     бумага с ключницей заходит на край картины */
+  .residents {
+    display: grid;
+    grid-template-columns: minmax(0, 420px) minmax(548px, 1fr);
+    min-height: 100vh;
+  }
+  .residents-scene {
+    grid-column: 1;
+    grid-row: 1;
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 13.33%,
+      #000 64.29%,
+      transparent
+    );
+    mask-image: linear-gradient(to right, transparent, #000 13.33%, #000 64.29%, transparent);
+  }
+  .residents-scene img {
+    object-position: 30% 50%;
+  }
+  .residents-main {
+    grid-column: 2;
+    grid-row: 1;
+    margin-left: -60px;
+    padding: 34px 40px 30px 0;
+  }
+  /* кляксы в кадре 1440×900, от правого края */
+  .blot-residents-splatter-b {
+    right: 94px;
+    top: 250px;
+    width: 96px;
+    opacity: 0.55;
+    transform: rotate(8deg);
+  }
+  .blot-residents-small {
+    right: 24px;
+    top: 70px;
+    width: 44px;
+    opacity: 0.7;
+  }
+  .blot-residents-ring {
+    right: -20px;
+    bottom: -34px;
+    width: 100px;
+    opacity: 0.42;
+    transform: rotate(-20deg);
+  }
+  .blot-residents-splatter-a {
+    right: 90px;
+    top: 70px;
+    width: 80px;
+    opacity: 0.5;
+    transform: rotate(12deg);
+  }
+  .residents-empty ~ .blot-residents-ring {
+    right: -16px;
+    bottom: -30px;
+    width: 96px;
+  }
+}
+
+@media (max-width: 1023.98px) {
+  .residents {
+    display: flex;
+    flex-direction: column;
+  }
+  .residents-scene img {
+    object-position: 50% 25.08%;
+  }
+  .residents-main {
+    gap: 14px;
+    padding: 0 16px 16px;
+  }
+  .residents-main .ribbon {
+    position: relative;
+    z-index: 1;
+    align-self: center;
+    margin: -28px 0 -10px;
+  }
+  .keys {
+    justify-content: space-around;
+    gap: 10px;
+  }
+  .key {
+    width: 104px;
+  }
+  .key img {
+    width: 56px;
+    height: 115px;
+  }
+  /* поля столбцом, подсказка — под паролем, кнопка во всю ширину, как в UsersMobile */
+  .residents-new {
+    gap: 10px;
+    padding: 20px 20px 18px;
+  }
+  .residents-new .form-row {
+    display: contents;
+  }
+  .residents-new .field {
+    flex: none;
+  }
+  .residents-new .hint {
+    order: 1;
+    margin-top: -5px;
+  }
+  .residents-new .btn {
+    order: 2;
+    width: 100%;
+    margin-top: 0;
+  }
+  /* пустая ключница — виньетка над текстом */
+  .residents-empty {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 8px;
+    text-align: center;
+  }
+  .residents-empty .vignette {
+    width: min(100%, 260px);
+  }
+  .residents-empty-text {
+    align-items: center;
+  }
+  .blot-residents-splatter-b,
+  .blot-residents-small,
+  .blot-residents-ring,
+  .blot-residents-splatter-a {
+    display: none;
+  }
+}
+
+/* карточка приближённого — User и UserMobile */
+.card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.card-grid {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 28px;
+  max-width: 1060px;
+}
+.card-person {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  text-align: center;
+}
+.card-person img {
+  display: block;
+  flex: none;
+  width: 128px;
+  height: 262px;
+}
+.card-name {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.card-name h1 {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+/* две рамки одной высоты в ряд; на телефоне — одна под другой */
+.card-frames {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+}
+.card-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.card-frame .btn {
+  align-self: flex-start;
+  margin-top: auto;
+}
+.card-text {
+  margin: 0;
+}
+
+@media (min-width: 1024px) {
+  .card {
+    min-height: 100vh;
+    padding: 34px 48px;
+  }
+  /* кляксы в кадре 1440×900 */
+  .blot-card-medium {
+    right: 30px;
+    bottom: 140px;
+    width: 70px;
+    opacity: 0.6;
+    transform: rotate(25deg);
+  }
+  .blot-card-splatter {
+    left: 182px;
+    bottom: 44px;
+    width: 84px;
+    opacity: 0.5;
+    transform: rotate(-10deg);
+  }
+  .blot-card-drip {
+    right: 18px;
+    top: 60px;
+    width: 22px;
+    opacity: 0.7;
+  }
+  .blot-card-small {
+    left: 612px;
+    bottom: 39px;
+    width: 40px;
+    opacity: 0.7;
+  }
+}
+
+/* узкий компьютер: ключ и имя строкой, как в UserMobile, рамки по-прежнему рядом */
+@media (min-width: 1024px) and (max-width: 1239.98px) {
+  .card-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .card-person {
+    flex-direction: row;
+    gap: 18px;
+    padding: 0 0 0 10px;
+    text-align: left;
+  }
+  .card-person img {
+    width: 64px;
+    height: 131px;
+  }
+  .card-name {
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .card-frame {
+    padding-right: 24px;
+    padding-left: 24px;
+  }
+}
+
+@media (max-width: 1023.98px) {
+  .card {
+    gap: 14px;
+    padding: 14px 16px 16px;
+  }
+  .card-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .card-person {
+    flex-direction: row;
+    gap: 18px;
+    padding: 0 0 0 10px;
+    text-align: left;
+  }
+  .card-person img {
+    width: 64px;
+    height: 131px;
+  }
+  .card-name {
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .card-frames {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .card-frame {
+    gap: 10px;
+    padding: 20px 20px 18px;
+  }
+  .card-frame .btn {
+    width: 100%;
+  }
+  .card-text {
+    font-size: 15px;
+  }
+  .blot-card-medium,
+  .blot-card-splatter,
+  .blot-card-drip,
+  .blot-card-small {
     display: none;
   }
 }
