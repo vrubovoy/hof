@@ -5,7 +5,8 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { readdirSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { after, before, beforeEach, describe, test, type TestContext } from 'node:test';
 import { DatabaseError, Pool } from 'pg';
 import type { FirstRun } from './core/gate-key.ts';
@@ -15,6 +16,7 @@ import { migrate } from './migrate.ts';
 import { otherRecordedCurrency } from './saeckel/app.ts';
 
 const HOST = 'hof.example';
+const SAECKEL_STATIC = join(import.meta.dirname, 'saeckel', 'static');
 const FORM = 'application/x-www-form-urlencoded';
 
 // Copied from ARCHITECTURE.md §4.9 on purpose: the test must not share the constant with the code.
@@ -516,10 +518,25 @@ describe('Säckel in the court', () => {
     return res.headers.get('location')!;
   }
 
-  test('the courtyard leads to Säckel', async () => {
+  test('the courtyard leads to Säckel: the banner with its emblem, the treasury, the list', async () => {
     const { cookie } = await person('anna');
     const page = await (await get('/', cookie)).text();
-    assert.ok(page.includes('<a href="/saeckel/">Säckel</a>'));
+    assert.match(
+      page,
+      /<a class="nav" href="\/saeckel\/">\s*<img src="\/saeckel\/static\/img\/emblem-saeckel-small.webp" alt="" \/>Säckel\s*<\/a>/,
+    );
+    assert.match(
+      page,
+      /<a class="sign at-treasury" href="\/saeckel\/"\s*><span>Säckel<\/span><\/a\s*>/,
+    );
+    assert.ok(page.includes('<a class="sign sign-sm" href="/saeckel/"><span>Säckel</span></a>'));
+    // The static folder of Säckel holds what the courtyard names, nothing else.
+    for (const file of readdirSync(SAECKEL_STATIC, { recursive: true, withFileTypes: true })) {
+      if (!file.isFile()) continue;
+      const address = `/saeckel/static/${relative(SAECKEL_STATIC, join(file.parentPath, file.name))}`;
+      assert.ok(page.includes(`src="${address}"`), address);
+      assert.equal((await get(address)).status, 200, address);
+    }
   });
 
   test('Säckel gets id and login only, not the role', async () => {

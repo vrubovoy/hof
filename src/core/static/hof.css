@@ -48,6 +48,8 @@
   --ink-2: #4f5868;
   --blue: #1f4e9e;
   --red: #a83224;
+  --pen: #1b2e52; /* чернила надписей на ленте и вывеске */
+  --cloth: #fbf7ee; /* текст на знамени */
   /* заливка поля пером поверх бумаги: #FFFCF4 с прозрачностью 0,78 */
   --field: #fdf8ee;
   --font: 'EB Garamond', Georgia, serif;
@@ -98,6 +100,9 @@ a {
 }
 .muted {
   color: var(--ink-2);
+}
+.t-3 {
+  font-size: 26px;
 }
 .small {
   margin: 0;
@@ -205,6 +210,7 @@ a {
   border-style: solid;
   border-width: 0 20px;
   border-color: transparent;
+  border-image-source: url(img/btn-paper.webp);
   border-image-slice: 0 41 fill;
   border-image-width: 0 20px;
   border-image-repeat: stretch;
@@ -286,6 +292,450 @@ a {
   pointer-events: none;
   user-select: none;
   mix-blend-mode: multiply;
+}
+
+/* надпись на ленте и вывеске — как написанная на них: чернила впитываются (multiply) и чуть
+   расплываются, поэтому не выглядят резче материала */
+.ribbon > span,
+.sign > span {
+  mix-blend-mode: multiply;
+  color: var(--pen);
+  text-shadow: 0 0 0.8px rgb(27 46 82 / 0.75);
+}
+
+/* лента для заголовков: концы неизменны, середина тянется под текст */
+.ribbon {
+  display: inline-block;
+  height: 72px;
+  margin: 0;
+  padding-top: 17px;
+  border-style: solid;
+  border-width: 0 127px 0 121px;
+  border-color: transparent;
+  border-image: url(img/ribbon-soft.webp) 0 327 0 310 fill / 0 127px 0 121px stretch;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 30px;
+  line-height: 32px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* вывеска: концы с цепями неизменны, доска и перекладина тянутся; надпись на доске. Фокус с
+   клавиатуры — без рамки: вывеска затеняется */
+.sign {
+  display: inline-block;
+  height: 74px;
+  padding: 43px 6px 0;
+  border-style: solid;
+  border-width: 0 41px 0 42px;
+  border-color: transparent;
+  border-image: url(img/signboard-soft.webp) 0 116 0 119 fill / 0 41px 0 42px stretch;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 21px;
+  line-height: 22px;
+  text-align: center;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.sign:focus-visible {
+  outline: none;
+  filter: brightness(0.82);
+}
+.sign-sm {
+  height: 66px;
+  padding-top: 38px;
+  border-width: 0 37px 0 38px;
+  border-image-width: 0 37px 0 38px;
+  font-size: 19px;
+  line-height: 20px;
+}
+
+/* веточка — разделитель под заголовком */
+.sprig {
+  display: block;
+  width: 180px;
+  height: auto;
+  margin: -2px 0 2px;
+}
+
+/* оболочка вошедшего: на компьютере знамя слева во всю высоту окна, содержимое прокручивается
+   рядом; на телефоне полоса сверху. Видна одна из двух, скрытая не получает фокус.
+   Знамя: стержень и хвост с лилией неизменны, ткань тянется по высоте */
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  border-style: solid;
+  border-width: 126px 55px 160px;
+  border-color: transparent;
+  border-image: url(img/menu-banner.webp) 300 130 378 fill / 126px 55px 160px stretch;
+  color: var(--cloth);
+}
+.banner .logo {
+  padding: 0 4px 10px;
+  color: var(--cloth);
+}
+.banner .logo small {
+  color: rgb(251 247 238 / 0.78);
+}
+.banner .logo:focus-visible {
+  outline: none;
+  border-radius: 4px;
+  background: rgb(251 247 238 / 0.1);
+}
+.nav-label {
+  padding: 14px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgb(251 247 238 / 0.78);
+}
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+  text-decoration: none;
+  color: var(--cloth);
+  cursor: pointer;
+}
+/* наведение и фокус с клавиатуры — без рамки: пункт светлеет; текущее место светлее и жирнее,
+   а в фокусе — ещё светлее, чтобы фокус был виден и на нём */
+.nav:is(:hover, :focus-visible) {
+  outline: none;
+  background: rgb(251 247 238 / 0.1);
+}
+.nav[aria-current='page'] {
+  background: rgb(251 247 238 / 0.16);
+  font-weight: 600;
+}
+.nav[aria-current='page']:focus-visible {
+  background: rgb(251 247 238 / 0.26);
+}
+.nav img {
+  flex: none;
+  display: block;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+.nav-who {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.nav-who .small {
+  opacity: 0.8;
+}
+.banner-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid rgb(251 247 238 / 0.3);
+}
+.banner-foot form {
+  margin: 0;
+}
+
+/* полоса телефона: знак → Двор, свеча → Мои покои; линия пером снизу */
+.m-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 60px;
+  padding: 0 12px 0 16px;
+  background: url(img/pen-rule-light.svg) left bottom / 100% 6px no-repeat;
+}
+.m-top .logo b {
+  font-size: 30px;
+}
+.m-chambers {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+}
+.m-chambers img {
+  display: block;
+}
+
+/* Покои и Приближённые пока без своего облика (M8.3): только отступы внутри оболочки */
+.room {
+  padding: 32px 40px;
+}
+
+@media (min-width: 1024px) {
+  .shell {
+    display: grid;
+    grid-template-columns: 288px minmax(0, 1fr);
+    min-height: 100vh;
+  }
+  /* если пункты не помещаются между стержнем и хвостом, прокручивается только ткань */
+  .banner {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  .m-top {
+    display: none;
+  }
+}
+/* в окне ниже 720 px пункты знамени плотнее: у Хозяина всё помещается и в 630 px */
+@media (min-width: 1024px) and (max-height: 719.98px) {
+  .nav {
+    min-height: 36px;
+  }
+  .nav-label {
+    padding-top: 8px;
+  }
+}
+
+@media (max-width: 1023.98px) {
+  .banner {
+    display: none;
+  }
+  .room {
+    padding: 20px 16px;
+  }
+}
+
+/* Двор: карта в пропорции 3:2, вывески стоят в процентах от неё; надпись лежит только на ленте,
+   вывеске или бумаге. Кляксы — на бумаге под картой */
+.court {
+  position: relative;
+  overflow: hidden;
+}
+.court-map {
+  position: relative;
+  overflow: hidden;
+}
+.court-inner {
+  position: relative;
+  aspect-ratio: 3 / 2;
+}
+.court-inner > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.court-title {
+  z-index: 1;
+}
+.court-below {
+  position: relative;
+}
+.court-below p {
+  margin: 0;
+}
+
+@media (min-width: 1024px) {
+  .court {
+    min-height: 100vh;
+  }
+  /* кадр Home: 610 px при ширине 1152, верх карты срезан на 34 px, слева и снизу карта
+     растворяется в бумаге. В окне ниже 900 px кадр ниже, а под ним — та же полоса бумаги */
+  .court-map {
+    width: 100%;
+    aspect-ratio: 1152 / 610;
+    max-height: max(320px, 100vh - 290px);
+    -webkit-mask-image:
+      linear-gradient(to right, transparent, #000 48px),
+      linear-gradient(to bottom, #000 calc(100% - 70px), transparent);
+    -webkit-mask-composite: source-in;
+    mask-image:
+      linear-gradient(to right, transparent, #000 48px),
+      linear-gradient(to bottom, #000 calc(100% - 70px), transparent);
+    mask-composite: intersect;
+  }
+  .court-inner {
+    margin-top: calc(-100% * 34 / 1152);
+  }
+  .court-title {
+    position: absolute;
+    left: 30px;
+    top: 22px;
+  }
+  /* вывески: сторожка, дверь казначейской, башня. Где карта уже 1152 px (окно уже 1440), вывески
+     уменьшаются вместе с ней, но надпись не мельче 16 px; размеры вывески — в долях её надписи.
+     Левая на узкой карте не подходит к краю ближе, чем в прототипе (44 px) */
+  .at-gatehouse,
+  .at-treasury,
+  .at-tower {
+    position: absolute;
+    height: calc(74em / 21);
+    padding: calc(43em / 21) calc(6em / 21) 0;
+    border-width: 0 calc(41em / 21) 0 calc(42em / 21);
+    border-image-width: 0 calc(41em / 21) 0 calc(42em / 21);
+    font-size: clamp(16px, (100vw - 288px) * 21 / 1152, 21px);
+    line-height: calc(22em / 21);
+    transform: translateX(-50%);
+  }
+  .at-gatehouse {
+    left: max(14%, 5.58em + 44px);
+    top: 29.1%;
+  }
+  .at-treasury {
+    left: 39.84%;
+    top: 33.79%;
+  }
+  .at-tower {
+    left: 86.59%;
+    top: 31.05%;
+  }
+  .court-places {
+    display: none;
+  }
+  /* под картой: подсказка слева, плашка Хозяина справа (590 px, на узком окне уже) */
+  .court-below {
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) minmax(0, 590px);
+    column-gap: 40px;
+    align-items: start;
+    padding: 4px 40px 0;
+  }
+  .court-note {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 24px;
+  }
+  .court-alone {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 18px;
+  }
+  .court-alone h2 {
+    flex: 1 0 100%;
+  }
+  .court-alone p {
+    flex: 1 1 200px;
+  }
+  /* кляксы в кадре 1440×900, от верха полосы под картой */
+  .blot-court-drip {
+    left: 24px;
+    top: 30px;
+    width: 20px;
+    opacity: 0.7;
+  }
+  .blot-court-small {
+    left: 132px;
+    top: 228px;
+    width: 42px;
+    opacity: 0.75;
+  }
+  .blot-court-splatter-b {
+    left: 402px;
+    top: 196px;
+    width: 76px;
+    opacity: 0.5;
+    transform: rotate(12deg);
+  }
+  .blot-court-ring {
+    right: -48px;
+    top: 236px;
+    width: 104px;
+    opacity: 0.42;
+    transform: rotate(20deg);
+  }
+  .blot-court-splatter-a {
+    display: none;
+  }
+}
+
+/* телефон — кадр HomeMobile: карта во всю ширину (на широком окне не выше 60 % экрана), под ней
+   лента и вывески списком */
+@media (max-width: 1023.98px) {
+  .court {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: calc(100vh - 60px);
+    min-height: calc(100svh - 60px);
+    padding-bottom: 54px;
+  }
+  .court-map {
+    order: -1;
+    align-self: stretch;
+    max-height: 60vh;
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 70px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 70px), transparent);
+  }
+  .court-title {
+    position: relative;
+    height: 60px;
+    margin-top: -30px;
+    padding-top: 13px;
+    border-width: 0 106px 0 101px;
+    border-image-width: 0 106px 0 101px;
+    font-size: 25px;
+    line-height: 28px;
+  }
+  .at-gatehouse,
+  .at-treasury,
+  .at-tower,
+  .court-note {
+    display: none;
+  }
+  .court-places {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 6px;
+  }
+  .court-places .sign {
+    min-width: 240px;
+  }
+  .court-below {
+    width: 100%;
+    max-width: 440px;
+    margin-top: 6px;
+    padding: 0 12px;
+  }
+  .court-alone {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 24px 24px 20px;
+  }
+  /* кляксы в кадре 390×844: под вывесками слева и у нижнего края справа */
+  .blot-court-small {
+    left: 16px;
+    top: 0;
+    width: 30px;
+    opacity: 0.7;
+  }
+  .blot-court-splatter-a {
+    right: 28px;
+    bottom: -2px;
+    width: 62px;
+    opacity: 0.55;
+    transform: rotate(-12deg);
+  }
+  .blot-court-drip,
+  .blot-court-splatter-b,
+  .blot-court-ring {
+    display: none;
+  }
 }
 
 /* ворота (вход и основание): на компьютере сцена до краёв, справа бумажная колонка с формой

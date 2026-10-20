@@ -1,8 +1,8 @@
-// Founding the court, signing in and out, the courtyard, my chambers, «Приближённые», the
-// gates (ARCHITECTURE.md §4.1–4.4, §4.6, §4.8) and the look of the pages drawn so far (§4.9, §6),
-// through the whole application: the common checks of main.ts, the first-run gate and the Core
-// routes. Database: hof_test as hof_core; the first-run state is the real one, its key read from
-// the log.
+// Founding the court, signing in and out, the shell of the signed-in and the courtyard, my
+// chambers, «Приближённые», the gates (ARCHITECTURE.md §4.1–4.4, §4.6, §4.8) and the look of the
+// pages drawn so far (§4.9, §6), through the whole application: the common checks of main.ts, the
+// first-run gate and the Core routes. Database: hof_test as hof_core; the first-run state is the
+// real one, its key read from the log.
 
 import assert from 'node:assert/strict';
 import { createHook } from 'node:async_hooks';
@@ -85,6 +85,28 @@ function assertFieldError(page: string, field: string, hint: string, message: st
   );
   assert.equal((page.match(/aria-invalid/g) ?? []).length, 1);
   assert.equal((page.match(/class="field err"/g) ?? []).length, 1);
+}
+
+// The first element of a page that starts with `open`, up to its closing tag `close`; the
+// elements cut out this way have no element of the same kind inside.
+function part(page: string, open: string, close: string): string {
+  const start = page.indexOf(open);
+  assert.ok(start >= 0, `no ${open}`);
+  return page.slice(start, page.indexOf(close, start) + close.length);
+}
+
+// The links of a piece of a page as "address name": the aria-label, or else the text with the
+// spaces squeezed.
+function linksIn(piece: string): string[] {
+  return [...piece.matchAll(/<a\s([^>]*)>([\s\S]*?)<\/a\s*>/g)].map(([, attributes, body]) => {
+    const href = /href="([^"]*)"/.exec(attributes!)?.[1];
+    const label = /aria-label="([^"]*)"/.exec(attributes!)?.[1];
+    const text = body!
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return `${href} ${label ?? text}`;
+  });
 }
 
 async function count(table: 'users' | 'sessions'): Promise<number> {
@@ -834,8 +856,8 @@ describe('my chambers', () => {
     const res = await get(app, '/account', { cookie });
     assert.equal(res.status, 200);
     const page = await res.text();
+    assert.ok(linksIn(part(page, '<nav class="banner"', '</nav>')).includes('/ Двор'));
     for (const text of [
-      '<a href="/">Двор</a>',
       'Мои покои',
       'owner · хозяин двора',
       'Сменить пароль',
@@ -877,7 +899,11 @@ describe('my chambers', () => {
   test('the courtyard leads to my chambers', async (t) => {
     const { app, cookie } = await found(t);
     const page = await (await get(app, '/', { cookie })).text();
-    assert.ok(page.includes('<a href="/account">Мои покои</a>'));
+    assert.ok(
+      linksIn(part(page, '<nav class="banner"', '</nav>')).includes(
+        '/account Мои покои owner · хозяин',
+      ),
+    );
   });
 });
 
@@ -1291,9 +1317,11 @@ describe('the pages of the administrator: who gets in', () => {
     const anna = `__Host-hof=${await addSession(await addUser('anna'))}`;
     for (const path of ['/', '/account']) {
       const own = await (await get(app, path, { cookie })).text();
-      assert.ok(own.includes('<a href="/admin/users">Приближённые</a>'), path);
+      const banner = linksIn(part(own, '<nav class="banner"', '</nav>'));
+      assert.ok(banner.includes('/admin/users Приближённые'), path);
       const other = await (await get(app, path, { cookie: anna })).text();
       assert.ok(!other.includes('Приближённые'), path);
+      assert.ok(!other.includes('/admin/users'), path);
     }
   });
 });
@@ -1306,8 +1334,7 @@ describe('Приближённые', () => {
     const page = await res.text();
     for (const text of [
       '<title>Hof — приближённые</title>',
-      '<a href="/">Двор</a>',
-      '<a href="/account">Мои покои</a>',
+      '<nav class="banner" aria-label="Hof">',
       '<h1>Приближённые</h1>',
       '<h2>Пока у двора только хозяин</h2>',
       'На ключнице один ключ — ваш. Примите ко двору семью или друзей: у каждого будет свой',
@@ -1642,8 +1669,7 @@ describe('the card of a person', () => {
     const page = await res.text();
     for (const text of [
       '<title>Hof — anna</title>',
-      '<a href="/">Двор</a>',
-      '<a href="/account">Мои покои</a>',
+      '<nav class="banner" aria-label="Hof">',
       '<p><a href="/admin/users">Приближённые</a></p>',
       '<h1>anna</h1>',
       '<p>С ключом</p>',
@@ -2445,6 +2471,136 @@ describe('log audit, M4', () => {
 // no script, nothing from another site; every file they name is served from /static/, and every
 // file of the static folder is named by them (the licence of the font aside). The next pages of
 // M8 join the list as they are drawn.
+describe('the shell and the courtyard', () => {
+  // The links of each part of a page: the banner, the bar of the phone, the signs on the map and
+  // the signs in the list under it.
+  function places(page: string) {
+    const signs = (open: string, close: string) =>
+      page.includes(open) ? linksIn(part(page, open, close)) : [];
+    return {
+      banner: linksIn(part(page, '<nav class="banner" aria-label="Hof">', '</nav>')),
+      bar: linksIn(part(page, '<header class="m-top">', '</header>')),
+      map: signs('<div class="court-inner">', '</div>'),
+      list: signs('<nav class="court-places" aria-label="Места двора">', '</nav>'),
+    };
+  }
+
+  // The links marked as the current place, as "class address".
+  function current(page: string): string[] {
+    return [...page.matchAll(/<a\s[^>]*aria-current="page"[^>]*>/g)].map(
+      ([tag]) => `${/class="([^"]*)"/.exec(tag)?.[1]} ${/href="([^"]*)"/.exec(tag)?.[1]}`,
+    );
+  }
+
+  const NOTE = 'Пока во дворе только вы';
+
+  test('the administrator: every place in the banner, the bar, on the map and in the list', async (t) => {
+    const { app, cookie } = await found(t);
+    const res = await get(app, '/', { cookie });
+    assert.equal(res.status, 200);
+    const page = await res.text();
+    assert.deepEqual(places(page), {
+      banner: [
+        '/ Hof Ваш личный двор',
+        '/ Двор',
+        '/saeckel/ Säckel',
+        '/admin/users Приближённые',
+        '/account Мои покои owner · хозяин',
+      ],
+      bar: ['/ Hof', '/account Мои покои'],
+      map: ['/admin/users Приближённые', '/saeckel/ Säckel', '/account Мои покои'],
+      list: ['/saeckel/ Säckel', '/admin/users Приближённые', '/account Мои покои'],
+    });
+    assert.ok(page.includes('<div class="nav-label">Службы двора</div>'));
+    assert.ok(page.includes('<div class="nav-label">Хозяйство</div>'));
+    assert.ok(page.includes('<h1 class="ribbon court-title"><span>Добрый день!</span></h1>'));
+    assert.equal((page.match(/<h1[\s>]/g) ?? []).length, 1);
+  });
+
+  test('anyone else: the same places without Приближённые, nowhere on the page', async (t) => {
+    const { app } = await found(t);
+    const anna = `__Host-hof=${await addSession(await addUser('anna'))}`;
+    const page = await (await get(app, '/', { cookie: anna })).text();
+    assert.deepEqual(places(page), {
+      banner: ['/ Hof Ваш личный двор', '/ Двор', '/saeckel/ Säckel', '/account Мои покои anna'],
+      bar: ['/ Hof', '/account Мои покои'],
+      map: ['/saeckel/ Säckel', '/account Мои покои'],
+      list: ['/saeckel/ Säckel', '/account Мои покои'],
+    });
+    for (const text of ['Приближённые', '/admin/users', 'Хозяйство', 'хозяин', NOTE]) {
+      assert.ok(!page.includes(text), text);
+    }
+    assert.equal((page.match(/<h1[\s>]/g) ?? []).length, 1);
+  });
+
+  test('the current place, the bar and the way out on every page of the shell', async (t) => {
+    const { app, cookie } = await found(t);
+    const annaId = await addUser('anna');
+    const anna = `__Host-hof=${await addSession(annaId)}`;
+    for (const [who, path, expected] of [
+      [cookie, '/', ['nav /']],
+      [cookie, '/account', ['nav /account', 'm-chambers /account']],
+      [cookie, '/admin/users', ['nav /admin/users']],
+      [cookie, `/admin/users/${annaId}`, ['nav /admin/users']],
+      [anna, '/', ['nav /']],
+      [anna, '/account', ['nav /account', 'm-chambers /account']],
+    ] as const) {
+      const res = await get(app, path, { cookie: who });
+      assert.equal(res.status, 200, path);
+      const page = await res.text();
+      assert.deepEqual(current(page), expected, path);
+      assert.deepEqual(places(page).bar, ['/ Hof', '/account Мои покои'], path);
+      assert.match(
+        part(page, '<nav class="banner"', '</nav>'),
+        /<form method="post" action="\/logout">\s*<button type="submit" class="nav">\s*<img src="\/static\/img\/emblem-door-closed-small.webp" alt="" \/>Покинуть двор\s*<\/button>\s*<\/form>/,
+        path,
+      );
+      assert.equal((page.match(/<h1[\s>]/g) ?? []).length, 1, path);
+    }
+  });
+
+  test('Säckel in the banner with the emblem from its own static files', async (t) => {
+    const { app, cookie } = await found(t);
+    const page = await (await get(app, '/', { cookie })).text();
+    assert.match(
+      part(page, '<nav class="banner"', '</nav>'),
+      /<a class="nav" href="\/saeckel\/">\s*<img src="\/saeckel\/static\/img\/emblem-saeckel-small.webp" alt="" \/>Säckel\s*<\/a>/,
+    );
+    const emblem = await get(app, '/saeckel/static/img/emblem-saeckel-small.webp');
+    assert.equal(emblem.status, 200);
+    assert.equal(emblem.headers.get('content-type'), 'image/webp');
+  });
+
+  test('«Пока во дворе только вы»: for the administrator while nobody else belongs to the court', async (t) => {
+    const { app, cookie } = await found(t);
+    const alone = await (await get(app, '/', { cookie })).text();
+    assert.ok(alone.includes(`<h2 class="title t-3">${NOTE}</h2>`));
+    assert.ok(alone.includes('<a class="btn" href="/admin/users">Принять ко двору</a>'));
+
+    // A person without the key still belongs to the court.
+    const boris = await addUser('boris', PASSWORD_HASH, true);
+    assert.ok(!(await (await get(app, '/', { cookie })).text()).includes(NOTE));
+    const anna = `__Host-hof=${await addSession(await addUser('anna'))}`;
+    assert.ok(!(await (await get(app, '/', { cookie })).text()).includes(NOTE));
+    assert.ok(!(await (await get(app, '/', { cookie: anna })).text()).includes(NOTE));
+    assert.ok(boris > 0);
+  });
+
+  test('the note costs one EXISTS, for the administrator only', async (t) => {
+    const { app, cookie } = await found(t);
+    const anna = `__Host-hof=${await addSession(await addUser('anna'))}`;
+    const query = t.mock.method(pool, 'query');
+    const exists = () =>
+      query.mock.calls.filter((call) => String(call.arguments[0]).includes('EXISTS')).length;
+    await get(app, '/', { cookie: anna });
+    assert.equal(exists(), 0);
+    await get(app, '/', { cookie });
+    assert.equal(exists(), 1);
+    for (const path of ['/account', '/admin/users']) await get(app, path, { cookie });
+    assert.equal(exists(), 1);
+  });
+});
+
 describe('the look of Hof: pages, CSS and static files', () => {
   const STATIC = join(import.meta.dirname, 'static');
 
@@ -2457,13 +2613,24 @@ describe('the look of Hof: pages, CSS and static files', () => {
     );
   }
 
-  // The addresses an HTML page names: src, href and every candidate of a srcset.
-  function pageReferences(page: string): string[] {
-    const named = [...page.matchAll(/\s(?:src|href)="([^"]*)"/g)].map((match) => match[1]!);
+  // The files an HTML page names: src, the href of <link> and every candidate of a srcset.
+  function pageFiles(page: string): string[] {
+    const named = [
+      ...page.matchAll(/\ssrc="([^"]*)"/g),
+      ...page.matchAll(/<link\s[^>]*href="([^"]*)"/g),
+    ].map((match) => match[1]!);
     for (const [, set] of page.matchAll(/\ssrcset="([^"]*)"/g)) {
       named.push(...set!.split(',').map((candidate) => candidate.trim().split(/\s+/)[0]!));
     }
     return named;
+  }
+
+  // The addresses a page leads to: its links and its forms.
+  function pageLinks(page: string): string[] {
+    return [
+      ...page.matchAll(/<a\s[^>]*href="([^"]*)"/g),
+      ...page.matchAll(/<form\s[^>]*action="([^"]*)"/g),
+    ].map((match) => match[1]!);
   }
 
   // The addresses the CSS names in url(…), resolved against the CSS itself.
@@ -2473,8 +2640,9 @@ describe('the look of Hof: pages, CSS and static files', () => {
     );
   }
 
-  // Each drawn page in each of its states — the form, every refusal — and the app, founded by
-  // then.
+  // Each drawn page in each of its states — the gates with the form and every refusal, the
+  // courtyard of the administrator alone and with a person, of a person, and the other pages in
+  // the shell — and the app, founded by then.
   async function drawnPages(t: TestContext) {
     const { app, key } = await boot(t);
     const pages: [string, Response][] = [
@@ -2484,10 +2652,23 @@ describe('the look of Hof: pages, CSS and static files', () => {
       ['short password', await post(app, '/setup', { ...setupFields(key), password: 'short' })],
       ['other repeat', await post(app, '/setup', { ...setupFields(key), password2: 'other' })],
     ];
-    assert.equal((await post(app, '/setup', setupFields(key))).status, 303);
+    const founded = await post(app, '/setup', setupFields(key));
+    assert.equal(founded.status, 303);
+    const owner = { cookie: `__Host-hof=${COOKIE.exec(founded.headers.get('set-cookie')!)![1]}` };
     pages.push(
       ['GET /login', await get(app, '/login?next=%2Faccount')],
       ['refused sign-in', await signIn(app, 'owner', 'a wrong password')],
+      ['courtyard, alone', await get(app, '/', owner)],
+    );
+    const annaId = await addUser('anna');
+    const anna = { cookie: `__Host-hof=${await addSession(annaId)}` };
+    pages.push(
+      ['courtyard', await get(app, '/', owner)],
+      ['my chambers', await get(app, '/account', owner)],
+      ['Приближённые', await get(app, '/admin/users', owner)],
+      ['the card of anna', await get(app, `/admin/users/${annaId}`, owner)],
+      ['courtyard of anna', await get(app, '/', anna)],
+      ['chambers of anna', await get(app, '/account', anna)],
     );
     const texts = await Promise.all(
       pages.map(async ([name, res]) => [name, await res.text()] as const),
@@ -2502,9 +2683,12 @@ describe('the look of Hof: pages, CSS and static files', () => {
       assert.doesNotMatch(page, /\sstyle=/, name);
       assert.ok(!page.includes('<script'), name);
       assert.doesNotMatch(page, /https?:\/\//, name);
-      for (const address of pageReferences(page)) {
-        assert.match(address, /^\/static\//, `${name}: ${address}`);
+      for (const address of pageFiles(page)) {
+        assert.match(address, /^\/(saeckel\/)?static\//, `${name}: ${address}`);
         assert.equal((await get(app, address)).status, 200, `${name}: ${address}`);
+      }
+      for (const address of pageLinks(page)) {
+        assert.match(address, /^\/(?![/\\])/, `${name}: ${address}`);
       }
     }
   });
@@ -2526,7 +2710,7 @@ describe('the look of Hof: pages, CSS and static files', () => {
     const named = new Set([
       '/static/hof.css',
       ...cssReferences(css),
-      ...pages.flatMap(([, page]) => pageReferences(page)),
+      ...pages.flatMap(([, page]) => pageFiles(page)),
     ]);
     for (const file of folderFiles()) {
       assert.equal((await get(app, `/static/${file}`)).status, 200, file);
