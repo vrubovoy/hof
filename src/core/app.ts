@@ -146,14 +146,81 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
     </html>`;
 }
 
-// Texts from design/preview/Error403.html, laid out like the common error pages of main.ts.
-// Nothing from the request goes into it.
-const FORBIDDEN_PAGE = page(
-  'Сюда только хозяину',
-  html`<h1>Сюда только хозяину</h1>
-    <p>Это место двора открыто только хозяину. Если нужно, попросите его.</p>
-    <p><a href="/">Во двор</a></p>`,
-);
+// The three error pages of Hof (design/preview/Error403.html, States.html, Error500.html and
+// ErrorMobile.html): the picture of the place, its title and text, the blots on the paper. The
+// status of the response is the caller's.
+const ERRORS = {
+  403: {
+    title: 'Сюда только хозяину',
+    text: 'Это место двора открыто только хозяину. Если нужно, попросите его.',
+    scene: 'error-403',
+    alt: 'Тяжёлая дверь с висячим замком',
+    blots: ['ink-drip', 'ink-ring'],
+  },
+  404: {
+    title: 'Такой тропы во дворе нет',
+    text: 'Возможно, ссылка устарела или в адресе опечатка.',
+    scene: 'error-404',
+    alt: 'Заросшая тропинка упирается в глухую стену, увитую плющом',
+    blots: ['ink-blot-small', 'ink-splatter-b'],
+  },
+  500: {
+    title: 'Во дворе что-то стряслось',
+    text: 'Мы уже прибираемся. Попробуйте ещё раз через минуту — записанное раньше на месте.',
+    scene: 'error-500',
+    alt: 'Опрокинутая бочка, по двору раскатились яблоки, кот разглядывает беспорядок',
+    blots: ['ink-blot-medium', 'ink-splatter-a'],
+  },
+} as const;
+
+// An error page: on a computer the picture the whole window with the text on the paper to the
+// right, on the phone the picture at the top; the mark leads to the courtyard. `retry` gives the
+// 500 page «Попробовать ещё раз» as href="": the browser opens the same address again, and the
+// page does not repeat it. Nothing from the request goes into the page.
+export function errorPage(status: keyof typeof ERRORS, retry = false) {
+  const error = ERRORS[status];
+  return page(
+    error.title,
+    html`<main class="error error-${status}">
+      <div class="error-scene">
+        <img
+          src="/static/img/${error.scene}.webp"
+          srcset="/static/img/${error.scene}.webp 1536w, /static/img/${error.scene}@2x.webp 3072w"
+          sizes="(max-width: 1023.98px) 164vw, 100vw"
+          alt="${error.alt}"
+        />
+      </div>
+      <div class="error-paper">
+        <a class="logo" href="/">
+          <img src="/static/img/hof-mark.svg" width="40" height="40" alt="" />
+          <span><b>Hof</b><small>Ваш личный двор</small></span>
+        </a>
+        <h1 class="title t-1">${error.title}</h1>
+        <img class="sprig" src="/static/img/sprig-divider.webp" alt="" />
+        <p class="muted">${error.text}</p>
+        <div class="error-actions">
+          ${
+            retry
+              ? html`<a class="btn btn-blue" href="">Попробовать ещё раз</a>
+                  <a class="link" href="/">Во двор</a>`
+              : html`<a class="btn btn-blue" href="/">Во двор</a>`
+          }
+        </div>
+      </div>
+      ${error.blots.map(
+        (blot) =>
+          html`<img
+            class="blot blot-error-${blot}"
+            src="/static/img/${blot}.webp"
+            alt=""
+            loading="lazy"
+          />`,
+      )}
+    </main>`,
+  );
+}
+
+const FORBIDDEN_PAGE = errorPage(403);
 
 // The pages of a signed-in person (design/preview/Home.html, HomeMobile.html): on a computer the
 // blue banner the whole height of the window — Двор, the services, Приближённые of the
