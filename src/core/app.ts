@@ -526,76 +526,129 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
   });
 }
 
-// Texts from design/preview/Account.html: who is signed in, the change of the password, the way
-// out. The «Звуки и движение» block comes with the effects (M10). No password is ever written
-// back into the page.
+// Texts and the picture from design/preview/Account.html and AccountMobile.html: who is signed
+// in, the change of the password in a frame, the way out. The «Звуки и движение» block comes
+// with the effects (M10). On a computer the picture of the chambers stands to the right the whole
+// height of the window, on the phone it is a band at the top and the hint of the way out is not
+// drawn (text-full). No password is ever written back into the page.
 function accountPage(user: CurrentUser, services: readonly Service[], form: AccountForm) {
   const describedBy = (field: PasswordField, hint?: string) => {
     const ids = [hint, form.error?.field === field ? `${field}-error` : undefined].filter(Boolean);
     const invalid = form.error?.field === field ? html`aria-invalid="true"` : '';
     return ids.length > 0 ? html`${invalid} aria-describedby="${ids.join(' ')}"` : invalid;
   };
+  const fieldClass = (field: PasswordField) =>
+    form.error?.field === field ? 'field err' : 'field';
   const error = (field: PasswordField) =>
-    form.error?.field === field ? html`<p id="${field}-error">${form.error.text}</p>` : '';
+    form.error?.field === field
+      ? html`<p id="${field}-error" class="err-text">${form.error.text}</p>`
+      : '';
 
   return shell(user, services, 'account', 'Hof — мои покои', {
-    class: 'room',
-    body: html`<h1>Мои покои</h1>
-      <p>${user.isAdmin ? `${user.username} · хозяин двора` : user.username}</p>
-      ${form.done ? html`<p>Пароль сменён.</p>` : ''}
-      <h2>Сменить пароль</h2>
-      <form method="post" action="/account/password">
-        <p>
-          <label for="current">Текущий пароль</label>
-          <input
-            id="current"
-            name="current"
-            type="password"
-            autocomplete="current-password"
-            required
-            ${describedBy('current')}
-          />
-        </p>
-        ${error('current')}
-        <p>
-          <label for="password">Новый пароль</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autocomplete="new-password"
-            required
-            ${describedBy('password', 'password-hint')}
-          />
-        </p>
-        ${error('password')}
-        <p>
-          <label for="password2">Ещё раз</label>
-          <input
-            id="password2"
-            name="password2"
-            type="password"
-            autocomplete="new-password"
-            required
-            ${describedBy('password2', 'password-hint')}
-          />
-        </p>
-        ${error('password2')}
-        <p id="password-hint">
-          Не короче ${PASSWORD_MIN_LENGTH} символов. На других устройствах вы выйдете со двора.
-        </p>
-        <button type="submit">Сменить пароль</button>
-      </form>
-      <form method="post" action="/logout">
-        <button type="submit" aria-describedby="logout-hint">Покинуть двор</button>
-      </form>
-      <p id="logout-hint">на этом устройстве; всё во дворе останется на месте</p>`,
+    class: 'chambers',
+    body: html`<div class="chambers-main">
+        <div class="chambers-head">
+          <h1 class="ribbon ribbon-md"><span>Мои покои</span></h1>
+          <span class="muted"
+            >${user.isAdmin ? `${user.username} · хозяин двора` : user.username}</span
+          >
+        </div>
+        ${form.done ? html`<p class="note">Пароль сменён.</p>` : ''}
+        <form class="framed chambers-password" method="post" action="/account/password">
+          <h2 class="title t-3">Сменить пароль</h2>
+          <div class="chambers-fields">
+            <div class="${fieldClass('current')}">
+              <label for="current">Текущий пароль</label>
+              <input
+                id="current"
+                class="input"
+                name="current"
+                type="password"
+                autocomplete="current-password"
+                required
+                ${describedBy('current')}
+              />
+              ${error('current')}
+            </div>
+            <div class="${fieldClass('password')}">
+              <label for="password">Новый пароль</label>
+              <input
+                id="password"
+                class="input"
+                name="password"
+                type="password"
+                autocomplete="new-password"
+                required
+                ${describedBy('password', 'password-hint')}
+              />
+              ${error('password')}
+            </div>
+            <div class="${fieldClass('password2')}">
+              <label for="password2">Ещё раз</label>
+              <input
+                id="password2"
+                class="input"
+                name="password2"
+                type="password"
+                autocomplete="new-password"
+                required
+                ${describedBy('password2', 'password-hint')}
+              />
+              ${error('password2')}
+            </div>
+          </div>
+          <p id="password-hint" class="hint">
+            Не короче ${PASSWORD_MIN_LENGTH} символов. На других устройствах вы выйдете со двора.
+          </p>
+          <button type="submit" class="btn btn-blue">Сменить пароль</button>
+        </form>
+        <form class="chambers-out" method="post" action="/logout">
+          <button type="submit" class="btn" aria-describedby="logout-hint">
+            <img src="/static/img/emblem-door-closed-small.webp" alt="" />Покинуть двор
+          </button>
+          <p id="logout-hint" class="small muted text-full">
+            на этом устройстве; всё во дворе останется на месте
+          </p>
+        </form>
+        <img
+          class="blot blot-chambers-drip"
+          src="/static/img/ink-drip.webp"
+          alt=""
+          loading="lazy"
+        />
+        <img
+          class="blot blot-chambers-small"
+          src="/static/img/ink-blot-small.webp"
+          alt=""
+          loading="lazy"
+        />
+        <img
+          class="blot blot-chambers-splatter"
+          src="/static/img/ink-splatter-a.webp"
+          alt=""
+          loading="lazy"
+        />
+      </div>
+      <div class="chambers-scene room-scene">
+        <img
+          src="/static/img/scene-chambers-panel.webp"
+          srcset="
+            /static/img/scene-chambers-panel.webp     683w,
+            /static/img/scene-chambers-panel@2x.webp 1366w
+          "
+          sizes="(max-width: 1023.98px) 100vw, 600px"
+          alt="Покои: окно во двор, стол с пером и чернильницей, кот спит на стуле"
+        />
+      </div>`,
   });
 }
 
-// Texts from design/preview/Users.html and UsersEmpty.html: everybody of the court, the
-// administrator first, and the form for a new user. The initial password is shown while it is
-// typed, so it can be passed on, but never written back into the page.
+// Texts and the picture from design/preview/Users.html, UsersMobile.html and UsersEmpty.html:
+// the key board of the court — everybody, the administrator first, a key with its tag or an
+// empty hook, and the way to the card of everybody else — or, while nobody else is in the court,
+// the empty board; then the form for a new user. The keys say nothing the text under them does
+// not. The initial password is shown while it is typed, so it can be passed on, but never written
+// back into the page.
 function usersPage(
   user: CurrentUser,
   services: readonly Service[],
@@ -607,73 +660,145 @@ function usersPage(
     const invalid = form.error?.field === field ? html`aria-invalid="true"` : '';
     return ids.length > 0 ? html`${invalid} aria-describedby="${ids.join(' ')}"` : invalid;
   };
+  const fieldClass = (field: NewUserField) => (form.error?.field === field ? 'field err' : 'field');
   const error = (field: NewUserField) =>
-    form.error?.field === field ? html`<p id="${field}-error">${form.error.text}</p>` : '';
+    form.error?.field === field
+      ? html`<p id="${field}-error" class="err-text">${form.error.text}</p>`
+      : '';
   const others = people.filter((person) => !person.is_admin);
 
   return shell(user, services, 'users', 'Hof — приближённые', {
-    class: 'room',
-    body: html`<h1>Приближённые</h1>
-      ${
-        form.created === undefined
-          ? ''
-          : html`<p>Ключ для ${form.created} готов. Передайте логин и начальный пароль лично.</p>`
-      }
-      ${
-        others.length === 0
-          ? html`<h2>Пока у двора только хозяин</h2>
-              <p>
-                На ключнице один ключ — ваш. Примите ко двору семью или друзей: у каждого будет свой
-                ключ и свои мешки.
+    class: 'residents',
+    body: html`<div class="residents-scene room-scene">
+        <img
+          src="/static/img/scene-residents-panel.webp"
+          srcset="
+            /static/img/scene-residents-panel.webp     520w,
+            /static/img/scene-residents-panel@2x.webp 1040w
+          "
+          sizes="(max-width: 1023.98px) 100vw, 420px"
+          alt="Сторожка у ворот: ключница с ключами на крюках"
+        />
+      </div>
+      <div class="residents-main">
+        <h1 class="ribbon ribbon-md"><span>Приближённые</span></h1>
+        ${
+          form.created === undefined
+            ? ''
+            : html`<p class="note">
+                Ключ для ${form.created} готов. Передайте логин и начальный пароль лично.
               </p>`
-          : html`<ul>
-              ${people.map(
-                (person) =>
-                  html`<li>
-                    ${person.username} · ${personStatus(person)}
-                    ${person.is_admin ? '' : html`<a href="/admin/users/${person.id}">Открыть ›</a>`}
-                  </li>`,
-              )}
-            </ul>`
-      }
-      <h2>Принять ко двору</h2>
-      <form method="post" action="/admin/users">
-        <p>
-          <label for="username">Логин</label>
-          <input
-            id="username"
-            name="username"
-            type="text"
-            autocomplete="off"
-            required
-            value="${form.username}"
-            ${describedBy('username')}
-          />
-        </p>
-        ${error('username')}
-        <p>
-          <label for="password">Начальный пароль</label>
-          <input
-            id="password"
-            name="password"
-            type="text"
-            autocomplete="off"
-            required
-            ${describedBy('password', 'password-hint')}
-          />
-        </p>
-        ${error('password')}
-        <p id="password-hint">
-          Пароль виден, чтобы его можно было передать. Человек сменит его в своих покоях.
-        </p>
-        <button type="submit">Принять</button>
-      </form>`,
+        }
+        ${
+          others.length === 0
+            ? html`<div class="residents-empty">
+                <img class="vignette" src="/static/img/empty-residents.webp" alt="" />
+                <div class="residents-empty-text">
+                  <h2 class="title t-2">Пока у двора только хозяин</h2>
+                  <img class="sprig" src="/static/img/sprig-divider.webp" alt="" />
+                  <p class="muted">
+                    На ключнице один ключ — ваш. Примите ко двору семью или друзей: у каждого будет
+                    свой ключ и свои мешки.
+                  </p>
+                </div>
+              </div>`
+            : html`<ul class="keys" aria-label="Ключница">
+                ${people.map(
+                  (person) =>
+                    html`<li class="key">
+                      <img
+                        src="/static/img/${person.is_disabled ? 'hook-empty' : 'key-tag'}.webp"
+                        alt=""
+                      />
+                      <b>${person.username}</b>
+                      <span class="small muted">${personStatus(person)}</span>
+                      ${
+                        person.is_admin
+                          ? ''
+                          : html`<a class="link-plain small" href="/admin/users/${person.id}"
+                              >Открыть ›</a
+                            >`
+                      }
+                    </li>`,
+                )}
+              </ul>`
+        }
+        <form class="framed residents-new" method="post" action="/admin/users">
+          <h2 class="title t-3">Принять ко двору</h2>
+          <div class="form-row">
+            <div class="${fieldClass('username')}">
+              <label for="username">Логин</label>
+              <input
+                id="username"
+                class="input"
+                name="username"
+                type="text"
+                autocomplete="off"
+                autocapitalize="none"
+                required
+                value="${form.username}"
+                ${describedBy('username')}
+              />
+              ${error('username')}
+            </div>
+            <div class="${fieldClass('password')}">
+              <label for="password">Начальный пароль</label>
+              <input
+                id="password"
+                class="input"
+                name="password"
+                type="text"
+                autocomplete="off"
+                required
+                ${describedBy('password', 'password-hint')}
+              />
+              ${error('password')}
+            </div>
+            <button type="submit" class="btn btn-blue">Принять</button>
+          </div>
+          <p id="password-hint" class="hint">
+            Пароль виден, чтобы его можно было передать.<span class="text-full">
+              Человек сменит его в своих покоях.</span
+            >
+          </p>
+        </form>
+        ${
+          others.length === 0
+            ? html`<img
+                class="blot blot-residents-splatter-a"
+                src="/static/img/ink-splatter-a.webp"
+                alt=""
+                loading="lazy"
+              />`
+            : html`<img
+                  class="blot blot-residents-splatter-b"
+                  src="/static/img/ink-splatter-b.webp"
+                  alt=""
+                  loading="lazy"
+                />
+                <img
+                  class="blot blot-residents-small"
+                  src="/static/img/ink-blot-small.webp"
+                  alt=""
+                  loading="lazy"
+                />`
+        }
+        <img
+          class="blot blot-residents-ring"
+          src="/static/img/ink-ring.webp"
+          alt=""
+          loading="lazy"
+        />
+      </div>`,
   });
 }
 
-// Texts from design/preview/User.html: the person, their key and the reset of their password.
-// The new password is shown while it is typed, so it can be passed on, but never written back
-// into the page.
+// Texts from design/preview/User.html and UserMobile.html: the way back, the person with their
+// key or the empty hook, and two frames of one height — the reset of the password and the key of
+// the court. A person without the key is not drawn there: the empty hook, «Ключ взят» and the blue
+// «Вернуть ключ» take the place of the key and the red «Забрать ключ». The phone gets the shorter
+// texts of UserMobile (text-full). The new password is shown while it is typed, so it can be
+// passed on, but never written back into the page.
 function memberPage(
   user: CurrentUser,
   services: readonly Service[],
@@ -686,52 +811,103 @@ function memberPage(
       : html`aria-invalid="true" aria-describedby="password-hint password-error"`;
 
   return shell(user, services, 'users', `Hof — ${member.username}`, {
-    class: 'room',
-    body: html`<p><a href="/admin/users">Приближённые</a></p>
-      <h1>${member.username}</h1>
-      <p>${keyStatus(member)}</p>
+    class: 'card',
+    body: html`<a class="back" href="/admin/users"><span>Приближённые</span></a>
       ${
         form.done
-          ? html`<p>Пароль для ${member.username} сброшен. Передайте новый пароль лично.</p>`
+          ? html`<p class="note">
+              Пароль для ${member.username} сброшен. Передайте новый пароль лично.
+            </p>`
           : ''
       }
-      <h2>Сбросить пароль</h2>
-      <form method="post" action="/admin/users/${member.id}/password">
-        <p>
-          <label for="password">Новый начальный пароль</label>
-          <input
-            id="password"
-            name="password"
-            type="text"
-            autocomplete="off"
-            required
-            ${describedBy}
-          />
-        </p>
-        ${form.error === undefined ? '' : html`<p id="password-error">${form.error}</p>`}
-        <p id="password-hint">
-          ${member.username} выйдет со двора на всех устройствах. Передайте новый пароль лично.
-        </p>
-        <button type="submit">Сбросить пароль</button>
-      </form>
-      <h2>Ключ от двора</h2>
-      ${
-        member.is_disabled
-          ? html`<p>
-                Ключ у ${member.username} забран: вход закрыт, мешки и записи на месте. Если вернуть
-                ключ, ${member.username} войдёт со своим паролем.
+      <div class="card-grid">
+        <div class="card-person">
+          <img src="/static/img/${member.is_disabled ? 'hook-empty' : 'key-tag'}.webp" alt="" />
+          <div class="card-name">
+            <h1 class="title t-1">${member.username}</h1>
+            <span class="badge">${keyStatus(member)}</span>
+          </div>
+        </div>
+        <div class="card-frames">
+          <form class="framed card-frame" method="post" action="/admin/users/${member.id}/password">
+            <h2 class="title t-3">Сбросить пароль</h2>
+            <div class="${form.error === undefined ? 'field' : 'field err'}">
+              <label for="password">Новый начальный пароль</label>
+              <input
+                id="password"
+                class="input"
+                name="password"
+                type="text"
+                autocomplete="off"
+                required
+                ${describedBy}
+              />
+              ${
+                form.error === undefined
+                  ? ''
+                  : html`<p id="password-error" class="err-text">${form.error}</p>`
+              }
+              <p id="password-hint" class="hint">
+                ${member.username} выйдет со двора на всех устройствах.<span class="text-full">
+                  Передайте новый пароль лично.</span
+                >
               </p>
-              <form method="post" action="/admin/users/${member.id}/enable">
-                <button type="submit">Вернуть ключ</button>
-              </form>`
-          : html`<p>
-                У ${member.username} есть ключ от двора. Если забрать ключ, вход закроется сразу, а
-                мешки и записи останутся. Вернуть ключ можно в любой момент.
-              </p>
-              <form method="post" action="/admin/users/${member.id}/disable">
-                <button type="submit">Забрать ключ</button>
-              </form>`
-      }`,
+            </div>
+            <button type="submit" class="btn btn-blue">Сбросить пароль</button>
+          </form>
+          ${
+            member.is_disabled
+              ? html`<form
+                  class="framed card-frame"
+                  method="post"
+                  action="/admin/users/${member.id}/enable"
+                >
+                  <h2 class="title t-3">Ключ от двора</h2>
+                  <p class="card-text">
+                    Ключ у ${member.username} забран: вход закрыт, мешки и записи на месте. Если
+                    вернуть ключ, ${member.username} войдёт со своим паролем.
+                  </p>
+                  <button type="submit" class="btn btn-blue">Вернуть ключ</button>
+                </form>`
+              : html`<form
+                  class="framed card-frame"
+                  method="post"
+                  action="/admin/users/${member.id}/disable"
+                >
+                  <h2 class="title t-3">Ключ от двора</h2>
+                  <p class="card-text">
+                    <span class="text-full">У ${member.username} есть ключ от двора. </span>Если
+                    забрать ключ, вход закроется сразу, а мешки и записи останутся. Вернуть<span
+                      class="text-full"
+                    >
+                      ключ</span
+                    >
+                    можно в любой момент.
+                  </p>
+                  <button type="submit" class="btn btn-danger">Забрать ключ</button>
+                </form>`
+          }
+        </div>
+      </div>
+      <img
+        class="blot blot-card-medium"
+        src="/static/img/ink-blot-medium.webp"
+        alt=""
+        loading="lazy"
+      />
+      <img
+        class="blot blot-card-splatter"
+        src="/static/img/ink-splatter-a.webp"
+        alt=""
+        loading="lazy"
+      />
+      <img class="blot blot-card-drip" src="/static/img/ink-drip.webp" alt="" loading="lazy" />
+      <img
+        class="blot blot-card-small"
+        src="/static/img/ink-blot-small.webp"
+        alt=""
+        loading="lazy"
+      />`,
   });
 }
 
