@@ -235,12 +235,13 @@ describe('before founding', () => {
     ]) {
       assert.ok(page.includes(text), text);
     }
-    // The texts of SetupMobile: the key hint in its short form; the hints of the login and the
-    // password only for a screen reader, still named by aria-describedby.
+    // The texts of SetupMobile for the phone and a low window: the key hint in its short form; the
+    // hints of the login and the password only for a screen reader, still named by
+    // aria-describedby.
     assert.ok(page.includes('<code>docker compose logs hof</code>'));
-    assert.ok(page.includes('<span class="text-phone">Код из лога сервера</span>'));
+    assert.ok(page.includes('<span class="text-short">Код из лога сервера</span>'));
     for (const hint of ['username-hint', 'password-hint']) {
-      assert.ok(page.includes(`<p id="${hint}" class="hint visually-hidden-phone">`), hint);
+      assert.ok(page.includes(`<p id="${hint}" class="hint hint-full">`), hint);
       assert.match(page, new RegExp(`aria-describedby="${hint}"`), hint);
     }
   });
