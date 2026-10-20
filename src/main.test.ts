@@ -1,5 +1,5 @@
 // main.ts: common request checks — Origin (§4.6), POST body (§4.7), response headers (§4.9) —,
-// static files of Core before the first-run gate (§4.1), the common 404 and 500 pages with the
+// static files of Core and Säckel before the first-run gate (§4.1), the common 404 and 500 pages with the
 // unexpected_error log line (§4.1, §4.10), Säckel in the court (§2), and the failures that stop
 // the server before it opens the HTTP port.
 
@@ -168,7 +168,7 @@ describe('response headers', () => {
   });
 });
 
-describe('static files of Core', () => {
+describe('static files of Core and Säckel', () => {
   // The first-run gate fails if anybody asks it: static files come before it (§4.1).
   const gateNotAsked: FirstRun = {
     isFounded: () => Promise.reject(new Error('the first-run gate was asked')),
@@ -210,12 +210,31 @@ describe('static files of Core', () => {
     }
   });
 
-  test('an unknown address under /static/: the common 404, not /setup', async () => {
+  test('the emblem of Säckel from its own folder, before the gate, without SQL', async (t) => {
+    const query = t.mock.method(unusedPool, 'query');
+    const connect = t.mock.method(unusedPool, 'connect');
+    const res = await staticRequest('/saeckel/static/img/emblem-saeckel-small.webp');
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'image/webp');
+    assert.equal(res.headers.get('cache-control'), 'no-cache');
+    assert.equal(res.headers.get('content-security-policy'), CSP);
+    assert.ok((await res.arrayBuffer()).byteLength > 0);
+    assert.equal(query.mock.callCount(), 0);
+    assert.equal(connect.mock.callCount(), 0);
+  });
+
+  test('an unknown address under /static/ or /saeckel/static/: the common 404, not /setup', async () => {
     for (const path of [
       '/static/',
       '/static/img/',
       '/static/nope.css',
       '/static/%2e%2e%2fmain.ts',
+      '/static/img/emblem-saeckel-small.webp',
+      '/saeckel/static/',
+      '/saeckel/static/img/',
+      '/saeckel/static/hof.css',
+      '/saeckel/static/img/hof-mark.svg',
+      '/saeckel/static/%2e%2e%2fapp.ts',
     ]) {
       const res = await staticRequest(path);
       assert.equal(res.status, 404, path);

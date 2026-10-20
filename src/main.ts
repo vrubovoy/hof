@@ -35,10 +35,13 @@ const CORE_STATIC = join(import.meta.dirname, 'core', 'static');
 // The role of Säckel, in the same database (§5).
 const SAECKEL_DB_ROLE = 'hof_saeckel';
 const SAECKEL_MIGRATIONS = join(import.meta.dirname, 'saeckel', 'migrations');
+const SAECKEL_STATIC = join(import.meta.dirname, 'saeckel', 'static');
 
-// The applications of this installation, for «Службы двора» (§2). This is not a registry,
-// just the list.
-const SERVICES: readonly Service[] = [{ name: 'Säckel', path: '/saeckel/' }];
+// The applications of this installation, for «Службы двора» (§2): the name, the address and the
+// emblem from the application's own static files. This is not a registry, just the list.
+const SERVICES: readonly Service[] = [
+  { name: 'Säckel', path: '/saeckel/', emblem: '/saeckel/static/img/emblem-saeckel-small.webp' },
+];
 
 // §4.9: explicit header values, not Hono's secureHeaders preset.
 const CONTENT_SECURITY_POLICY =
@@ -161,7 +164,9 @@ export function createApp(
   });
 
   // Static files (§4.1) before the first-run gate: the pages of /setup need them before founding.
+  // Each module has its own folder; the routes of Säckel never see a request for its files.
   app.use('/static/*', staticFiles('/static/', CORE_STATIC));
+  app.use('/saeckel/static/*', staticFiles('/saeckel/static/', SAECKEL_STATIC));
 
   // First run (§4.1, §4.4): until the court is founded, every path leads to /setup, for every
   // module. /setup itself decides what it does before and after founding.

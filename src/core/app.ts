@@ -36,10 +36,12 @@ import {
 } from './sessions.ts';
 import { parseUsername } from './username.ts';
 
-// One entry of «Службы двора» on the courtyard.
+// One entry of «Службы двора»: the name, the address and the emblem, which the service keeps
+// among its own static files.
 export interface Service {
   name: string;
   path: string;
+  emblem: string;
 }
 
 type CoreEnv = { Variables: { user: CurrentUser } };
