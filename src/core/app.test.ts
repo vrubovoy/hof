@@ -1,10 +1,12 @@
-// Founding the court, signing in and out, the courtyard, my chambers, «Приближённые» and the
-// gates (ARCHITECTURE.md §4.1–4.4, §4.6, §4.8), through the whole application: the common checks
-// of main.ts, the first-run gate and the Core routes. Database: hof_test as hof_core; the first-run state is the real one, its
-// key read from the log.
+// Founding the court, signing in and out, the courtyard, my chambers, «Приближённые», the
+// gates (ARCHITECTURE.md §4.1–4.4, §4.6, §4.8) and the look of the pages drawn so far (§4.9, §6),
+// through the whole application: the common checks of main.ts, the first-run gate and the Core
+// routes. Database: hof_test as hof_core; the first-run state is the real one, its key read from
+// the log.
 
 import assert from 'node:assert/strict';
 import { createHook } from 'node:async_hooks';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, test, type TestContext } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -70,6 +72,19 @@ function post(app: App, path: string, fields: Record<string, string>, headers = 
 
 function setupFields(key: string, username = 'owner') {
   return { code: key, username, password: PASSWORD, password2: PASSWORD };
+}
+
+// A form error under its field: the field drawn as an error, the message right in it, the input
+// pointing at its hint and the message, and no other field marked.
+function assertFieldError(page: string, field: string, hint: string, message: string) {
+  assert.ok(page.includes(`<p id="${field}-error" class="err-text">${message}</p>`), message);
+  assert.match(page, new RegExp(`<div class="field err">\\s*<label for="${field}">`), field);
+  assert.match(
+    page,
+    new RegExp(`name="${field}"[^>]*aria-invalid="true" aria-describedby="${hint} ${field}-error"`),
+  );
+  assert.equal((page.match(/aria-invalid/g) ?? []).length, 1);
+  assert.equal((page.match(/class="field err"/g) ?? []).length, 1);
 }
 
 async function count(table: 'users' | 'sessions'): Promise<number> {
@@ -220,6 +235,15 @@ describe('before founding', () => {
     ]) {
       assert.ok(page.includes(text), text);
     }
+    // The texts of SetupMobile for the phone and a low window: the key hint in its short form; the
+    // hints of the login and the password only for a screen reader, still named by
+    // aria-describedby.
+    assert.ok(page.includes('<code>docker compose logs hof</code>'));
+    assert.ok(page.includes('<span class="text-short">Код из лога сервера</span>'));
+    for (const hint of ['username-hint', 'password-hint']) {
+      assert.ok(page.includes(`<p id="${hint}" class="hint hint-full">`), hint);
+      assert.match(page, new RegExp(`aria-describedby="${hint}"`), hint);
+    }
   });
 
   test('a wrong key: 400, a warning without the typed value, nothing written', async (t) => {
@@ -230,7 +254,7 @@ describe('before founding', () => {
     const res = await post(app, '/setup', { ...setupFields(wrongKey), password: 'short' });
     assert.equal(res.status, 400);
     const page = await res.text();
-    assert.ok(page.includes('Ключ от ворот не подходит.'));
+    assertFieldError(page, 'code', 'code-hint', 'Ключ от ворот не подходит.');
     assert.deepEqual(lines.slice(1), ['warn gate_key_rejected ip=-']);
     assert.ok(!page.includes(wrongKey) && !page.includes(key));
     assert.equal(await count('users'), 0);
@@ -244,20 +268,34 @@ describe('before founding', () => {
     assert.equal(await count('users'), 1);
   });
 
-  const fieldErrors: [string, Partial<Record<string, string>>, string][] = [
-    ['login of a wrong form', { username: '-anna' }, 'Логин: латиница'],
-    ['login with a space', { username: 'an na' }, 'Логин: латиница'],
-    ['password shorter than 15', { password: 'a'.repeat(14), password2: 'a'.repeat(14) }, 'от 15'],
-    ['passwords that differ', { password2: PASSWORD + '!' }, 'Пароли не совпадают.'],
+  const LOGIN_ERROR =
+    'Логин: латиница, цифры, точка, дефис и подчёркивание, до 32 символов, первый символ — буква или цифра.';
+  const fieldErrors: [string, Partial<Record<string, string>>, string, string, string][] = [
+    ['login of a wrong form', { username: '-anna' }, 'username', 'username-hint', LOGIN_ERROR],
+    ['login with a space', { username: 'an na' }, 'username', 'username-hint', LOGIN_ERROR],
+    [
+      'password shorter than 15',
+      { password: 'a'.repeat(14), password2: 'a'.repeat(14) },
+      'password',
+      'password-hint',
+      'Пароль — от 15 до 256 символов.',
+    ],
+    [
+      'passwords that differ',
+      { password2: PASSWORD + '!' },
+      'password2',
+      'password-hint',
+      'Пароли не совпадают.',
+    ],
   ];
-  for (const [name, change, message] of fieldErrors) {
+  for (const [name, change, field, hint, message] of fieldErrors) {
     test(`${name}: 400, the login kept, key and passwords not shown, nothing written`, async (t) => {
       const { app, key } = await boot(t);
       const fields = { ...setupFields(key), ...change } as Record<string, string>;
       const res = await post(app, '/setup', fields);
       assert.equal(res.status, 400);
       const page = await res.text();
-      assert.ok(page.includes(message), message);
+      assertFieldError(page, field, hint, message);
       assert.ok(page.includes(`value="${fields.username}"`));
       for (const secret of [key, key.replaceAll('-', ''), fields.password!, fields.password2!]) {
         assert.ok(!page.includes(secret), `page shows ${secret}`);
@@ -439,10 +477,11 @@ describe('sign-in page', () => {
       'name="username"',
       'name="password"',
       'Войти во двор',
-      'Нет ключа или забыли пароль? Обратитесь к хозяину двора.',
+      'Нет ключа или забыли пароль? <span>Обратитесь к хозяину двора.</span>',
     ]) {
       assert.ok(page.includes(text), text);
     }
+    assert.match(page, /name="username"[^>]*autocapitalize="none"/);
     assert.ok(!page.includes('Неверный логин или пароль'));
     const unsafe = await get(app, `/login?next=${encodeURIComponent('//evil.example')}`);
     assert.ok((await unsafe.text()).includes('name="next" value="/"'));
@@ -620,7 +659,12 @@ describe('refused sign-in', () => {
       assert.equal(res.status, 400);
       assert.equal(res.headers.get('set-cookie'), null);
       const page = await res.text();
-      assert.ok(page.includes('Неверный логин или пароль.'));
+      assert.ok(
+        page.includes('<p id="login-error" class="note note-error">Неверный логин или пароль.</p>'),
+      );
+      for (const field of ['username', 'password']) {
+        assert.match(page, new RegExp(`name="${field}"[^>]*aria-describedby="login-error"`), field);
+      }
       assert.ok(page.includes(`value="${username}"`));
       assert.ok(!page.includes(typed));
       assert.deepEqual(lines.slice(logged), [logLine]);
@@ -2393,6 +2437,101 @@ describe('log audit, M4', () => {
         assert.ok(!line.includes(secret), `log line «${line}» contains ${secret}`);
       }
       assert.ok(!line.includes('$argon2id'), line);
+    }
+  });
+});
+
+// §4.9 and §6: the pages Core already draws in the look of Hof, and its CSS. No style attribute,
+// no script, nothing from another site; every file they name is served from /static/, and every
+// file of the static folder is named by them (the licence of the font aside). The next pages of
+// M8 join the list as they are drawn.
+describe('the look of Hof: pages, CSS and static files', () => {
+  const STATIC = join(import.meta.dirname, 'static');
+
+  // Every file of the static folder, by its address after /static/.
+  function folderFiles(dir = STATIC, prefix = ''): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory()
+        ? folderFiles(join(dir, entry.name), `${prefix}${entry.name}/`)
+        : [`${prefix}${entry.name}`],
+    );
+  }
+
+  // The addresses an HTML page names: src, href and every candidate of a srcset.
+  function pageReferences(page: string): string[] {
+    const named = [...page.matchAll(/\s(?:src|href)="([^"]*)"/g)].map((match) => match[1]!);
+    for (const [, set] of page.matchAll(/\ssrcset="([^"]*)"/g)) {
+      named.push(...set!.split(',').map((candidate) => candidate.trim().split(/\s+/)[0]!));
+    }
+    return named;
+  }
+
+  // The addresses the CSS names in url(…), resolved against the CSS itself.
+  function cssReferences(css: string): string[] {
+    return [...css.matchAll(/url\(([^)]*)\)/g)].map(
+      (match) => new URL(match[1]!, 'http://hof.test/static/hof.css').pathname,
+    );
+  }
+
+  // Each drawn page in each of its states — the form, every refusal — and the app, founded by
+  // then.
+  async function drawnPages(t: TestContext) {
+    const { app, key } = await boot(t);
+    const pages: [string, Response][] = [
+      ['GET /setup', await get(app, '/setup')],
+      ['wrong key', await post(app, '/setup', { ...setupFields('ABCDE-FGHJK-MNPQR-STVWX') })],
+      ['wrong login', await post(app, '/setup', { ...setupFields(key), username: '-x' })],
+      ['short password', await post(app, '/setup', { ...setupFields(key), password: 'short' })],
+      ['other repeat', await post(app, '/setup', { ...setupFields(key), password2: 'other' })],
+    ];
+    assert.equal((await post(app, '/setup', setupFields(key))).status, 303);
+    pages.push(
+      ['GET /login', await get(app, '/login?next=%2Faccount')],
+      ['refused sign-in', await signIn(app, 'owner', 'a wrong password')],
+    );
+    const texts = await Promise.all(
+      pages.map(async ([name, res]) => [name, await res.text()] as const),
+    );
+    return { app, pages: texts };
+  }
+
+  test('pages: one h1, no style attribute, script or other site; every named file is served', async (t) => {
+    const { app, pages } = await drawnPages(t);
+    for (const [name, page] of pages) {
+      assert.equal((page.match(/<h1[\s>]/g) ?? []).length, 1, name);
+      assert.doesNotMatch(page, /\sstyle=/, name);
+      assert.ok(!page.includes('<script'), name);
+      assert.doesNotMatch(page, /https?:\/\//, name);
+      for (const address of pageReferences(page)) {
+        assert.match(address, /^\/static\//, `${name}: ${address}`);
+        assert.equal((await get(app, address)).status, 200, `${name}: ${address}`);
+      }
+    }
+  });
+
+  test('hof.css: nothing from another site; every url() is a served file', async (t) => {
+    const { app } = await found(t);
+    const css = await (await get(app, '/static/hof.css')).text();
+    assert.doesNotMatch(css, /https?:\/\/|@import/);
+    const named = cssReferences(css);
+    assert.ok(named.length > 0);
+    for (const address of named) {
+      assert.equal((await get(app, address)).status, 200, address);
+    }
+  });
+
+  test('every file of the static folder is served and named, the font licence aside', async (t) => {
+    const { app, pages } = await drawnPages(t);
+    const css = await (await get(app, '/static/hof.css')).text();
+    const named = new Set([
+      '/static/hof.css',
+      ...cssReferences(css),
+      ...pages.flatMap(([, page]) => pageReferences(page)),
+    ]);
+    for (const file of folderFiles()) {
+      assert.equal((await get(app, `/static/${file}`)).status, 200, file);
+      if (file === 'fonts/OFL.txt') continue;
+      assert.ok(named.has(`/static/${file}`), `nothing names ${file}`);
     }
   });
 });

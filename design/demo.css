@@ -6,7 +6,7 @@
 .demo .place .sign.on-map { animation: d-swing 12s infinite; }
 .demo .p2 .lit, .demo .p2 .sign.on-map { animation-delay: 4s; }
 .demo .p3 .lit, .demo .p3 .sign.on-map { animation-delay: 8s; }
-@keyframes d-open { 0%, 3% { opacity: 0; } 9%, 26% { opacity: 1; } 32%, 100% { opacity: 0; } }
+@keyframes d-open { 0%, 5.9% { opacity: 0; } 6%, 28.9% { opacity: 1; } 29%, 100% { opacity: 0; } }   /* дверь — сразу, без наплыва */
 @keyframes d-swing {
   0%, 4% { transform: translateX(-50%) rotate(0); } 7% { transform: translateX(-50%) rotate(-3.5deg); }
   11% { transform: translateX(-50%) rotate(2.2deg); } 15% { transform: translateX(-50%) rotate(-1deg); } 19%, 100% { transform: translateX(-50%) rotate(0); } }
@@ -19,7 +19,7 @@
 
 /* основание двора: «Основать двор» → ворота распахиваются → наезд → сцена темнеет */
 .demo .gate-open { animation: d-gate 7s infinite; }
-@keyframes d-gate { 0%, 18% { opacity: 0; } 26%, 62% { opacity: 1; } 63%, 100% { opacity: 0; } }
+@keyframes d-gate { 0%, 21.9% { opacity: 0; } 22%, 62.9% { opacity: 1; } 63%, 100% { opacity: 0; } }
 .demo .press { animation: d-press 7s infinite; }
 @keyframes d-press { 0%, 10% { transform: none; } 12% { transform: translateY(2px) scale(0.98); } 15%, 100% { transform: none; } }
 
@@ -88,5 +88,5 @@
 /* пустая страница мешков: сценка по кругу (на сайте — по нажатию, один раз); кадры сменяются мгновенно */
 .demo .loop-sniff .f1 { animation: d-sniff-a 5s linear infinite; }
 .demo .loop-sniff .f2 { animation: d-sniff-b 5s linear infinite; }
-@keyframes d-sniff-a { 0%, 17.9% { opacity: 1; } 18%, 22.7% { opacity: 0; } 22.8%, 37.1% { opacity: 1; } 37.2%, 100% { opacity: 0; } }
-@keyframes d-sniff-b { 0%, 37.1% { opacity: 0; } 37.2%, 58.7% { opacity: 1; } 58.8%, 100% { opacity: 0; } }
+@keyframes d-sniff-a { 0%, 25.9% { opacity: 1; } 26%, 100% { opacity: 0; } }
+@keyframes d-sniff-b { 0%, 29.9% { opacity: 0; } 30%, 57.9% { opacity: 1; } 58%, 100% { opacity: 0; } }

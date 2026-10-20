@@ -124,6 +124,7 @@ interface LoginUser {
   is_disabled: boolean;
 }
 
+// Every page of Core: the CSS of Hof (§6) and the mark of Hof as the icon of the tab.
 function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString>) {
   return html`<!doctype html>
     <html lang="ru">
@@ -131,6 +132,8 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>${title}</title>
+        <link rel="stylesheet" href="/static/hof.css" />
+        <link rel="icon" href="/static/img/hof-mark.svg" type="image/svg+xml" />
       </head>
       <body>
         ${body}
@@ -160,114 +163,216 @@ function nav(user: CurrentUser, here: string) {
   </nav>`;
 }
 
-// Texts from design/preview/Setup.html. The gate key and the passwords are never written back
+// The mark of Hof with its caption; the picture says nothing the text does not.
+const LOGO = html`<div class="logo">
+  <img src="/static/img/hof-mark.svg" width="64" height="64" alt="" />
+  <span><b>Hof</b><small>Ваш личный двор</small></span>
+</div>`;
+
+// Texts and pictures from design/preview/Setup.html and SetupMobile.html: the gate closed, its
+// key in the lock. The phone and a low window of a computer get the shorter texts of SetupMobile
+// (text-short): the key hint without the command, the hints of the login and the password
+// (hint-full) only for a screen reader. The gate key and the passwords are never written back
 // into the page; the login is, as typed.
 function setupPage(form: SetupForm) {
   const describedBy = (field: SetupField, hint: string) =>
     form.error?.field === field
       ? html`aria-invalid="true" aria-describedby="${hint} ${field}-error"`
       : html`aria-describedby="${hint}"`;
+  const fieldClass = (field: SetupField) => (form.error?.field === field ? 'field err' : 'field');
   const error = (field: SetupField) =>
-    form.error?.field === field ? html`<p id="${field}-error">${form.error.text}</p>` : '';
+    form.error?.field === field
+      ? html`<p id="${field}-error" class="err-text">${form.error.text}</p>`
+      : '';
 
   return page(
     'Hof — основание двора',
-    html`<h1>Основание двора</h1>
-      <p>Станьте хозяином двора: вы принимаете приближённых и присматриваете за Hof.</p>
-      <form method="post" action="/setup">
-        <p>
-          <label for="code">Ключ от ворот</label>
-          <input
-            id="code"
-            name="code"
-            type="text"
-            autocomplete="off"
-            required
-            ${describedBy('code', 'code-hint')}
-          />
-        </p>
-        <p id="code-hint">Одноразовый код из лога сервера: <code>docker compose logs hof</code></p>
-        ${error('code')}
-        <p>
-          <label for="username">Логин</label>
-          <input
-            id="username"
-            name="username"
-            type="text"
-            autocomplete="username"
-            required
-            value="${form.username}"
-            ${describedBy('username', 'username-hint')}
-          />
-        </p>
-        <p id="username-hint">Латиница, цифры, точка, дефис и подчёркивание, до 32 символов.</p>
-        ${error('username')}
-        <p>
-          <label for="password">Пароль</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autocomplete="new-password"
-            required
-            ${describedBy('password', 'password-hint')}
-          />
-        </p>
-        <p id="password-hint">Не короче ${PASSWORD_MIN_LENGTH} символов.</p>
-        ${error('password')}
-        <p>
-          <label for="password2">Пароль ещё раз</label>
-          <input
-            id="password2"
-            name="password2"
-            type="password"
-            autocomplete="new-password"
-            required
-            ${describedBy('password2', 'password-hint')}
-          />
-        </p>
-        ${error('password2')}
-        <button type="submit">Основать двор</button>
-      </form>`,
+    html`<main class="gate gate-setup">
+      <div class="gate-paper">
+        <div class="gate-card framed">
+          ${LOGO}
+          <div class="gate-title">
+            <h1 class="title t-2">Основание двора</h1>
+            <p class="small muted">
+              Станьте хозяином<span class="text-full"> двора</span>: вы принимаете приближённых и
+              присматриваете за Hof.
+            </p>
+          </div>
+          <form method="post" action="/setup">
+            <div class="${fieldClass('code')}">
+              <label for="code">Ключ от ворот</label>
+              <input
+                id="code"
+                class="input input-key"
+                name="code"
+                type="text"
+                autocomplete="off"
+                required
+                ${describedBy('code', 'code-hint')}
+              />
+              <p id="code-hint" class="hint">
+                <span class="text-full"
+                  >Одноразовый код из лога сервера: <code>docker compose logs hof</code></span
+                ><span class="text-short">Код из лога сервера</span>
+              </p>
+              ${error('code')}
+            </div>
+            <div class="${fieldClass('username')}">
+              <label for="username">Логин</label>
+              <input
+                id="username"
+                class="input"
+                name="username"
+                type="text"
+                autocomplete="username"
+                autocapitalize="none"
+                required
+                value="${form.username}"
+                ${describedBy('username', 'username-hint')}
+              />
+              <p id="username-hint" class="hint hint-full">
+                Латиница, цифры, точка, дефис и подчёркивание, до 32 символов.
+              </p>
+              ${error('username')}
+            </div>
+            <div class="${fieldClass('password')}">
+              <label for="password">Пароль</label>
+              <input
+                id="password"
+                class="input"
+                name="password"
+                type="password"
+                autocomplete="new-password"
+                required
+                ${describedBy('password', 'password-hint')}
+              />
+              <p id="password-hint" class="hint hint-full">
+                Не короче ${PASSWORD_MIN_LENGTH} символов.
+              </p>
+              ${error('password')}
+            </div>
+            <div class="${fieldClass('password2')}">
+              <label for="password2">Пароль ещё раз</label>
+              <input
+                id="password2"
+                class="input"
+                name="password2"
+                type="password"
+                autocomplete="new-password"
+                required
+                ${describedBy('password2', 'password-hint')}
+              />
+              ${error('password2')}
+            </div>
+            <button type="submit" class="btn btn-blue btn-wide">Основать двор</button>
+          </form>
+        </div>
+      </div>
+      <div class="gate-scene">
+        <img
+          src="/static/img/scene-setup.webp"
+          srcset="/static/img/scene-setup.webp 1536w, /static/img/scene-setup@2x.webp 3072w"
+          sizes="(max-width: 1023.98px) 195vw, 100vw"
+          alt="Ворота замка закрыты, в замке ключ, кот ждёт у ворот"
+        />
+      </div>
+      <img
+        class="blot blot-setup-medium"
+        src="/static/img/ink-blot-medium.webp"
+        alt=""
+        loading="lazy"
+      />
+      <img class="blot blot-setup-ring" src="/static/img/ink-ring.webp" alt="" loading="lazy" />
+    </main>`,
   );
 }
 
-// Texts from design/preview/DemoLogin.html. One error for every refusal, so the page does not
-// tell whether the login exists. The login is written back as typed, the password never.
+// Texts and pictures from design/preview/Main.html and LoginMobile.html: the gate open, the cat
+// looking into the courtyard; the phone has a picture of its own. One error for every refusal,
+// so the page does not tell whether the login exists. The login is written back as typed, the
+// password never. On the phone the heading is not drawn, but stays for a screen reader.
 function loginPage(form: LoginForm) {
   const describedBy = form.failed ? html`aria-describedby="login-error"` : '';
   return page(
     'Hof — вход',
-    html`<h1>С возвращением во двор!</h1>
-      <form method="post" action="/login">
-        ${form.failed ? html`<p id="login-error">Неверный логин или пароль.</p>` : ''}
-        <input type="hidden" name="next" value="${form.next}" />
-        <p>
-          <label for="username">Логин</label>
-          <input
-            id="username"
-            name="username"
-            type="text"
-            autocomplete="username"
-            required
-            value="${form.username}"
-            ${describedBy}
-          />
-        </p>
-        <p>
-          <label for="password">Пароль</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autocomplete="current-password"
-            required
-            ${describedBy}
-          />
-        </p>
-        <button type="submit">Войти во двор</button>
-      </form>
-      <p>Нет ключа или забыли пароль? Обратитесь к хозяину двора.</p>`,
+    html`<main class="gate gate-login">
+      <div class="gate-paper">
+        <div class="gate-card framed">
+          ${LOGO}
+          <h1 class="title t-2 visually-hidden-phone">С возвращением во двор!</h1>
+          <form method="post" action="/login">
+            ${
+              form.failed
+                ? html`<p id="login-error" class="note note-error">Неверный логин или пароль.</p>`
+                : ''
+            }
+            <input type="hidden" name="next" value="${form.next}" />
+            <div class="field">
+              <label for="username">Логин</label>
+              <input
+                id="username"
+                class="input"
+                name="username"
+                type="text"
+                autocomplete="username"
+                autocapitalize="none"
+                required
+                value="${form.username}"
+                ${describedBy}
+              />
+            </div>
+            <div class="field">
+              <label for="password">Пароль</label>
+              <input
+                id="password"
+                class="input"
+                name="password"
+                type="password"
+                autocomplete="current-password"
+                required
+                ${describedBy}
+              />
+            </div>
+            <button type="submit" class="btn btn-blue btn-wide">Войти во двор</button>
+          </form>
+          <p class="small muted gate-help">
+            Нет ключа или забыли пароль? <span>Обратитесь к хозяину двора.</span>
+          </p>
+        </div>
+      </div>
+      <picture class="gate-scene">
+        <source
+          media="(max-width: 1023.98px)"
+          srcset="
+            /static/img/login-mobile-v2@2x.webp  780w,
+            /static/img/login-mobile-v2@3x.webp 1170w
+          "
+          sizes="100vw"
+        />
+        <img
+          src="/static/img/login-desktop-v2.webp"
+          srcset="
+            /static/img/login-desktop-v2.webp    1536w,
+            /static/img/login-desktop-v2@2x.webp 3072w
+          "
+          sizes="100vw"
+          alt="Открытые ворота замка, кот смотрит во двор"
+        />
+      </picture>
+      <img
+        class="blot blot-login-small"
+        src="/static/img/ink-blot-small.webp"
+        alt=""
+        loading="lazy"
+      />
+      <img
+        class="blot blot-login-splatter"
+        src="/static/img/ink-splatter-b.webp"
+        alt=""
+        loading="lazy"
+      />
+      <img class="blot blot-login-drip" src="/static/img/ink-drip.webp" alt="" loading="lazy" />
+    </main>`,
   );
 }
 

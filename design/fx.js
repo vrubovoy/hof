@@ -10,7 +10,7 @@
   const MUSIC = 20;                       // общий список: music-1 … music-20
   const POOLS = { door: 6, chest: 3, coins: 2, banner: 4, page: 2, wind: 6, meow: 9, purr: 1, sniff: 3 };
   const ACTS = {                           // сценки по нажатию: класс с кадрами на виньетке и звуки по времени (мс)
-    sniff: { cls: 'sniffing', sounds: [[0, 'sniff'], [1850, 'sniff']] },   // кот нюхает пустые мешки, 3 с
+    sniff: { cls: 'sniffing', sounds: [[0, 'sniff'], [1500, 'sniff']] },   // кот нюхает пустые мешки, 3 с
   };
   const FOUNTAINS = 3;
   const DUCK = 0.63;                       // −4 дБ музыки на время звука
@@ -144,7 +144,7 @@
     if (!anim()) { await sleep(cfg.sound ? 250 : 0); location.href = href; return; }
     aim(spot);
     opener?.classList.add('open');
-    await sleep(550);                                     // дверь открывается 0,7 с, наезд начинается чуть раньше
+    await sleep(550);                                     // дверь открыта сразу; наезд — пока звучит скрип
     root.classList.add('enter');
     store.set(sessionStorage, 'hof.arrive', { fx: 'door' });
     await sleep(1150);

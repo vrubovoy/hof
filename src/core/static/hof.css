@@ -1,0 +1,591 @@
+/* Hof Core — облик (ARCHITECTURE.md §6). Цвета, размеры и материалы — из утверждённого
+   design/screens.css; сюда переносится только то, что уже используют страницы Core.
+   Эффектов здесь нет: ни анимаций, ни переходов (M10). Координаты и кадры — только классы:
+   CSP запрещает атрибут style. Компьютер — от 1024 px, ниже — телефон. */
+
+/* EB Garamond — одна семья (лицензия OFL, fonts/OFL.txt): прямой и курсив, латиница и
+   кириллица. Браузер скачивает файл подмножества, только если на странице есть его символы. */
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(fonts/eb-garamond-cyrillic.woff2) format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(fonts/eb-garamond-latin.woff2) format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: italic;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(fonts/eb-garamond-italic-cyrillic.woff2) format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: italic;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(fonts/eb-garamond-italic-latin.woff2) format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  --paper: #f7efe0;
+  --ink: #14243d;
+  --ink-2: #4f5868;
+  --blue: #1f4e9e;
+  --red: #a83224;
+  /* заливка поля пером поверх бумаги: #FFFCF4 с прозрачностью 0,78 */
+  --field: #fdf8ee;
+  --font: 'EB Garamond', Georgia, serif;
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* бумага: пятна тона (multiply) поверх бесшовной плитки; размеры не кратны, повтор не виден */
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    url(img/paper-clouds.webp) 0 0 / 1500px 1500px,
+    url(img/paper-tile.webp) 0 0 / 1124px 1124px,
+    var(--paper);
+  background-blend-mode: multiply, normal;
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 18px;
+  line-height: 1.42;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+a {
+  color: var(--blue);
+}
+
+/* текст */
+.title {
+  margin: 0;
+  font-style: italic;
+  font-weight: 600;
+  line-height: 1.12;
+  color: var(--ink);
+}
+.t-2 {
+  font-size: 33px;
+}
+.muted {
+  color: var(--ink-2);
+}
+.small {
+  margin: 0;
+  font-size: 15px;
+}
+
+/* знак: «Hof» прямым начертанием, крупно и разрядкой */
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.logo img {
+  display: block;
+  flex: none;
+}
+.logo b {
+  display: block;
+  font-weight: 600;
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: 0.06em;
+}
+.logo small {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+/* поля: рамка пером, внутри светлая бумага — заливка по тому же неровному контуру */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.field label {
+  font-size: 15px;
+  font-weight: 600;
+}
+.input {
+  width: 100%;
+  height: 46px;
+  margin: 0;
+  padding: 0 12px;
+  border: 2px solid transparent;
+  border-image: url(img/pen-field.svg) 16 fill / 16px stretch;
+  border-radius: 0;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  font: inherit;
+  font-size: 18px;
+  color: var(--ink);
+}
+/* поле в фокусе: та же линия пером, только синяя и жирнее (у поля с ошибкой — красная) */
+.input:focus {
+  outline: none;
+  border-image-source: url(img/pen-field-focus.svg);
+}
+.field.err label {
+  color: var(--red);
+}
+.field.err .input {
+  border-image-source: url(img/pen-field-err.svg);
+}
+.field.err .input:focus {
+  border-image-source: url(img/pen-field-err-focus.svg);
+}
+/* автозаполнение браузера красит поле своим цветом: под линией пером остаётся бумага */
+.input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 40px var(--field) inset;
+  -webkit-text-fill-color: var(--ink);
+}
+.input:autofill {
+  box-shadow: 0 0 0 40px var(--field) inset;
+}
+.hint {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ink-2);
+}
+.err-text {
+  margin: 0;
+  font-size: 15px;
+  font-style: italic;
+  color: var(--red);
+}
+
+/* кнопки — нарисованные плашки (560×96): концы с вырезами и гвоздиками неизменны (срез 41 px),
+   середина тянется под длину надписи */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  margin: 0;
+  padding: 0 12px;
+  border-style: solid;
+  border-width: 0 20px;
+  border-color: transparent;
+  border-image-slice: 0 41 fill;
+  border-image-width: 0 20px;
+  border-image-repeat: stretch;
+  border-radius: 0;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.btn-blue {
+  border-image-source: url(img/btn-blue.webp);
+  color: #ffffff;
+  text-shadow: 0 1px 1px rgb(8 18 40 / 0.55);
+}
+/* фокус с клавиатуры — без рамки: кнопка затемняется так же, как при наведении мышью; нажатие —
+   темнее и на пиксель вниз */
+.btn:is(:hover, :focus-visible):not(:disabled) {
+  outline: none;
+  filter: brightness(0.82);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+  filter: brightness(0.74);
+}
+.btn-wide {
+  width: 100%;
+}
+
+/* уведомление — записка, запечатанная сургучом: красная печать — отказ */
+.note {
+  position: relative;
+  margin: 0 0 0 14px;
+  padding: 12px 16px 12px 48px;
+  border: 2px solid transparent;
+  border-image-slice: 16 fill;
+  border-image-width: 16px;
+  border-image-repeat: stretch;
+  font-size: 17px;
+  font-style: italic;
+  color: var(--ink);
+}
+.note::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  margin-top: -27px;
+  background: 0 0 / 52px no-repeat;
+  transform: rotate(-9deg);
+}
+.note-error {
+  border-image-source: url(img/pen-note-error.svg);
+}
+.note-error::before {
+  background-image: url(img/seal-red.webp);
+}
+
+/* рамка пером с веточками: углы неизменны, линии тянутся, внутри бумага */
+.framed {
+  position: relative;
+  border: 22px solid transparent;
+  border-image: url(img/frame.webp) 107 / 54px stretch;
+  padding: 30px 34px 28px;
+}
+
+/* кляксы: только на пустой бумаге, бледно; у каждой страницы свои */
+.blot {
+  position: absolute;
+  height: auto;
+  z-index: 2;
+  pointer-events: none;
+  user-select: none;
+  mix-blend-mode: multiply;
+}
+
+/* ворота (вход и основание): на компьютере сцена до краёв, справа бумажная колонка с формой
+   в рамке; на телефоне форма сверху, сцена полосой снизу */
+.gate {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  min-height: 100vh;
+}
+.gate-scene,
+.gate-scene img {
+  display: block;
+}
+.gate-card,
+.gate-card form {
+  display: flex;
+  flex-direction: column;
+}
+.gate-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* колонка с формой — над сценой, кляксы — поверх всего */
+.gate-paper {
+  position: relative;
+  z-index: 1;
+}
+
+/* вход: Main и LoginMobile */
+.gate-login .gate-card,
+.gate-login .gate-card form {
+  gap: 22px;
+}
+.gate-login .logo img {
+  width: 78px;
+  height: 78px;
+}
+.gate-login .logo b {
+  font-size: 54px;
+}
+.gate-login .logo small {
+  font-size: 11px;
+}
+
+/* основание: Setup и SetupMobile */
+.gate-setup .gate-card,
+.gate-setup .gate-card form {
+  gap: 14px;
+}
+.gate-setup .logo img {
+  width: 48px;
+  height: 48px;
+}
+.gate-setup .logo b {
+  font-size: 38px;
+}
+.input-key {
+  letter-spacing: 0.08em;
+}
+.gate-setup .text-short {
+  display: none;
+}
+
+/* кляксы ворот на компьютере: в кадре 1440×900 Main и Setup, от правого края */
+.blot-login-small {
+  right: 34px;
+  top: 64px;
+  width: 46px;
+  opacity: 0.7;
+}
+.blot-login-splatter {
+  right: 58px;
+  bottom: 15px;
+  width: 92px;
+  opacity: 0.55;
+  transform: rotate(14deg);
+}
+.blot-login-drip {
+  right: 13px;
+  top: calc(50% + 20px);
+  width: 22px;
+  opacity: 0.75;
+}
+.blot-setup-medium {
+  right: 18px;
+  top: 30px;
+  width: 52px;
+  opacity: 0.65;
+  transform: rotate(20deg);
+}
+.blot-setup-ring {
+  right: 0;
+  bottom: -26px;
+  width: 110px;
+  opacity: 0.45;
+  transform: rotate(-15deg);
+}
+
+@media (min-width: 1024px) {
+  /* колонка 560 и 580 px при 1440 — как в прототипе; на узком экране уже, но форма не тесная */
+  .gate {
+    --column: clamp(460px, 39vw, 560px);
+    --scene-fade: linear-gradient(
+      to right,
+      #000 calc(100% - var(--column)),
+      transparent calc(100% - var(--column) + 64px)
+    );
+    justify-content: flex-end;
+    align-items: center;
+  }
+  .gate-setup {
+    --column: clamp(470px, 41vw, 580px);
+  }
+  /* сцена во всю страницу, как в прототипе */
+  .gate-scene img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: left center;
+  }
+  /* без отступов сверху и снизу, как в прототипе: форма по центру, а прокрутка появляется только
+     тогда, когда сама рамка выше окна */
+  .gate-paper {
+    width: var(--column);
+    padding: 0 56px 0 24px;
+  }
+}
+
+/* Рисунок сцены кончается на 62 % ширины картинки: при 3:2 и шире он не доходит до текста.
+   Если экран уже, чем 3:2, или форма основания выше окна, картинка растягивается по высоте и
+   рисунок заходит под колонку — там он растворяется в бумаге до начала текста. */
+@media (min-width: 1024px) and (max-aspect-ratio: 3/2) {
+  .gate-scene img {
+    -webkit-mask-image: var(--scene-fade);
+    mask-image: var(--scene-fade);
+  }
+}
+@media (min-width: 1024px) and (max-height: 899.98px) {
+  .gate-setup .gate-scene img {
+    -webkit-mask-image: var(--scene-fade);
+    mask-image: var(--scene-fade);
+  }
+}
+
+@media (max-width: 1023.98px) {
+  .gate {
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100svh;
+  }
+  .gate-paper {
+    width: 100%;
+    max-width: 440px;
+    margin: 0 auto;
+  }
+  /* на телефоне форма лежит прямо на бумаге, без рамки */
+  .gate-card {
+    border: 0;
+    border-image: none;
+    padding: 0;
+  }
+  .gate-scene {
+    margin-top: auto;
+  }
+
+  /* вход: знак крупно по центру, заголовок только для screen reader, сцена — квадрат во всю
+     ширину, её пустой верх заходит под подсказку на 33 px (LoginMobile). На широком окне квадрат
+     ниже ширины и обрезан сверху: тогда верх растворяется в бумаге, а нахлёст исчезает */
+  .gate-login .gate-paper {
+    padding: 34px 28px 0;
+  }
+  .gate-login .gate-card,
+  .gate-login .gate-card form {
+    gap: 18px;
+  }
+  .gate-login .logo {
+    flex-direction: column;
+    gap: 4px;
+    text-align: center;
+  }
+  .gate-login .logo img {
+    width: 72px;
+    height: 72px;
+  }
+  .gate-login .logo b {
+    font-size: 52px;
+  }
+
+  .gate-help {
+    text-align: center;
+  }
+  .gate-help span {
+    display: block;
+  }
+  .gate-login .gate-scene img {
+    width: 100%;
+    height: min(100vw, 55vh);
+    margin-top: calc(-33px + clamp(0px, 100vw - 55vh, 33px));
+    object-fit: cover;
+    object-position: center bottom;
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 25%);
+    mask-image: linear-gradient(to bottom, transparent, #000 25%);
+  }
+
+  /* основание: знак в строку, сцена полосой — кадр SetupMobile (картинка 760 px при ширине 390,
+     ворота и кот у нижнего края), верх растворяется в бумаге */
+  /* как в SetupMobile: полоса стоит у нижнего края и на 1–2 px заходит под кнопку (её верх
+     прозрачен), поэтому на 390×844 всё помещается в экран */
+  .gate-setup .gate-paper {
+    padding: 20px 24px 0;
+    margin-bottom: -2px;
+  }
+  .gate-setup .gate-scene {
+    position: relative;
+    overflow: hidden;
+    height: min(70.26vw, 55vh);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 70px);
+    mask-image: linear-gradient(to bottom, transparent, #000 70px);
+  }
+  .gate-setup .gate-scene img {
+    position: absolute;
+    left: -21.79vw;
+    bottom: -18.64vw;
+    width: 194.87vw;
+    max-width: none;
+  }
+
+  .blot-login-small {
+    right: 26px;
+    top: 26px;
+    width: 34px;
+  }
+  .blot-login-splatter,
+  .blot-login-drip,
+  .blot-setup-medium,
+  .blot-setup-ring {
+    display: none;
+  }
+
+  /* на телефоне скрыт с экрана, но остаётся для screen reader */
+  .visually-hidden-phone {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+/* Основание в коротком виде SetupMobile — на телефоне и в низком окне компьютера, где полная форма
+   (рамка 784 px) не помещается: подсказка к ключу без команды, подсказки логина и пароля только
+   для screen reader, промежутки и знак меньше. Поля и кнопка прежнего размера. Виден один вариант
+   текста, его же читает screen reader. */
+@media (max-width: 1023.98px), (max-height: 799.98px) {
+  .gate-setup .text-full {
+    display: none;
+  }
+  .gate-setup .text-short {
+    display: inline;
+  }
+  .gate-setup .hint-full {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  .gate-setup .gate-card,
+  .gate-setup .gate-card form {
+    gap: 10px;
+  }
+  .gate-setup .gate-title {
+    gap: 2px;
+  }
+  .gate-setup .logo img {
+    width: 36px;
+    height: 36px;
+  }
+  .gate-setup .logo b {
+    font-size: 30px;
+  }
+}
+
+/* окно ниже 680 px (например, 1147×745 в масштабе macOS): та же форма в рамке с меньшими полями
+   сверху и снизу — рамка 625 px; знак и кнопка не заходят на уголки с веточками */
+@media (min-width: 1024px) and (max-height: 679.98px) {
+  .gate-setup .gate-card {
+    padding-top: 16px;
+    padding-bottom: 14px;
+  }
+}

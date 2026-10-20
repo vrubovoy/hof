@@ -2,7 +2,18 @@
 # Двойной щелчок в Finder: запускает маленький сервер и открывает прототип Hof в браузере.
 # Он нужен потому, что страницы, открытые прямо с диска (file://), не делят между собой
 # настройки: включённый в «Моих покоях» звук пропадает на следующем экране.
+# Сервер просит браузер ничего не кэшировать: иначе после правок (особенно после
+# переименования звуков и кадров) браузер может показывать и играть старые файлы.
+# Порт 8781, а не прежний 8780: для браузера это другой сайт с чистым кэшем — на 8780
+# в кэше остался удалённый звук «ня» (meow-7), и ⌘⇧R его не убирает: звуки грузятся по щелчку.
 # Остановить сервер: закрыть это окно Терминала (или Ctrl+C).
 cd "$(dirname "$0")/.." || exit 1
-(sleep 1; open "http://localhost:8780/preview/index.html") &
-exec python3 -m http.server 8780 --bind 127.0.0.1
+(sleep 1; open "http://localhost:8781/preview/index.html") &
+exec python3 -c '
+import http.server
+class NoStore(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+http.server.ThreadingHTTPServer(("127.0.0.1", 8781), NoStore).serve_forever()
+'
