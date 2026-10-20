@@ -4,12 +4,10 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import { html } from 'hono/html';
-import type { HtmlEscapedString } from 'hono/utils/html';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { Pool } from 'pg';
-import { createCoreApp, requestUser, type Service } from './core/app.ts';
+import { createCoreApp, errorPage, requestUser, type Service } from './core/app.ts';
 import { startFirstRun, type FirstRun } from './core/gate-key.ts';
 import { hashPassword } from './core/password.ts';
 import { describeError, log } from './log.ts';
@@ -47,39 +45,9 @@ const SERVICES: readonly Service[] = [
 const CONTENT_SECURITY_POLICY =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; media-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 
-// The common error pages, with texts from design/preview (ErrorMobile.html, Error500.html).
-// Nothing from the request goes into them.
-function errorPage(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString>) {
-  return html`<!doctype html>
-    <html lang="ru">
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>${title}</title>
-      </head>
-      <body>
-        <h1>${title}</h1>
-        ${body}
-      </body>
-    </html>`;
-}
-
-const NOT_FOUND_PAGE = errorPage(
-  'Такой тропы во дворе нет',
-  html`<p>Возможно, ссылка устарела или в адресе опечатка.</p>
-    <p><a href="/">Во двор</a></p>`,
-);
-
-// After GET and HEAD «Попробовать ещё раз» is href="": the browser opens the same address again,
-// and the page does not repeat it. After any other method there is nothing to repeat by a link:
-// the same address with GET may not exist, and the form is not sent twice.
-function serverErrorPage(retry: boolean) {
-  return errorPage(
-    'Во дворе что-то стряслось',
-    html`<p>Мы уже прибираемся. Попробуйте ещё раз через минуту — записанное раньше на месте.</p>
-      <p>${retry ? html`<a href="">Попробовать ещё раз</a> ` : ''}<a href="/">Во двор</a></p>`,
-  );
-}
+// The common 404 page, drawn by Core (design/preview/States.html). Nothing from the request goes
+// into it.
+const NOT_FOUND_PAGE = errorPage(404);
 
 // §4.6: Origin must be exactly https://<Host>. For localhost (development)
 // http://<Host> is accepted as well. No header, `null`, another scheme, host or port — rejected.
@@ -193,8 +161,11 @@ export function createApp(
       error: describeError(error),
       stack: error.stack ?? '-',
     });
+    // After GET and HEAD «Попробовать ещё раз» opens the same address again. After any other
+    // method there is nothing to repeat by a link: the same address with GET may not exist, and
+    // the form is not sent twice.
     const retry = c.req.method === 'GET' || c.req.method === 'HEAD';
-    return c.html(serverErrorPage(retry), 500);
+    return c.html(errorPage(500, retry), 500);
   });
 
   return app;

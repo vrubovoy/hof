@@ -507,8 +507,8 @@ describe('after founding', () => {
       assert.equal(res.status, 404, name);
       assert.equal(res.headers.get('cache-control'), 'no-store', name);
       const page = await res.text();
-      assert.ok(page.includes('<h1>Такой тропы во дворе нет</h1>'), name);
-      assert.ok(page.includes('<a href="/">Во двор</a>'), name);
+      assert.ok(page.includes('<h1 class="title t-1">Такой тропы во дворе нет</h1>'), name);
+      assert.ok(page.includes('<a class="btn btn-blue" href="/">Во двор</a>'), name);
     }
   });
 });
@@ -1219,8 +1219,8 @@ async function userRow(username: string) {
   return rows;
 }
 
-const FORBIDDEN_H1 = '<h1>Сюда только хозяину</h1>';
-const NOT_FOUND_H1 = '<h1>Такой тропы во дворе нет</h1>';
+const FORBIDDEN_H1 = '<h1 class="title t-1">Сюда только хозяину</h1>';
+const NOT_FOUND_H1 = '<h1 class="title t-1">Такой тропы во дворе нет</h1>';
 
 describe('the pages of the administrator: who gets in', () => {
   test('no session: GET and HEAD keep the way back, POST goes to /login, nobody is added', async (t) => {
@@ -1302,8 +1302,8 @@ describe('the pages of the administrator: who gets in', () => {
     for (const text of [
       '<title>Сюда только хозяину</title>',
       FORBIDDEN_H1,
-      '<p>Это место двора открыто только хозяину. Если нужно, попросите его.</p>',
-      '<a href="/">Во двор</a>',
+      '<p class="muted">Это место двора открыто только хозяину. Если нужно, попросите его.</p>',
+      '<a class="btn btn-blue" href="/">Во двор</a>',
     ]) {
       assert.ok(page.includes(text), text);
     }
@@ -2664,6 +2664,92 @@ describe('the shell and the courtyard', () => {
   });
 });
 
+describe('the error pages', () => {
+  // 403 for a person on the pages of the administrator, 404 for an unknown address, 500 when the
+  // database refuses during GET and during POST.
+  async function errorPages(t: TestContext) {
+    const { app, cookie } = await found(t);
+    const anna = `__Host-hof=${await addSession(await addUser('anna'))}`;
+    const forbidden = await get(app, '/admin/users', { cookie: anna });
+    const notFound = await get(app, '/nope', { cookie });
+    const failing = t.mock.method(pool, 'query', () =>
+      Promise.reject(new Error('the database is gone')),
+    );
+    const afterGet = await get(app, '/', { cookie });
+    const afterPost = await post(app, '/logout', {}, { cookie });
+    failing.mock.restore();
+    assert.deepEqual(
+      [forbidden.status, notFound.status, afterGet.status, afterPost.status],
+      [403, 404, 500, 500],
+    );
+    return Promise.all([forbidden, notFound, afterGet, afterPost].map((res) => res.text()));
+  }
+
+  test('the picture of the place, the mark to the courtyard, one h1, the text, the blots', async (t) => {
+    const [forbidden, notFound, afterGet, afterPost] = await errorPages(t);
+    for (const [page, scene, alt, title, text] of [
+      [
+        forbidden,
+        'error-403',
+        'Тяжёлая дверь с висячим замком',
+        'Сюда только хозяину',
+        'Это место двора открыто только хозяину. Если нужно, попросите его.',
+      ],
+      [
+        notFound,
+        'error-404',
+        'Заросшая тропинка упирается в глухую стену, увитую плющом',
+        'Такой тропы во дворе нет',
+        'Возможно, ссылка устарела или в адресе опечатка.',
+      ],
+      ...[afterGet, afterPost].map((page) => [
+        page,
+        'error-500',
+        'Опрокинутая бочка, по двору раскатились яблоки, кот разглядывает беспорядок',
+        'Во дворе что-то стряслось',
+        'Мы уже прибираемся. Попробуйте ещё раз через минуту — записанное раньше на месте.',
+      ]),
+    ] as const) {
+      assert.ok(page!.includes(`<title>${title}</title>`), title);
+      assert.match(page!, new RegExp(`src="/static/img/${scene}\\.webp"[^>]*alt="${alt}"`), title);
+      assert.ok(page!.includes(`/static/img/${scene}@2x.webp 3072w`), title);
+      assert.ok(page!.includes('<a class="logo" href="/">'), title);
+      assert.ok(page!.includes(`<h1 class="title t-1">${title}</h1>`), title);
+      assert.equal((page!.match(/<h1[\s>]/g) ?? []).length, 1, title);
+      assert.ok(page!.includes(`<p class="muted">${text}</p>`), title);
+      // Every picture but the scene says nothing: the mark, the sprig, the blots.
+      const silent = [...page!.matchAll(/<img\s[^>]*>/g)].filter(
+        ([tag]) => !tag.includes(`${scene}.webp`),
+      );
+      assert.ok(silent.length >= 4, title);
+      for (const [tag] of silent) assert.match(tag, /alt=""/, title);
+    }
+  });
+
+  test('«Попробовать ещё раз» only after GET; otherwise the one way to the courtyard', async (t) => {
+    const [forbidden, notFound, afterGet, afterPost] = await errorPages(t);
+    assert.ok(
+      squeeze(afterGet!).includes(
+        '<div class="error-actions"><a class="btn btn-blue" href="">Попробовать ещё раз</a><a class="link" href="/">Во двор</a></div>',
+      ),
+    );
+    for (const page of [forbidden, notFound, afterPost]) {
+      assert.ok(
+        squeeze(page!).includes(
+          '<div class="error-actions"><a class="btn btn-blue" href="/">Во двор</a></div>',
+        ),
+      );
+      assert.ok(!page!.includes('Попробовать ещё раз'));
+    }
+    // Nothing of the failure reaches the page.
+    for (const page of [afterGet, afterPost]) {
+      for (const detail of ['the database is gone', 'Error', 'logout', 'anna', 'owner']) {
+        assert.ok(!page!.includes(detail), detail);
+      }
+    }
+  });
+});
+
 describe('the look of Hof: pages, CSS and static files', () => {
   const STATIC = join(import.meta.dirname, 'static');
 
@@ -2706,7 +2792,7 @@ describe('the look of Hof: pages, CSS and static files', () => {
   // Each drawn page in each of its states — the gates with the form and every refusal, the
   // courtyard of the administrator alone and with a person, of a person, my chambers,
   // «Приближённые» empty and with people and the card with the key and without it, each with its
-  // message and its refusal — and the app, founded by then.
+  // message and its refusal, and the error pages 403, 404 and 500 — and the app, founded by then.
   async function drawnPages(t: TestContext) {
     const { app, key } = await boot(t);
     const pages: [string, Response][] = [
@@ -2747,7 +2833,16 @@ describe('the look of Hof: pages, CSS and static files', () => {
       ['the card of boris, no key', await get(app, `/admin/users/${borisId}`, owner)],
       ['courtyard of anna', await get(app, '/', anna)],
       ['chambers of anna', await get(app, '/account', anna)],
+      ['403', await get(app, '/admin/users', anna)],
+      ['404', await get(app, '/nope', owner)],
     );
+    // 500: the database refuses the session lookup and the sign-out.
+    const failing = t.mock.method(pool, 'query', () => Promise.reject(new Error('gone')));
+    pages.push(
+      ['500 after GET', await get(app, '/', owner)],
+      ['500 after POST', await post(app, '/logout', {}, owner)],
+    );
+    failing.mock.restore();
     const texts = await Promise.all(
       pages.map(async ([name, res]) => [name, await res.text()] as const),
     );
@@ -2765,8 +2860,9 @@ describe('the look of Hof: pages, CSS and static files', () => {
         assert.match(address, /^\/(saeckel\/)?static\//, `${name}: ${address}`);
         assert.equal((await get(app, address)).status, 200, `${name}: ${address}`);
       }
+      // Local paths only; "" is the same address, «Попробовать ещё раз» of the 500 page after GET.
       for (const address of pageLinks(page)) {
-        assert.match(address, /^\/(?![/\\])/, `${name}: ${address}`);
+        assert.match(address, /^(\/(?![/\\])|$)/, `${name}: ${address}`);
       }
     }
   });

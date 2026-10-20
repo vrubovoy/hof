@@ -16,6 +16,9 @@ import { migrate } from './migrate.ts';
 import { otherRecordedCurrency } from './saeckel/app.ts';
 
 const HOST = 'hof.example';
+// The headings of the common error pages, as Core draws them.
+const NOT_FOUND_H1 = '<h1 class="title t-1">Такой тропы во дворе нет</h1>';
+const SERVER_ERROR_H1 = '<h1 class="title t-1">Во дворе что-то стряслось</h1>';
 const SAECKEL_STATIC = join(import.meta.dirname, 'saeckel', 'static');
 const FORM = 'application/x-www-form-urlencoded';
 
@@ -241,7 +244,7 @@ describe('static files of Core and Säckel', () => {
       const res = await staticRequest(path);
       assert.equal(res.status, 404, path);
       assert.equal(res.headers.get('cache-control'), 'no-store', path);
-      assert.ok((await res.text()).includes('<h1>Такой тропы во дворе нет</h1>'), path);
+      assert.ok((await res.text()).includes(NOT_FOUND_H1), path);
     }
   });
 });
@@ -255,9 +258,9 @@ describe('404 page', () => {
       assert.equal(res.status, 404);
       assert.equal(res.headers.get('cache-control'), 'no-store');
       const page = await res.text();
-      assert.ok(page.includes('<h1>Такой тропы во дворе нет</h1>'));
+      assert.ok(page.includes(NOT_FOUND_H1));
       assert.ok(page.includes('Возможно, ссылка устарела или в адресе опечатка.'));
-      assert.ok(page.includes('<a href="/">Во двор</a>'));
+      assert.ok(page.includes('<a class="btn btn-blue" href="/">Во двор</a>'));
     }
   });
 });
@@ -301,10 +304,10 @@ describe('500 page and the unexpected_error line', () => {
     assert.equal(res.headers.get('content-security-policy'), CSP);
     const page = await res.text();
     for (const text of [
-      '<h1>Во дворе что-то стряслось</h1>',
+      SERVER_ERROR_H1,
       'Мы уже прибираемся. Попробуйте ещё раз через минуту — записанное раньше на месте.',
-      '<a href="">Попробовать ещё раз</a>',
-      '<a href="/">Во двор</a>',
+      '<a class="btn btn-blue" href="">Попробовать ещё раз</a>',
+      '<a class="link" href="/">Во двор</a>',
     ]) {
       assert.ok(page.includes(text), text);
     }
@@ -343,9 +346,10 @@ describe('500 page and the unexpected_error line', () => {
     const res = await failing('POST', new Error('boom'));
     assert.equal(res.status, 500);
     const page = await res.text();
-    assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'));
+    assert.ok(page.includes(SERVER_ERROR_H1));
     assert.ok(!page.includes('Попробовать ещё раз'));
-    assert.ok(page.includes('<a href="/">Во двор</a>'));
+    assert.ok(!page.includes('href=""'));
+    assert.ok(page.includes('<a class="btn btn-blue" href="/">Во двор</a>'));
     assert.equal(lines.length, 1);
     assert.match(lines[0] ?? '', /^error unexpected_error method=POST path=\/x error=boom stack=/);
     for (const secret of secrets) assert.ok(!lines[0]!.includes(secret), `log contains ${secret}`);
@@ -380,7 +384,7 @@ describe('500 page and the unexpected_error line', () => {
     });
     assert.equal(res.status, 500);
     const page = await res.text();
-    assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'));
+    assert.ok(page.includes(SERVER_ERROR_H1));
     assert.ok(!page.includes('ECONNREFUSED'));
     assert.equal(lines.length, 1);
     assert.match(
@@ -595,7 +599,7 @@ describe('Säckel in the court', () => {
     assert.equal(foreign.status, 404);
     assert.equal(missing.status, 404);
     const page = await foreign.text();
-    assert.ok(page.includes('<h1>Такой тропы во дворе нет</h1>'));
+    assert.ok(page.includes(NOT_FOUND_H1));
     assert.equal(page, await missing.text());
     assert.ok(!page.includes('Анины деньги'));
     // And she does not see his.
@@ -611,7 +615,7 @@ describe('Säckel in the court', () => {
     const page = await get(`${hers}/edit`, owner.cookie);
     assert.equal(page.status, 404);
     const text = await page.text();
-    assert.ok(text.includes('<h1>Такой тропы во дворе нет</h1>'));
+    assert.ok(text.includes(NOT_FOUND_H1));
     assert.equal(text, missing);
     const save = await post(`${hers}/edit`, { name: 'Чужое', icon: 'cart' }, owner.cookie);
     assert.equal(save.status, 404);
@@ -629,7 +633,7 @@ describe('Säckel in the court', () => {
         await post(path, { name: 'x' }, cookie),
       ]) {
         assert.equal(res.status, 404, path);
-        assert.ok((await res.text()).includes('<h1>Такой тропы во дворе нет</h1>'), path);
+        assert.ok((await res.text()).includes(NOT_FOUND_H1), path);
       }
     }
   });
@@ -644,7 +648,7 @@ describe('Säckel in the court', () => {
       const res = await post('/saeckel/pouches/new', { name: 'Тайный мешок' }, cookie);
       assert.equal(res.status, 500);
       const page = await res.text();
-      assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'));
+      assert.ok(page.includes(SERVER_ERROR_H1));
       assert.ok(!page.includes('Тайный мешок'));
     } finally {
       await saeckelPool.query('ALTER TABLE pouches DROP CONSTRAINT IF EXISTS pouches_none');
@@ -690,7 +694,7 @@ describe('Säckel in the court', () => {
     const hers = await makePouch('Анины деньги', anna.cookie);
     const res = await post(`${hers}/expense`, { amount: '100', date: '', note: '' }, owner.cookie);
     assert.equal(res.status, 404);
-    assert.ok((await res.text()).includes('<h1>Такой тропы во дворе нет</h1>'));
+    assert.ok((await res.text()).includes(NOT_FOUND_H1));
     const { rows } = await saeckelPool.query('SELECT 1 FROM operations');
     assert.equal(rows.length, 0);
   });
@@ -713,7 +717,7 @@ describe('Säckel in the court', () => {
       );
       assert.equal(res.status, 500);
       const page = await res.text();
-      assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'));
+      assert.ok(page.includes(SERVER_ERROR_H1));
       assert.ok(!page.includes('тайная'));
     } finally {
       await saeckelPool.query('DROP TRIGGER IF EXISTS operations_no_insert ON operations');
@@ -754,7 +758,7 @@ describe('Säckel in the court', () => {
       const res = await post(path, {}, owner.cookie);
       assert.equal(res.status, 404, path);
       const page = await res.text();
-      assert.ok(page.includes('<h1>Такой тропы во дворе нет</h1>'), path);
+      assert.ok(page.includes(NOT_FOUND_H1), path);
       assert.equal(page, missing, path);
     }
     const { rows } = await saeckelPool.query('SELECT name, is_archived FROM pouches ORDER BY id');
@@ -781,7 +785,7 @@ describe('Säckel in the court', () => {
         const res = await post(path, {}, cookie);
         assert.equal(res.status, 500, path);
         const page = await res.text();
-        assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'), path);
+        assert.ok(page.includes(SERVER_ERROR_H1), path);
         assert.ok(!page.includes('Тайный'), path);
       }
     } finally {
@@ -853,7 +857,7 @@ describe('Säckel in the court', () => {
         const res = await post(path, fields, cookie);
         assert.equal(res.status, 500, path);
         const page = await res.text();
-        assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'), path);
+        assert.ok(page.includes(SERVER_ERROR_H1), path);
         assert.ok(!page.includes('тайная') && !page.includes('Тайный'), path);
       }
     } finally {
@@ -951,7 +955,7 @@ describe('Säckel in the court', () => {
       assert.equal(res.status, 500);
       assert.equal(res.headers.get('location'), null);
       const page = await res.text();
-      assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'));
+      assert.ok(page.includes(SERVER_ERROR_H1));
       assert.ok(!page.includes('тайная') && !page.includes('Тайн'));
     } finally {
       await saeckelPool.query('DROP TRIGGER IF EXISTS operations_no_insert ON operations');
@@ -1003,7 +1007,7 @@ describe('Säckel in the court', () => {
       const res = await get(path, owner.cookie);
       assert.equal(res.status, 404, path);
       const page = await res.text();
-      assert.ok(page.includes('<h1>Такой тропы во дворе нет</h1>'), path);
+      assert.ok(page.includes(NOT_FOUND_H1), path);
       assert.equal(page, missing, path);
     }
     // His own Летопись is his: empty, with the usual headers.
@@ -1051,7 +1055,7 @@ describe('Säckel in the court', () => {
     ]) {
       assert.equal(res.status, 404);
       const page = await res.text();
-      assert.ok(page.includes('<h1>Такой тропы во дворе нет</h1>'));
+      assert.ok(page.includes(NOT_FOUND_H1));
       assert.equal(page, missing);
     }
     const { rows } = await saeckelPool.query('SELECT amount::text, note FROM operations');
@@ -1086,7 +1090,7 @@ describe('Säckel in the court', () => {
       assert.equal(res.status, 500);
       assert.equal(res.headers.get('location'), null);
       const page = await res.text();
-      assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'));
+      assert.ok(page.includes(SERVER_ERROR_H1));
       assert.ok(!page.includes('тайная') && !page.includes('Тайный'));
     } finally {
       await saeckelPool.query('DROP TRIGGER IF EXISTS operations_no_update ON operations');
@@ -1135,7 +1139,7 @@ describe('Säckel in the court', () => {
     const res = await post(`/saeckel/operations/${record}/delete`, {}, owner.cookie);
     assert.equal(res.status, 404);
     const page = await res.text();
-    assert.ok(page.includes('<h1>Такой тропы во дворе нет</h1>'));
+    assert.ok(page.includes(NOT_FOUND_H1));
     assert.equal(page, missing);
     const { rows } = await saeckelPool.query('SELECT amount::text, note FROM operations');
     assert.deepEqual(rows, [{ amount: '10000', note: 'её' }]);
@@ -1164,7 +1168,7 @@ describe('Säckel in the court', () => {
       assert.equal(res.status, 500);
       assert.equal(res.headers.get('location'), null);
       const page = await res.text();
-      assert.ok(page.includes('<h1>Во дворе что-то стряслось</h1>'));
+      assert.ok(page.includes(SERVER_ERROR_H1));
       assert.ok(!page.includes('тайная') && !page.includes('Тайный'));
     } finally {
       await saeckelPool.query('DROP TRIGGER IF EXISTS operations_no_delete ON operations');

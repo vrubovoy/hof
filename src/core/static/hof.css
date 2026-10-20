@@ -315,10 +315,16 @@ a {
   padding-bottom: 3px;
   background: url(img/pen-underline.svg) left bottom / 100% 5px no-repeat;
 }
-.link-plain {
+.link-plain,
+.link {
   font-weight: 600;
   text-decoration: none;
   color: var(--blue);
+}
+/* ссылка рядом с кнопкой: подчёркивание пером */
+.link {
+  padding-bottom: 3px;
+  background: url(img/pen-underline.svg) left bottom / 100% 5px no-repeat;
 }
 
 /* бирка состояния: контур пером */
@@ -1365,6 +1371,177 @@ a {
   .blot-card-splatter,
   .blot-card-drip,
   .blot-card-small {
+    display: none;
+  }
+}
+
+/* страницы ошибок — States (404), Error403, Error500, ErrorMobile: на компьютере картина на всё
+   окно, текст на бумаге справа; на телефоне картина сверху */
+.error {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  min-height: 100vh;
+}
+.error-scene img {
+  display: block;
+}
+.error-paper {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* знак — ссылка во Двор по размеру самого знака, а не во всю колонку */
+.error .logo {
+  align-self: flex-start;
+}
+.error .logo b {
+  font-size: 30px;
+}
+.error .sprig {
+  width: 220px;
+  margin: 0;
+}
+.error-paper p {
+  margin: 0;
+}
+.error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  margin-top: 8px;
+}
+
+@media (min-width: 1024px) {
+  /* колонка 500 px при 1440, как в прототипе, на узком окне уже */
+  .error {
+    --column: clamp(440px, 34.72vw, 500px);
+    justify-content: flex-end;
+    align-items: center;
+  }
+  .error-scene img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: left center;
+  }
+  .error-paper {
+    width: var(--column);
+    padding: 0 70px 0 10px;
+  }
+  .error .title {
+    margin-top: 18px;
+  }
+  /* кляксы в кадре 1440×900, от правого края */
+  .blot-error-ink-drip {
+    right: 18px;
+    top: 60px;
+    width: 22px;
+    opacity: 0.7;
+  }
+  .blot-error-ink-ring {
+    right: 50px;
+    bottom: 4px;
+    width: 100px;
+    opacity: 0.42;
+    transform: rotate(-12deg);
+  }
+  .blot-error-ink-blot-small {
+    right: 26px;
+    top: 70px;
+    width: 44px;
+    opacity: 0.7;
+  }
+  .blot-error-ink-splatter-b {
+    right: 52px;
+    bottom: 29px;
+    width: 88px;
+    opacity: 0.5;
+    transform: rotate(10deg);
+  }
+  .blot-error-ink-blot-medium {
+    right: 34px;
+    top: 60px;
+    width: 56px;
+    opacity: 0.6;
+    transform: rotate(20deg);
+  }
+  .blot-error-ink-splatter-a {
+    right: 130px;
+    bottom: 27px;
+    width: 70px;
+    opacity: 0.5;
+    transform: rotate(-10deg);
+  }
+}
+/* Рисунок кончается на 62 % ширины картинки: при 3:2 и шире он не доходит до текста. На окне уже
+   3:2 он заходит под колонку — там он растворяется в бумаге до начала текста, как на воротах */
+@media (min-width: 1024px) and (max-aspect-ratio: 3/2) {
+  .error-scene img {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      #000 calc(100% - var(--column)),
+      transparent calc(100% - var(--column) + 64px)
+    );
+    mask-image: linear-gradient(
+      to right,
+      #000 calc(100% - var(--column)),
+      transparent calc(100% - var(--column) + 64px)
+    );
+  }
+}
+
+/* телефон — кадр ErrorMobile: квадрат картины сверху (на широком окне не выше 55 % экрана, тогда
+   виден низ картины), снизу растворяется в бумаге; кнопка во всю ширину */
+@media (max-width: 1023.98px) {
+  .error {
+    flex-direction: column;
+    min-height: 100svh;
+  }
+  .error-scene {
+    position: relative;
+    overflow: hidden;
+    height: min(100vw, 55vh);
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 70px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 70px), transparent);
+  }
+  .error-scene img {
+    position: absolute;
+    left: -10.26vw;
+    bottom: -4.274vw;
+    width: 164.1vw;
+    max-width: none;
+  }
+  .error-paper {
+    gap: 10px;
+    padding: 0 24px 20px;
+  }
+  .error .logo img {
+    width: 32px;
+    height: 32px;
+  }
+  .error .logo b {
+    font-size: 26px;
+  }
+  .error .title {
+    font-size: 33px;
+  }
+  .error .sprig {
+    width: 170px;
+  }
+  .error-actions {
+    justify-content: center;
+    margin-top: 0;
+  }
+  .error-actions .btn {
+    width: 100%;
+  }
+  .error .blot {
     display: none;
   }
 }
