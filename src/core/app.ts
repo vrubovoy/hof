@@ -36,11 +36,16 @@ import {
 } from './sessions.ts';
 import { parseUsername } from './username.ts';
 
-// One entry of «Службы двора» on the courtyard.
+// One entry of «Службы двора»: the name, the address and the emblem, which the service keeps
+// among its own static files.
 export interface Service {
   name: string;
   path: string;
+  emblem: string;
 }
+
+// The place of Hof a page belongs to, marked as the current one in the banner and the top bar.
+type Place = 'courtyard' | 'users' | 'account';
 
 type CoreEnv = { Variables: { user: CurrentUser } };
 
@@ -150,17 +155,77 @@ const FORBIDDEN_PAGE = page(
     <p><a href="/">Во двор</a></p>`,
 );
 
-// The places of Hof (ARCHITECTURE.md §6): Двор, Приближённые (the administrator only), Мои
-// покои — without the one the page itself is.
-function nav(user: CurrentUser, here: string) {
-  const places = [
-    { path: '/', name: 'Двор' },
-    ...(user.isAdmin ? [{ path: '/admin/users', name: 'Приближённые' }] : []),
-    { path: '/account', name: 'Мои покои' },
-  ].filter((place) => place.path !== here);
-  return html`<nav>
-    ${places.map((place) => html`<a href="${place.path}">${place.name}</a> `)}
-  </nav>`;
+// The pages of a signed-in person (design/preview/Home.html, HomeMobile.html): on a computer the
+// blue banner the whole height of the window — Двор, the services, Приближённые of the
+// administrator, Мои покои and the way out; on the phone the bar at the top — the mark to the
+// courtyard, the candle to Мои покои. CSS shows one of the two, so the hidden one takes no focus.
+// «Покинуть двор» is a form: sign-out is POST only (§4.2).
+function shell(
+  user: CurrentUser,
+  services: readonly Service[],
+  here: Place,
+  title: string,
+  main: { class: string; body: HtmlEscapedString | Promise<HtmlEscapedString> },
+) {
+  const current = (place: Place) => (place === here ? html`aria-current="page"` : '');
+  return page(
+    title,
+    html`<div class="shell">
+      <nav class="banner" aria-label="Hof">
+        <a class="logo" href="/">
+          <img src="/static/img/hof-mark-white.svg" width="44" height="44" alt="" />
+          <span><b>Hof</b><small>Ваш личный двор</small></span>
+        </a>
+        <a class="nav" href="/" ${current('courtyard')}>
+          <img src="/static/img/emblem-fountain-small.webp" alt="" />Двор
+        </a>
+        ${
+          services.length === 0
+            ? ''
+            : html`<div class="nav-label">Службы двора</div>
+                ${services.map(
+                  (service) =>
+                    html`<a class="nav" href="${service.path}">
+                      <img src="${service.emblem}" alt="" />${service.name}
+                    </a>`,
+                )}`
+        }
+        ${
+          user.isAdmin
+            ? html`<div class="nav-label">Хозяйство</div>
+                <a class="nav" href="/admin/users" ${current('users')}>
+                  <img src="/static/img/emblem-keys-small.webp" alt="" />Приближённые
+                </a>`
+            : ''
+        }
+        <div class="banner-foot">
+          <a class="nav" href="/account" ${current('account')}>
+            <img src="/static/img/emblem-candle-small.webp" alt="" />
+            <span class="nav-who">
+              <span>Мои покои</span>
+              <span class="small"
+                >${user.isAdmin ? `${user.username} · хозяин` : user.username}</span
+              >
+            </span>
+          </a>
+          <form method="post" action="/logout">
+            <button type="submit" class="nav">
+              <img src="/static/img/emblem-door-closed-small.webp" alt="" />Покинуть двор
+            </button>
+          </form>
+        </div>
+      </nav>
+      <header class="m-top">
+        <a class="logo" href="/">
+          <img src="/static/img/hof-mark.svg" width="32" height="32" alt="" /><b>Hof</b>
+        </a>
+        <a class="m-chambers" href="/account" aria-label="Мои покои" ${current('account')}>
+          <img src="/static/img/emblem-candle-small.webp" width="34" height="34" alt="" />
+        </a>
+      </header>
+      <main class="${main.class}">${main.body}</main>
+    </div>`,
+  );
 }
 
 // The mark of Hof with its caption; the picture says nothing the text does not.
@@ -376,27 +441,95 @@ function loginPage(form: LoginForm) {
   );
 }
 
-// Minimal courtyard: the place, the services of this installation, who is signed in, the way out.
-function courtyardPage(user: CurrentUser, services: readonly Service[]) {
-  return page(
-    'Hof — двор',
-    html`${nav(user, '/')}
-      <h1>Двор</h1>
-      <p>${user.username}</p>
-      <h2>Службы двора</h2>
-      <ul>
-        ${services.map((service) => html`<li><a href="${service.path}">${service.name}</a></li>`)}
-      </ul>
-      <form method="post" action="/logout">
-        <button type="submit">Покинуть двор</button>
-      </form>`,
-  );
+// Texts and pictures from design/preview/Home.html and HomeMobile.html. On a computer the places
+// are signs on the map: the first service of the list at the door of the treasury, Приближённые
+// at the gatehouse (the administrator only), Мои покои at the tower. On the phone the same places
+// are signs in a list under the map. «Добрый день!» is the one h1 of both. The note «Пока во
+// дворе только вы» is for the administrator while nobody else belongs to the court.
+function courtyardPage(user: CurrentUser, services: readonly Service[], alone: boolean) {
+  const treasury = services[0];
+  const users = (sign: string) =>
+    user.isAdmin ? html`<a class="${sign}" href="/admin/users"><span>Приближённые</span></a>` : '';
+  return shell(user, services, 'courtyard', 'Hof — двор', {
+    class: 'court',
+    body: html`<h1 class="ribbon court-title"><span>Добрый день!</span></h1>
+      <div class="court-map">
+        <div class="court-inner">
+          <img
+            src="/static/img/scene-courtyard-map.webp"
+            srcset="
+              /static/img/scene-courtyard-map.webp    1536w,
+              /static/img/scene-courtyard-map@2x.webp 3072w
+            "
+            sizes="(max-width: 1023.98px) 100vw, calc(100vw - 288px)"
+            alt="Двор замка: ворота со сторожкой, казначейская, башня с покоями, фонтан посередине"
+          />
+          ${users('sign at-gatehouse')}
+          ${
+            treasury === undefined
+              ? ''
+              : html`<a class="sign at-treasury" href="${treasury.path}"
+                  ><span>${treasury.name}</span></a
+                >`
+          }
+          <a class="sign at-tower" href="/account"><span>Мои покои</span></a>
+        </div>
+      </div>
+      <nav class="court-places" aria-label="Места двора">
+        ${services.map(
+          (service) =>
+            html`<a class="sign sign-sm" href="${service.path}"><span>${service.name}</span></a>`,
+        )}
+        ${users('sign sign-sm')}
+        <a class="sign sign-sm" href="/account"><span>Мои покои</span></a>
+      </nav>
+      <div class="court-below">
+        <div class="court-note">
+          <h2 class="title t-2">Ваш двор в порядке</h2>
+          <img class="sprig" src="/static/img/sprig-divider.webp" alt="" />
+          <p class="muted">
+            Вывески на карте ведут в службы и комнаты. Те же места всегда есть в знамени слева.
+          </p>
+        </div>
+        ${
+          alone
+            ? html`<aside class="court-alone framed">
+                <h2 class="title t-3">Пока во дворе только вы</h2>
+                <p class="small muted">
+                  Примите приближённых: у каждого будет свой ключ и свои мешки.
+                </p>
+                <a class="btn" href="/admin/users">Принять ко двору</a>
+              </aside>`
+            : ''
+        }
+        <img class="blot blot-court-drip" src="/static/img/ink-drip.webp" alt="" loading="lazy" />
+        <img
+          class="blot blot-court-small"
+          src="/static/img/ink-blot-small.webp"
+          alt=""
+          loading="lazy"
+        />
+        <img
+          class="blot blot-court-splatter-b"
+          src="/static/img/ink-splatter-b.webp"
+          alt=""
+          loading="lazy"
+        />
+        <img class="blot blot-court-ring" src="/static/img/ink-ring.webp" alt="" loading="lazy" />
+      </div>
+      <img
+        class="blot blot-court-splatter-a"
+        src="/static/img/ink-splatter-a.webp"
+        alt=""
+        loading="lazy"
+      />`,
+  });
 }
 
 // Texts from design/preview/Account.html: who is signed in, the change of the password, the way
 // out. The «Звуки и движение» block comes with the effects (M10). No password is ever written
 // back into the page.
-function accountPage(user: CurrentUser, form: AccountForm) {
+function accountPage(user: CurrentUser, services: readonly Service[], form: AccountForm) {
   const describedBy = (field: PasswordField, hint?: string) => {
     const ids = [hint, form.error?.field === field ? `${field}-error` : undefined].filter(Boolean);
     const invalid = form.error?.field === field ? html`aria-invalid="true"` : '';
@@ -405,10 +538,9 @@ function accountPage(user: CurrentUser, form: AccountForm) {
   const error = (field: PasswordField) =>
     form.error?.field === field ? html`<p id="${field}-error">${form.error.text}</p>` : '';
 
-  return page(
-    'Hof — мои покои',
-    html`${nav(user, '/account')}
-      <h1>Мои покои</h1>
+  return shell(user, services, 'account', 'Hof — мои покои', {
+    class: 'room',
+    body: html`<h1>Мои покои</h1>
       <p>${user.isAdmin ? `${user.username} · хозяин двора` : user.username}</p>
       ${form.done ? html`<p>Пароль сменён.</p>` : ''}
       <h2>Сменить пароль</h2>
@@ -458,13 +590,18 @@ function accountPage(user: CurrentUser, form: AccountForm) {
         <button type="submit" aria-describedby="logout-hint">Покинуть двор</button>
       </form>
       <p id="logout-hint">на этом устройстве; всё во дворе останется на месте</p>`,
-  );
+  });
 }
 
 // Texts from design/preview/Users.html and UsersEmpty.html: everybody of the court, the
 // administrator first, and the form for a new user. The initial password is shown while it is
 // typed, so it can be passed on, but never written back into the page.
-function usersPage(user: CurrentUser, people: readonly Person[], form: NewUserForm) {
+function usersPage(
+  user: CurrentUser,
+  services: readonly Service[],
+  people: readonly Person[],
+  form: NewUserForm,
+) {
   const describedBy = (field: NewUserField, hint?: string) => {
     const ids = [hint, form.error?.field === field ? `${field}-error` : undefined].filter(Boolean);
     const invalid = form.error?.field === field ? html`aria-invalid="true"` : '';
@@ -474,10 +611,9 @@ function usersPage(user: CurrentUser, people: readonly Person[], form: NewUserFo
     form.error?.field === field ? html`<p id="${field}-error">${form.error.text}</p>` : '';
   const others = people.filter((person) => !person.is_admin);
 
-  return page(
-    'Hof — приближённые',
-    html`${nav(user, '/admin/users')}
-      <h1>Приближённые</h1>
+  return shell(user, services, 'users', 'Hof — приближённые', {
+    class: 'room',
+    body: html`<h1>Приближённые</h1>
       ${
         form.created === undefined
           ? ''
@@ -532,22 +668,26 @@ function usersPage(user: CurrentUser, people: readonly Person[], form: NewUserFo
         </p>
         <button type="submit">Принять</button>
       </form>`,
-  );
+  });
 }
 
 // Texts from design/preview/User.html: the person, their key and the reset of their password.
 // The new password is shown while it is typed, so it can be passed on, but never written back
 // into the page.
-function memberPage(user: CurrentUser, member: Member, form: ResetForm) {
+function memberPage(
+  user: CurrentUser,
+  services: readonly Service[],
+  member: Member,
+  form: ResetForm,
+) {
   const describedBy =
     form.error === undefined
       ? html`aria-describedby="password-hint"`
       : html`aria-invalid="true" aria-describedby="password-hint password-error"`;
 
-  return page(
-    `Hof — ${member.username}`,
-    html`${nav(user, '/admin/users')}
-      <p><a href="/admin/users">Приближённые</a></p>
+  return shell(user, services, 'users', `Hof — ${member.username}`, {
+    class: 'room',
+    body: html`<p><a href="/admin/users">Приближённые</a></p>
       <h1>${member.username}</h1>
       <p>${keyStatus(member)}</p>
       ${
@@ -592,7 +732,7 @@ function memberPage(user: CurrentUser, member: Member, form: ResetForm) {
                 <button type="submit">Забрать ключ</button>
               </form>`
       }`,
-  );
+  });
 }
 
 // Whether a person has the key of the court.
@@ -611,6 +751,14 @@ async function listPeople(pool: Pool): Promise<Person[]> {
     'SELECT id, username, is_admin, is_disabled FROM users ORDER BY is_admin DESC, username',
   );
   return rows;
+}
+
+// Whether anybody but the administrator belongs to the court, with the key or without it.
+async function hasMembers(pool: Pool): Promise<boolean> {
+  const { rows } = await pool.query<{ members: boolean }>(
+    'SELECT EXISTS (SELECT 1 FROM users WHERE NOT is_admin) AS members',
+  );
+  return rows[0]!.members;
 }
 
 // §4.7: an id from the path — digits without a leading zero, at most MAX_ID — or null.
@@ -888,11 +1036,16 @@ export function createCoreApp(
   for (const path of PROTECTED_PATHS) core.use(path, signedIn);
   for (const path of ADMIN_PATHS) core.use(path, signedIn, administratorOnly);
 
-  core.get('/', (c) => c.html(courtyardPage(c.get('user'), services)));
+  // The note «Пока во дворе только вы» costs one EXISTS, for the administrator only.
+  core.get('/', async (c) => {
+    const user = c.get('user');
+    const alone = user.isAdmin && !(await hasMembers(pool));
+    return c.html(courtyardPage(user, services, alone));
+  });
 
   // Мои покои. `done` is a flag from a fixed list; anything else is ignored (§4.1).
   core.get('/account', (c) =>
-    c.html(accountPage(c.get('user'), { done: c.req.query('done') === 'password' })),
+    c.html(accountPage(c.get('user'), services, { done: c.req.query('done') === 'password' })),
   );
 
   // Change of one's own password (§4.2, §4.3, §4.8). Every Argon2 runs before the transaction;
@@ -906,7 +1059,7 @@ export function createCoreApp(
       return typeof value === 'string' ? value : '';
     };
     const refuse = (field: PasswordField, message: string) =>
-      c.html(accountPage(user, { done: false, error: { field, text: message } }), 400);
+      c.html(accountPage(user, services, { done: false, error: { field, text: message } }), 400);
     const wrongCurrent = () => refuse('current', 'Текущий пароль не подходит.');
 
     // The form first, without Argon2. Like at sign-in, only the maximum applies to the current
@@ -991,7 +1144,9 @@ export function createCoreApp(
     const people = await listPeople(pool);
     const createdId = c.req.query('created');
     const created = people.find((person) => !person.is_admin && String(person.id) === createdId);
-    return c.html(usersPage(c.get('user'), people, { username: '', created: created?.username }));
+    return c.html(
+      usersPage(c.get('user'), services, people, { username: '', created: created?.username }),
+    );
   });
 
   // «Принять ко двору» (§4.1, §4.3): a new user with the initial password the administrator
@@ -1006,7 +1161,7 @@ export function createCoreApp(
     const typedUsername = text('username');
     const refuse = async (field: NewUserField, message: string) =>
       c.html(
-        usersPage(administrator, await listPeople(pool), {
+        usersPage(administrator, services, await listPeople(pool), {
           username: typedUsername,
           error: { field, text: message },
         }),
@@ -1058,7 +1213,9 @@ export function createCoreApp(
   core.get('/admin/users/:id', async (c) => {
     const member = await findMember(pool, c.req.param('id'));
     if (member === null) return c.notFound();
-    return c.html(memberPage(c.get('user'), member, { done: c.req.query('done') === 'password' }));
+    return c.html(
+      memberPage(c.get('user'), services, member, { done: c.req.query('done') === 'password' }),
+    );
   });
 
   // The reset of a person's password by the administrator (§4.2, §4.3, §4.8): the person first,
@@ -1074,7 +1231,7 @@ export function createCoreApp(
     const passwordError = newPasswordError(password);
     if (passwordError !== null) {
       return c.html(
-        memberPage(administrator, member, { done: false, error: `${passwordError}.` }),
+        memberPage(administrator, services, member, { done: false, error: `${passwordError}.` }),
         400,
       );
     }
