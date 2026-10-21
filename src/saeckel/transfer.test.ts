@@ -100,13 +100,13 @@ describe('the page «Переложить»', () => {
     const folded = fold(page);
     for (const text of [
       '<title>Säckel — переложить</title>',
-      '<h1>Переложить из мешка в мешок</h1>',
-      '<form method="post" action="/saeckel/transfer">',
+      '<h1 class="title t-2">Переложить из мешка в мешок</h1>',
+      '<form class="entry" method="post" action="/saeckel/transfer">',
       '<label for="from">Из мешка</label>',
       '<label for="to">В мешок</label>',
       '<label for="amount">Сумма, ₽</label>',
       `value="${dateForField(todayInCourt())}"`,
-      '<button type="submit">Переложить</button>',
+      '<button type="submit" class="btn btn-ochre">Переложить</button>',
     ]) {
       assert.ok(folded.includes(text), text);
     }
@@ -240,8 +240,8 @@ describe('Переложить', () => {
     const res = await transfer({ from: '', to: '', amount: '760', note: 'заметка' });
     assert.equal(res.status, 400);
     const page = fold(await res.text());
-    assert.ok(page.includes(`<p id="from-error">${CHOOSE}</p>`));
-    assert.ok(page.includes(`<p id="to-error">${CHOOSE}</p>`));
+    assert.ok(page.includes(`<p id="from-error" class="err-text">${CHOOSE}</p>`));
+    assert.ok(page.includes(`<p id="to-error" class="err-text">${CHOOSE}</p>`));
     assert.ok(page.includes('aria-describedby="from-error"'));
     assert.ok(page.includes('value="760"'));
     assert.ok(page.includes('value="заметка"'));
@@ -253,7 +253,7 @@ describe('Переложить', () => {
     const res = await transfer({ from: String(food), to: String(food), amount: '1' });
     assert.equal(res.status, 400);
     const page = await res.text();
-    assert.ok(page.includes(`<p id="to-error">${SAME}</p>`));
+    assert.ok(page.includes(`<p id="to-error" class="err-text">${SAME}</p>`));
     assert.ok(!page.includes('from-error'));
     assert.deepEqual(chosen(page, 'from'), [String(food)]);
     assert.deepEqual(await operations(), []);
@@ -268,7 +268,7 @@ describe('Переложить', () => {
       const res = await transfer({ from: String(id), to: String(id), amount: '1' });
       assert.equal(res.status, 400, String(id));
       const page = await res.text();
-      assert.ok(page.includes(`<p id="from-error">${MISSING}</p>`), String(id));
+      assert.ok(page.includes(`<p id="from-error" class="err-text">${MISSING}</p>`), String(id));
       assert.ok(!page.includes(SAME), String(id));
       assert.ok(!page.includes('Тайный'), String(id));
       pages.push(page);
@@ -284,7 +284,10 @@ describe('Переложить', () => {
     for (const wrong of ['abc', '01', '0', '-1', '2147483648', ' ']) {
       const res = await transfer({ from: wrong, to: String(food), amount: '1' });
       assert.equal(res.status, 400, wrong);
-      assert.ok((await res.text()).includes(`<p id="from-error">${MISSING}</p>`), wrong);
+      assert.ok(
+        (await res.text()).includes(`<p id="from-error" class="err-text">${MISSING}</p>`),
+        wrong,
+      );
     }
     assert.deepEqual(await operations(), []);
   });
@@ -300,14 +303,14 @@ describe('Переложить', () => {
       const res = await transfer({ from: String(from), to: String(to), amount: '1' });
       assert.equal(res.status, 400);
       const page = await res.text();
-      assert.ok(page.includes(`<p id="from-error">${MISSING}</p>`));
+      assert.ok(page.includes(`<p id="from-error" class="err-text">${MISSING}</p>`));
       assert.ok(!page.includes('Тайный'));
       pages.push(page);
     }
     assert.equal(pages[0], pages[1]);
     const into = await transfer({ from: String(food), to: String(his), amount: '1' });
     assert.equal(into.status, 400);
-    assert.ok((await into.text()).includes(`<p id="to-error">${MISSING}</p>`));
+    assert.ok((await into.text()).includes(`<p id="to-error" class="err-text">${MISSING}</p>`));
     assert.deepEqual(await operations(), []);
     await assertNothingHeld(food);
   });
@@ -320,7 +323,9 @@ describe('Переложить', () => {
       const res = await transfer({ from: String(fields.from), to: String(fields.to), amount: '1' });
       assert.equal(res.status, 400);
       assert.ok(
-        (await res.text()).includes(`<p id="${role}-error">${archivedRefusal('Старый')}</p>`),
+        (await res.text()).includes(
+          `<p id="${role}-error" class="err-text">${archivedRefusal('Старый')}</p>`,
+        ),
       );
       assert.deepEqual(await operations(), []);
       await assertNothingHeld(food);
@@ -534,7 +539,7 @@ describe('Переложить and others at once', () => {
           const name = role === 'source' ? 'Источник' : 'Цель';
           assert.ok(
             (await answers.transfer!.text()).includes(
-              `<p id="${field}-error">${archivedRefusal(name)}</p>`,
+              `<p id="${field}-error" class="err-text">${archivedRefusal(name)}</p>`,
             ),
           );
           assert.equal(await isArchived(archived), true);

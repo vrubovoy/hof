@@ -11,6 +11,7 @@ import {
   addOperation,
   addPouch,
   appWithoutDatabase,
+  assignRows,
   assertNothingHeld,
   deadPool,
   failingTrigger,
@@ -22,6 +23,7 @@ import {
   post,
   pouchLines,
   pouches,
+  textOf,
   treasurySum,
   waitingQueries,
   wayBack,
@@ -58,16 +60,6 @@ function archive(id: number, who = 'anna') {
 // The sum the block «Казна» shows on a page, with whitespace folded.
 function treasury(page: string): string | undefined {
   return treasurySum(page);
-}
-
-// The rows of «Разложить»: the name, the balance and what is in the field.
-function assignRows(page: string): string[][] {
-  const body = /<tbody>([\s\S]*?)<\/tbody>/.exec(page)?.[1] ?? '';
-  return [...body.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map((row) => {
-    const cells = [...row[1]!.matchAll(/<td>\s*([^<]*?)\s*</g)].map((m) => fold(m[1]!));
-    const value = /value="([^"]*)"/.exec(row[1]!)?.[1] ?? '';
-    return [cells[0]!, cells[1]!, value];
-  });
 }
 
 async function isArchived(id: number): Promise<boolean> {
@@ -130,13 +122,13 @@ describe('Доход', () => {
     const page = fold(await res.text());
     for (const text of [
       '<title>Säckel — доход</title>',
-      '<h1>Доход</h1>',
-      '<form method="post" action="/saeckel/income">',
+      '<h1 class="title t-2">Доход</h1>',
+      '<form class="entry" method="post" action="/saeckel/income">',
       '<label for="amount">Сумма, ₽</label>',
       'inputmode="decimal"',
       `value="${dateForField(todayInCourt())}"`,
-      '<p>Деньги лягут в казну. После записи откроется раскладка по мешкам — её можно отложить.</p>',
-      '<button type="submit">Записать доход</button>',
+      '<p class="hint"> Деньги лягут в казну. После записи откроется раскладка по мешкам — её можно отложить. </p>',
+      '<button type="submit" class="btn btn-ochre">Записать доход</button>',
     ]) {
       assert.ok(page.includes(text), text);
     }
@@ -196,7 +188,7 @@ describe('Доход', () => {
       '<p id="note-error" class="err-text">Заметка — до 200 символов, одной строкой.</p>',
       'value="1,2,3"',
       'value="31.02.2026"',
-      '<form method="post" action="/saeckel/income">',
+      '<form class="entry" method="post" action="/saeckel/income">',
     ]) {
       assert.ok(page.includes(text), text);
     }
@@ -233,17 +225,17 @@ describe('the page «Разложить»', () => {
     const folded = fold(page);
     for (const text of [
       '<title>Säckel — разложить</title>',
-      '<h1>Разложить по мешкам</h1>',
-      '<p>В казне: 1 000,00 ₽. Пустые поля пропускаются.</p>',
-      '<form method="post" action="/saeckel/assign">',
-      '<th>Мешок</th> <th>Сейчас в мешке</th> <th>Положить, ₽</th>',
+      '<h1 class="title t-2">Разложить по мешкам</h1>',
+      '<form class="assign" method="post" action="/saeckel/assign">',
+      '<th>Мешок</th> <th class="num">Сейчас в мешке</th> <th class="put-head">Положить, ₽</th>',
       `name="amount_${food}"`,
       'aria-label="Положить в мешок Продукты"',
-      '<button type="submit">Разложить</button>',
-      '<p><a href="/saeckel/">Позже — вернуться к мешкам</a></p>',
+      '<button type="submit" class="btn btn-ochre">Разложить</button>',
+      '<a class="link" href="/saeckel/">Позже — вернуться к мешкам</a>',
     ]) {
       assert.ok(folded.includes(text), text);
     }
+    assert.ok(textOf(mainPart(page)).includes('В казне: 1 000,00 ₽. Пустые поля пропускаются.'));
     assert.deepEqual(assignRows(page), [
       ['Продукты', '0,00 ₽', ''],
       ['Квартира', '−1 240,50 ₽', ''],
@@ -263,9 +255,10 @@ describe('the page «Разложить»', () => {
     await addPouch(1, 'Старый', true);
     await addOperation(1, 'income', 500);
     const page = fold(await (await get('/saeckel/assign', 'anna')).text());
-    assert.ok(page.includes('<p>В казне: 5,00 ₽.</p>'));
-    assert.ok(page.includes('<h2>Мешков пока нет</h2>'));
-    assert.ok(page.includes('<a href="/saeckel/pouches/new">+ Новый мешок</a>'));
+    assert.ok(textOf(mainPart(page)).includes('В казне: 5,00 ₽.'));
+    assert.ok(!page.includes('Пустые поля пропускаются'));
+    assert.ok(page.includes('<h2 class="title t-3">Мешков пока нет</h2>'));
+    assert.ok(page.includes('<a class="link" href="/saeckel/pouches/new">+ Новый мешок</a>'));
     // No form of laying out; the only forms are «Вернуть» of the storeroom in the column.
     assert.ok(!mainPart(page).includes('<form'));
   });
@@ -273,11 +266,11 @@ describe('the page «Разложить»', () => {
   test('an income of this user is named above the rows', async () => {
     await addPouch(1, 'Продукты');
     const id = await addOperation(1, 'income', 8_000_000);
-    const page = fold(await (await get(`/saeckel/assign?income=${id}`, 'anna')).text());
-    assert.ok(
-      page.includes(
-        '<p> Доход 80 000,00 ₽ лёг в казну. Разложите его по мешкам или оставьте в казне на потом. </p>',
-      ),
+    const page = await (await get(`/saeckel/assign?income=${id}`, 'anna')).text();
+    const note = /<p class="note">([\s\S]*?)<\/p>/.exec(page)?.[1] ?? '';
+    assert.equal(
+      textOf(note),
+      'Доход 80 000,00 ₽ лёг в казну. Разложите его по мешкам или оставьте в казне на потом.',
     );
   });
 
@@ -340,7 +333,9 @@ describe('Разложить', () => {
     for (const fields of [{ [`amount_${food}`]: '', [`amount_${flat}`]: '   ' }, {}]) {
       const res = await assign(fields);
       assert.equal(res.status, 400);
-      assert.ok((await res.text()).includes(`<p id="refusal">${EMPTY}</p>`));
+      assert.ok(
+        (await res.text()).includes(`<p id="refusal" class="note note-error">${EMPTY}</p>`),
+      );
     }
     assert.deepEqual(await operations(), []);
   });
@@ -351,7 +346,7 @@ describe('Разложить', () => {
     const res = await assign({ [`amount_${food}`]: '100', [`amount_${flat}`]: '1,2,3' });
     assert.equal(res.status, 400);
     const page = await res.text();
-    assert.ok(page.includes(`<p id="amount_${flat}-error">${FORMAT}</p>`));
+    assert.ok(page.includes(`<p id="amount_${flat}-error" class="err-text">${FORMAT}</p>`));
     assert.ok(fold(page).includes(`aria-describedby="amount_${flat}-error"`));
     assert.deepEqual(assignRows(page), [
       ['Продукты', '0,00 ₽', '100'],
@@ -371,7 +366,9 @@ describe('Разложить', () => {
         [`amount_${food}`, twice[1]!],
       ]);
       assert.equal(res.status, 400, twice.join('|'));
-      assert.ok((await res.text()).includes(`<p id="amount_${food}-error">${FORMAT}</p>`));
+      assert.ok(
+        (await res.text()).includes(`<p id="amount_${food}-error" class="err-text">${FORMAT}</p>`),
+      );
     }
     assert.deepEqual(await operations(), []);
   });
@@ -381,7 +378,10 @@ describe('Разложить', () => {
     for (const name of ['amount_abc', 'amount_01', 'amount_0', 'amount_', 'amount_2147483648']) {
       const res = await assign({ [name]: '1', [`amount_${food}`]: '5' });
       assert.equal(res.status, 400, name);
-      assert.ok((await res.text()).includes(`<p id="refusal">${MISSING}</p>`), name);
+      assert.ok(
+        (await res.text()).includes(`<p id="refusal" class="note note-error">${MISSING}</p>`),
+        name,
+      );
     }
     assert.deepEqual(await operations(), []);
     // Left empty, it is a row skipped like any other.
@@ -397,7 +397,10 @@ describe('Разложить', () => {
       const res = await assign({ [`amount_${food}`]: '1', [`amount_${id}`]: '1' });
       assert.equal(res.status, 400, String(id));
       const page = await res.text();
-      assert.ok(page.includes(`<p id="refusal">${MISSING}</p>`), String(id));
+      assert.ok(
+        page.includes(`<p id="refusal" class="note note-error">${MISSING}</p>`),
+        String(id),
+      );
       assert.ok(!page.includes('Тайный'));
       pages.push(page);
     }
@@ -406,7 +409,7 @@ describe('Разложить', () => {
     const wrong = await assign({ [`amount_${food}`]: '1', [`amount_${his}`]: 'abc' });
     assert.equal(wrong.status, 400);
     const page = await wrong.text();
-    assert.ok(page.includes(`<p id="refusal">${MISSING}</p>`));
+    assert.ok(page.includes(`<p id="refusal" class="note note-error">${MISSING}</p>`));
     assert.ok(!page.includes(`amount_${his}`));
     assert.deepEqual(await operations(), []);
     await assertNothingHeld(food);
@@ -417,7 +420,11 @@ describe('Разложить', () => {
     const old = await addPouch(1, 'Старый', true);
     const res = await assign({ [`amount_${food}`]: '1', [`amount_${old}`]: '1' });
     assert.equal(res.status, 400);
-    assert.ok((await res.text()).includes(`<p id="refusal">${archivedRefusal('Старый')}</p>`));
+    assert.ok(
+      (await res.text()).includes(
+        `<p id="refusal" class="note note-error">${archivedRefusal('Старый')}</p>`,
+      ),
+    );
     assert.deepEqual(await operations(), []);
     await assertNothingHeld(food);
   });

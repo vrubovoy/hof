@@ -679,7 +679,9 @@ function expenseForm(pouch: Pouch, form: EntryForm, money: MoneyFormat, level: 2
   </form>`;
 }
 
-// «Доход», texts from design/preview/SaeckelForms.html and IncomeMobile.html.
+// «Доход», texts from design/preview/SaeckelForms.html and IncomeMobile.html: the form on the
+// right in its frame; on a computer the amount, the date and the note in a row, on the phone one
+// under another.
 function incomePage(form: EntryForm, money: MoneyFormat, column: PouchColumn) {
   return saeckelPage(
     {
@@ -688,17 +690,25 @@ function incomePage(form: EntryForm, money: MoneyFormat, column: PouchColumn) {
       back: { href: '/saeckel/', text: 'Мешки' },
       column: pouchColumn(column, money, { buttons: true }),
     },
-    html`<h1>Доход</h1>
-      <form method="post" action="/saeckel/income">
-        ${entryFields(form, money)}
-        <p>Деньги лягут в казну. После записи откроется раскладка по мешкам — её можно отложить.</p>
-        <button type="submit">Записать доход</button>
-      </form>`,
+    html`<div class="sk-form">
+      <h1 class="title t-2">Доход</h1>
+      <form class="entry" method="post" action="/saeckel/income">
+        <div class="entry-row">${entryFields(form, money)}</div>
+        <p class="hint">
+          Деньги лягут в казну. После записи откроется раскладка по мешкам — её можно отложить.
+        </p>
+        <button type="submit" class="btn btn-ochre">Записать доход</button>
+      </form>
+    </div>`,
   );
 }
 
-// «Разложить по мешкам», texts from design/preview/SaeckelAssign.html and AssignMobile.html: a
-// row with a field for each active pouch. The income just written, if any, is named above.
+// «Разложить по мешкам», texts from design/preview/SaeckelAssign.html and AssignMobile.html. The
+// income just written, if any, is named above in a note with the blue seal: in full on a
+// computer, on the phone only its first sentence, the whole of it left to the screen reader. On a
+// computer a table — the sign and the name, the balance, a field; on the phone the same rows as
+// lines of AssignMobile, the balance under the name. The error of a row is under its field; a
+// refusal of the whole form is a note with the red seal.
 function assignPage(
   column: PouchColumn,
   form: AssignForm,
@@ -712,10 +722,17 @@ function assignPage(
     const describedBy =
       error === undefined ? '' : html`aria-invalid="true" aria-describedby="${field}-error"`;
     return html`<tr>
-      <td>${pouch.name}</td>
-      <td>${money.format(pouch.balance)}</td>
-      <td>
+      <td class="assign-pouch">
+        <span class="assign-sign"
+          >${signPicture(pouch.icon)}<span class="assign-name">${pouch.name}</span></span
+        >
+      </td>
+      <td class="${pouch.balance < 0 ? 'num money neg' : 'num money'}">
+        ${money.format(pouch.balance)}
+      </td>
+      <td class="${error === undefined ? 'put' : 'put err'}">
         <input
+          class="input slim"
           name="${field}"
           type="text"
           inputmode="decimal"
@@ -724,10 +741,13 @@ function assignPage(
           aria-label="Положить в мешок ${pouch.name}"
           ${describedBy}
         />
-        ${error === undefined ? '' : html`<p id="${field}-error">${error}</p>`}
+        ${error === undefined ? '' : html`<p id="${field}-error" class="err-text">${error}</p>`}
       </td>
     </tr>`;
   };
+  const sum = html`<span class="${treasury < 0 ? 'money neg' : 'money'}"
+    >${money.format(treasury)}</span
+  >`;
   return saeckelPage(
     {
       title: 'Säckel — разложить',
@@ -738,36 +758,49 @@ function assignPage(
     html`${
         income === null
           ? ''
-          : html`<p>
-              Доход ${money.format(income)} лёг в казну. Разложите его по мешкам или оставьте в
-              казне на потом.
+          : html`<p class="note">
+              Доход ${money.format(income)} лёг в казну.<span class="visually-hidden-phone">
+                Разложите его по мешкам или оставьте в казне на потом.</span
+              >
             </p>`
       }
-      <h1>Разложить по мешкам</h1>
-      ${form.refusal === undefined ? '' : html`<p id="refusal">${form.refusal}</p>`}
+      <div class="assign-head">
+        <h1 class="title t-2">Разложить по мешкам</h1>
+        <p class="muted">
+          В казне: ${sum}.${pouches.length === 0 ? '' : ' Пустые поля пропускаются.'}
+        </p>
+      </div>
+      ${
+        form.refusal === undefined
+          ? ''
+          : html`<p id="refusal" class="note note-error">${form.refusal}</p>`
+      }
       ${
         pouches.length === 0
-          ? html`<p>В казне: ${money.format(treasury)}.</p>
-              <h2>Мешков пока нет</h2>
-              <p><a href="/saeckel/pouches/new">+ Новый мешок</a></p>`
-          : html`<p>В казне: ${money.format(treasury)}. Пустые поля пропускаются.</p>
-              <form method="post" action="/saeckel/assign">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Мешок</th>
-                      <th>Сейчас в мешке</th>
-                      <th>Положить, ${money.symbol}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${pouches.map(row)}
-                  </tbody>
-                </table>
-                <button type="submit">Разложить</button>
-              </form>
-              <p><a href="/saeckel/">Позже — вернуться к мешкам</a></p>`
-      }`,
+          ? html`<div class="assign-empty">
+              <h2 class="title t-3">Мешков пока нет</h2>
+              <p><a class="link" href="/saeckel/pouches/new">+ Новый мешок</a></p>
+            </div>`
+          : html`<form class="assign" method="post" action="/saeckel/assign">
+              <table class="table assign-table">
+                <thead>
+                  <tr>
+                    <th>Мешок</th>
+                    <th class="num">Сейчас в мешке</th>
+                    <th class="put-head">Положить, ${money.symbol}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${pouches.map(row)}
+                </tbody>
+              </table>
+              <div class="assign-actions">
+                <button type="submit" class="btn btn-ochre">Разложить</button>
+                <a class="link" href="/saeckel/">Позже — вернуться к мешкам</a>
+              </div>
+            </form>`
+      }
+      ${blot('ink-blot-small', 'blot-assign-small')} ${blot('ink-ring', 'blot-assign-ring')}`,
   );
 }
 
@@ -785,8 +818,10 @@ function coverLink(pouchId: number, balance: number) {
   </p>`;
 }
 
-// One list of pouches of a form: the active pouches of the user, each with its text, and in
-// «Переложить» an empty choice first. Only an id of one of them is ever shown as chosen.
+// One list of pouches of a form (design/preview/SaeckelForms.html): the active pouches of the
+// user, each with its text, and in «Переложить» an empty choice first. Drawn as a field with an
+// arrow by pen; its error is under it, and the field is drawn red. Only an id of one of them is
+// ever shown as chosen.
 function pouchSelect(
   field: PouchField,
   label: string,
@@ -797,9 +832,11 @@ function pouchSelect(
   const error = form.errors[field];
   const describedBy =
     error === undefined ? '' : html`aria-invalid="true" aria-describedby="${field}-error"`;
-  return html`<p>
-      <label for="${field}">${label}</label>
-      <select id="${field}" name="${field}" ${describedBy}>
+  const classes = error === undefined ? `field field-${field}` : `field field-${field} err`;
+  return html`<div class="${classes}">
+    <label for="${field}">${label}</label>
+    <span class="select">
+      <select id="${field}" name="${field}" class="input" ${describedBy}>
         ${empty ? html`<option value="">— выберите —</option>` : ''}
         ${choices.map(
           (choice) =>
@@ -811,11 +848,14 @@ function pouchSelect(
             </option>`,
         )}
       </select>
-    </p>
-    ${error === undefined ? '' : html`<p id="${field}-error">${error}</p>`}`;
+    </span>
+    ${error === undefined ? '' : html`<p id="${field}-error" class="err-text">${error}</p>`}
+  </div>`;
 }
 
-// «Переложить из мешка в мешок», texts from design/preview/SaeckelForms.html.
+// «Переложить из мешка в мешок», texts from design/preview/SaeckelForms.html: the form on the
+// right in its frame; the two lists side by side while their longest line fits half of the
+// frame, else one under another; on the phone one column, as in IncomeMobile.
 function transferPage(column: PouchColumn, form: PouchesForm, money: MoneyFormat) {
   const choices = column.pouches.map((pouch) => ({
     id: pouch.id,
@@ -828,12 +868,17 @@ function transferPage(column: PouchColumn, form: PouchesForm, money: MoneyFormat
       back: { href: '/saeckel/', text: 'Мешки' },
       column: pouchColumn(column, money, { buttons: true }),
     },
-    html`<h1>Переложить из мешка в мешок</h1>
-      <form method="post" action="/saeckel/transfer">
-        ${pouchSelect('from', 'Из мешка', choices, form, true)}
-        ${pouchSelect('to', 'В мешок', choices, form, true)} ${entryFields(form, money)}
-        <button type="submit">Переложить</button>
-      </form>`,
+    html`<div class="sk-form">
+      <h1 class="title t-2">Переложить из мешка в мешок</h1>
+      <form class="entry" method="post" action="/saeckel/transfer">
+        <div class="pouch-pair">
+          ${pouchSelect('from', 'Из мешка', choices, form, true)}
+          ${pouchSelect('to', 'В мешок', choices, form, true)}
+        </div>
+        <div class="entry-row">${entryFields(form, money)}</div>
+        <button type="submit" class="btn btn-ochre">Переложить</button>
+      </form>
+    </div>`,
   );
 }
 

@@ -333,7 +333,7 @@ describe('Исправить', () => {
       const res = await edit(id, { amount: '5', ...fields });
       assert.equal(res.status, 400, JSON.stringify(fields));
       assert.ok(
-        (await res.text()).includes(`<p id="${field}-error">${text}</p>`),
+        (await res.text()).includes(`<p id="${field}-error" class="err-text">${text}</p>`),
         JSON.stringify(fields),
       );
     }
@@ -359,7 +359,7 @@ describe('Исправить', () => {
       const res = await edit(spent, { from: String(id), amount: '5' });
       assert.equal(res.status, 400);
       const page = await res.text();
-      assert.ok(page.includes(`<p id="from-error">${MISSING}</p>`));
+      assert.ok(page.includes(`<p id="from-error" class="err-text">${MISSING}</p>`));
       assert.ok(!page.includes('Тайный'));
       pages.push(page);
     }
@@ -368,7 +368,7 @@ describe('Исправить', () => {
     const both = await edit(moved, { from: String(his), to: String(his), amount: '5' });
     assert.equal(both.status, 400);
     const page = await both.text();
-    assert.ok(page.includes(`<p id="from-error">${MISSING}</p>`));
+    assert.ok(page.includes(`<p id="from-error" class="err-text">${MISSING}</p>`));
     assert.ok(!page.includes(SAME));
     assert.deepEqual(
       (await operations()).map((row) => [row.amount, row.from_pouch_id, row.to_pouch_id]),
@@ -386,7 +386,9 @@ describe('Исправить', () => {
     const spent = await addOperation(1, 'expense', 100, { from: food });
     const res = await edit(spent, { from: String(old), amount: '5' });
     assert.equal(res.status, 400);
-    assert.ok((await res.text()).includes(`<p id="from-error">${stored('Старый')}</p>`));
+    assert.ok(
+      (await res.text()).includes(`<p id="from-error" class="err-text">${stored('Старый')}</p>`),
+    );
     const row = await record(spent);
     assert.deepEqual([row!.amount, row!.from_pouch_id], ['100', food]);
     await assertNothingHeld(food);
@@ -615,7 +617,9 @@ describe('Исправить and others at once', () => {
         assert.equal(answers.archive.status, 303);
         assert.equal(answers.edit.status, 400);
         assert.ok(
-          (await answers.edit.text()).includes(`<p id="from-error">${stored('Отпуск')}</p>`),
+          (await answers.edit.text()).includes(
+            `<p id="from-error" class="err-text">${stored('Отпуск')}</p>`,
+          ),
         );
         assert.equal((await record(spent))!.from_pouch_id, food);
         assert.equal(await balance(trip), '0,00 ₽');

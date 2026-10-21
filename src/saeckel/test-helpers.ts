@@ -164,6 +164,22 @@ export function movementLines(page: string, fresh = false): string[] {
     );
 }
 
+// The text of a piece of a page without its tags, with whitespace folded: a sentence across
+// the spans of its amounts.
+export function textOf(page: string): string {
+  return fold(page.replace(/<[^>]*>/g, '')).trim();
+}
+
+// The rows of «Разложить»: the name, the balance and what is in the field.
+export function assignRows(page: string): string[][] {
+  const body = /<tbody>([\s\S]*?)<\/tbody>/.exec(page)?.[1] ?? '';
+  return [...body.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(([, row]) => [
+    textOf(/<span class="assign-name">([^<]*)<\/span>/.exec(row!)?.[1] ?? ''),
+    textOf(/<td class="num money[^"]*">([^<]*)<\/td>/.exec(row!)?.[1] ?? ''),
+    /value="([^"]*)"/.exec(row!)?.[1] ?? '',
+  ]);
+}
+
 // The page itself, without the shell and the column beside it.
 export function mainPart(page: string): string {
   return page.split(/<main class="sk-main[^"]*">/)[1] ?? '';

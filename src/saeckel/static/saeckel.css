@@ -855,6 +855,113 @@ mark.move {
   margin: 0;
 }
 
+/* «Доход» и «Переложить»: поля, подсказка и кнопка друг под другом; сумма, дата и заметка — одна
+   колонка, на компьютере в ряд (SaeckelForms, IncomeMobile) */
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.entry-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px 12px;
+  align-items: start;
+}
+.entry > .btn {
+  align-self: flex-start;
+}
+/* «Из мешка» и «В мешок»: рядом, пока самая длинная строка списка помещается в половину рамки,
+   иначе каждый во всю ширину; длинное название в закрытом списке обрывается многоточием, целиком
+   оно видно в раскрытом */
+.pouch-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+}
+.pouch-pair .field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.select .input {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* «Разложить по мешкам» (SaeckelAssign, AssignMobile): заголовок и остаток Казны в строку;
+   таблица мешков с полем «Положить»; ошибка строки — под её полем */
+.assign-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 20px;
+}
+.assign-head p,
+.assign-empty p {
+  margin: 0;
+}
+.assign-head .money {
+  color: var(--ink);
+}
+.assign-head .money.neg {
+  color: var(--red);
+}
+.assign {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+}
+.assign-table {
+  max-width: 760px;
+}
+.assign-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.assign-sign {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.assign-sign img {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+.assign-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.put-head {
+  width: 220px;
+}
+.input.slim {
+  height: 40px;
+}
+.put.err .input {
+  border-image-source: url(img/pen-field-err.svg);
+}
+.put.err .input:focus {
+  border-image-source: url(img/pen-field-err-focus.svg);
+}
+.put .err-text {
+  margin-top: 4px;
+}
+.assign-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+.assign-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 /* «Изменить»: имя, знак, «Сохранить»; «В кладовую» — под линией пером */
 .pouch-edit > form,
 .pouch-edit > section {
@@ -1036,6 +1143,15 @@ mark.move {
     padding-top: 16px;
     background: url(img/pen-rule-light.svg) left top / 100% 6px no-repeat;
   }
+  /* «Доход», «Переложить»: сумма, дата и заметка в ряд; дата и заметка ниже на разницу высоты
+     полей — их нижний край вровень с крупной суммой, ошибка каждого поля под ним */
+  .entry-row {
+    grid-template-columns: 190px 160px minmax(0, 1fr);
+  }
+  .entry-row .field-date,
+  .entry-row .field-note {
+    margin-top: 10px;
+  }
 
   /* мешков пока нет: виньетка и текст рядом посередине правой части; ветка — в углу, колонка
      оставляет ей место под собой */
@@ -1082,6 +1198,19 @@ mark.move {
     opacity: 0.6;
     transform: rotate(30deg);
   }
+  .blot-assign-small {
+    right: 36px;
+    top: 56px;
+    width: 44px;
+    opacity: 0.7;
+  }
+  .blot-assign-ring {
+    right: 10px;
+    bottom: -6px;
+    width: 100px;
+    opacity: 0.42;
+    transform: rotate(15deg);
+  }
   .blot-pouches-small,
   .blot-pouch-splatter {
     display: none;
@@ -1089,7 +1218,7 @@ mark.move {
 }
 
 /* компьютер поуже: виньетка над текстом, а не рядом; поля траты в две строки, кнопка под ними;
-   у движений столбец вида уже */
+   у дохода и перекладывания сумма и дата в ряд, заметка под ними; у движений столбец вида уже */
 @media (min-width: 1024px) and (max-width: 1279.98px) {
   .expense-row {
     grid-template-columns: 170px minmax(0, 1fr);
@@ -1099,6 +1228,13 @@ mark.move {
   }
   .expense-row .btn {
     justify-self: start;
+    margin-top: 0;
+  }
+  .entry-row {
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+  .entry-row .field-note {
+    grid-column: 1 / -1;
     margin-top: 0;
   }
   .move {
@@ -1290,11 +1426,12 @@ mark.move {
     margin-left: 22px;
   }
 
-  /* форма — одна колонка, рамка во всю ширину; «Изменить» — две рамки: знак и «В кладовую» */
+  /* форма — одна колонка, рамка во всю ширину (IncomeMobile: так же «Переложить» и «Новый
+     мешок»); «Изменить» — две рамки: знак и «В кладовую» */
   .sk-form {
     max-width: none;
     gap: 10px;
-    padding: 20px 18px 18px;
+    padding: 20px 20px 18px;
   }
   .pouch-edit {
     border: 0;
@@ -1321,6 +1458,93 @@ mark.move {
     font-size: 15px;
   }
 
+  /* «Доход», «Переложить» — кадр IncomeMobile: поля друг под другом, кнопка во всю ширину */
+  .entry {
+    gap: 10px;
+  }
+  .entry > .btn {
+    align-self: stretch;
+  }
+
+  /* «Разложить» — кадр AssignMobile: строка — знак, имя и остаток под ним, поле справа; ошибка
+     строки — под её полем, во всю строку; заголовков столбцов нет. Ячейки отдают своё содержимое
+     сетке строки */
+  .sk-main:has(> .assign-head) {
+    gap: 10px;
+  }
+  .assign-head {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .assign-head .muted {
+    font-size: 15px;
+  }
+  .assign {
+    gap: 10px;
+  }
+  .assign-table,
+  .assign-table tbody {
+    display: block;
+  }
+  .assign-table thead {
+    display: none;
+  }
+  .assign-table tr {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) 118px;
+    align-items: center;
+    gap: 0 10px;
+    padding: 8px 4px 10px;
+    background: url(img/pen-rule-light.svg) left bottom / 100% 6px no-repeat;
+  }
+  .assign-table td {
+    padding: 0;
+    background: none;
+  }
+  .assign-pouch,
+  .assign-sign,
+  .put {
+    display: contents;
+  }
+  .assign-sign img {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    width: 34px;
+    height: 34px;
+  }
+  .assign-name {
+    grid-column: 2;
+    grid-row: 1;
+    font-weight: 700;
+  }
+  .assign-table .num {
+    grid-column: 2;
+    grid-row: 2;
+    font-size: 15px;
+    text-align: left;
+  }
+  .put .input {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+  /* у строки с ошибкой поле стоит у нижнего края имени и остатка: текст ошибки сразу под полем,
+     и когда длинное имя занимает несколько строк */
+  .put.err .input {
+    align-self: end;
+  }
+  .put .err-text {
+    grid-column: 2 / -1;
+    grid-row: 3;
+  }
+  .assign-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .assign-actions .link {
+    align-self: center;
+  }
+
   /* на телефоне скрыт с экрана, но остаётся для screen reader */
   .visually-hidden-phone {
     position: absolute;
@@ -1337,7 +1561,9 @@ mark.move {
   .blot-pouches-medium,
   .blot-pouches-splatter,
   .blot-pouches-drip,
-  .blot-empty-medium {
+  .blot-empty-medium,
+  .blot-assign-small,
+  .blot-assign-ring {
     display: none;
   }
   .blot-pouch-splatter {
