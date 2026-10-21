@@ -14,6 +14,7 @@ import {
   addPouch,
   appWithoutDatabase,
   assertNothingHeld,
+  balanceOn,
   deadPool,
   failingTrigger,
   fold,
@@ -60,8 +61,7 @@ async function record(id: number) {
 
 // The balance a pouch page shows, also for a pouch in the storeroom.
 async function balance(pouchId: number): Promise<string | undefined> {
-  const page = fold(await (await get(`/saeckel/pouches/${pouchId}`, 'anna')).text());
-  return /<p>Остаток ([^<]*)<\/p>/.exec(page)?.[1];
+  return balanceOn(await (await get(`/saeckel/pouches/${pouchId}`, 'anna')).text());
 }
 
 // The sum the block «Казна» shows on Мешки.
@@ -308,7 +308,7 @@ describe('Исправить', () => {
     assert.equal(res.status, 400);
     const page = await res.text();
     for (const id of ['amount-error', 'date-error', 'note-error']) {
-      assert.ok(page.includes(`<p id="${id}">`), id);
+      assert.ok(page.includes(`<p id="${id}" class="err-text">`), id);
     }
     assert.deepEqual(values(page).slice(0, 2), ['1,2,3', '31.02.2026']);
     assert.ok(fold(page).includes('<h1>Трата · 05.10.2026</h1>'));

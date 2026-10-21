@@ -16,17 +16,18 @@ import {
   addPouch,
   appWithoutDatabase,
   assertNothingHeld,
+  balanceOn,
+  currentTab,
   deadPool,
   failingTrigger,
   fold,
-  currentTab,
   get,
-  mainPart,
+  movementLines,
   operations,
   pool,
   post,
-  pouchLines,
   pouches,
+  pouchLines,
   signedIn,
   waitingQueries,
   wayBack,
@@ -185,7 +186,7 @@ describe('Новый мешок', () => {
     for (const text of [
       '<title>Säckel — новый мешок</title>',
       '<p class="ribbon ribbon-md"><span>Säckel</span></p>',
-      '<h1>Новый мешок</h1>',
+      '<h1 class="title t-2">Новый мешок</h1>',
       '<form class="form-row new-pouch" method="post" action="/saeckel/pouches/new">',
       '<label for="name">Название</label>',
       '<button type="submit" class="btn btn-ochre">Завести мешок</button>',
@@ -320,7 +321,10 @@ describe('the page of a pouch', () => {
     const res = await get(`/saeckel/pouches/${id}`, 'anna');
     assert.equal(res.status, 200);
     const page = await res.text();
-    for (const text of ['<title>Säckel — Продукты</title>', '<h1>Продукты</h1>']) {
+    for (const text of [
+      '<title>Säckel — Продукты</title>',
+      '<h1 class="title t-1">Продукты</h1>',
+    ]) {
       assert.ok(page.includes(text), text);
     }
     assert.equal(wayBack(page), '/saeckel/ Мешки');
@@ -422,17 +426,22 @@ describe('Изменить мешок', () => {
     const flat = page.replace(/\s+/g, ' ');
     for (const text of [
       '<title>Säckel — Продукты</title>',
-      '<h1>Мешок «Продукты»</h1>',
+      '<h1 class="title t-2">Мешок «Продукты»</h1>',
       `<form method="post" action="/saeckel/pouches/${id}/edit">`,
       '<label for="name">Название</label>',
       'value="Продукты"',
       '<legend>Знак мешка</legend>',
-      '<button type="submit">Сохранить</button>',
+      '<button type="submit" class="btn btn-ochre">Сохранить</button>',
     ]) {
       assert.ok(flat.includes(text), text);
     }
+    // Each sign: its radio button, its picture, its word.
     for (const [key, label] of SIGNS) {
-      assert.match(flat, new RegExp(`value="${key}"( checked)? /> ${label} </label>`), key);
+      assert.match(
+        flat,
+        new RegExp(`value="${key}"( checked)? /> <img [^>]*alt="" /> ${label} </label>`),
+        key,
+      );
     }
     // The way back on the phone leads to the pouch itself.
     assert.equal(wayBack(page), `/saeckel/pouches/${id} Продукты`);
@@ -450,7 +459,7 @@ describe('Изменить мешок', () => {
     const active = await addPouch(1, 'Продукты');
     const stored = await addPouch(1, 'Старый', true);
     const page = await (await get(`/saeckel/pouches/${active}`, 'anna')).text();
-    assert.ok(page.includes(`<a href="/saeckel/pouches/${active}/edit">Изменить</a>`));
+    assert.ok(page.includes(`<a class="link" href="/saeckel/pouches/${active}/edit">Изменить</a>`));
     const old = await (await get(`/saeckel/pouches/${stored}`, 'anna')).text();
     assert.ok(!old.includes('Изменить'));
   });
@@ -477,7 +486,7 @@ describe('Изменить мешок', () => {
       `<a href="/saeckel/pouches/${third}">Сливы</a>`,
     ]);
     const page = await (await get(`/saeckel/pouches/${second}`, 'anna')).text();
-    assert.ok(page.includes('<h1>Абрикосы</h1>'));
+    assert.ok(page.includes('<h1 class="title t-1">Абрикосы</h1>'));
     const again = await (await get(`/saeckel/pouches/${second}/edit`, 'anna')).text();
     assert.deepEqual(signs(again).checked, ['basket']);
   });
@@ -499,7 +508,7 @@ describe('Изменить мешок', () => {
       assert.ok(page.includes(`value="${name}"`), name);
       assert.deepEqual(signs(page).checked, ['jug'], name);
       // The heading keeps the stored name.
-      assert.ok(page.includes('<h1>Мешок «Квартира»</h1>'), name);
+      assert.ok(page.includes('<h1 class="title t-2">Мешок «Квартира»</h1>'), name);
     }
     assert.deepEqual(await pouch(id), {
       id,
@@ -669,12 +678,6 @@ function spend(id: number | string, fields: Record<string, string>, who = 'anna'
   return post(`/saeckel/pouches/${id}/expense`, fields, who);
 }
 
-// The rows of the list of expenses on a pouch page, with whitespace folded.
-function expenseRows(page: string): string[] {
-  const list = /<\/form>([\s\S]*)$/.exec(mainPart(page))?.[1] ?? page;
-  return [...list.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]!.replace(/\s+/g, ' ').trim());
-}
-
 const ARCHIVED = 'Мешок в Кладовой: траты в нём не записываются.';
 
 describe('balances on Мешки', () => {
@@ -710,7 +713,7 @@ describe('balances on Мешки', () => {
       `<a href="/saeckel/pouches/${flat}">Квартира</a> · 25,00 ₽ · трат пока не было`,
     ]);
     const own = await (await get(`/saeckel/pouches/${food}`, 'anna')).text();
-    assert.ok(fold(own).includes('<p>Остаток 55,00 ₽</p>'));
+    assert.equal(balanceOn(own), '55,00 ₽');
   });
 
   test('the last expense is the latest by date, then by id', async () => {
@@ -736,8 +739,8 @@ describe('balances on Мешки', () => {
       `<a href="/saeckel/pouches/${hers}">Продукты</a> · 0,00 ₽ · трат пока не было`,
     ]);
     const own = await (await get(`/saeckel/pouches/${hers}`, 'anna')).text();
-    assert.ok(fold(own).includes('<p>Остаток 0,00 ₽</p>'));
-    assert.deepEqual(expenseRows(own), []);
+    assert.equal(balanceOn(own), '0,00 ₽');
+    assert.deepEqual(movementLines(own), []);
   });
 
   test('a balance beyond the exact range of numbers: 500, and no amount in the error', async (t: TestContext) => {
@@ -771,18 +774,18 @@ describe('the page of a pouch: balance, form, expenses', () => {
     const page = await (await get(`/saeckel/pouches/${id}`, 'anna')).text();
     const flat = page.replace(/\s+/g, ' ');
     for (const text of [
-      '<p>Остаток 0,00 ₽</p>',
-      '<h2>Записать трату</h2>',
-      `<form method="post" action="/saeckel/pouches/${id}/expense">`,
+      '<h2 class="title t-3 visually-hidden-phone">Записать трату</h2>',
+      `<form class="expense" method="post" action="/saeckel/pouches/${id}/expense">`,
       '<label for="amount">Сумма, ₽</label>',
       'inputmode="decimal"',
       '<label for="date">Дата</label>',
       `value="${dateForField(today('Europe/Moscow', new Date()))}"`,
       '<label for="note">Заметка</label>',
-      '<button type="submit">Записать трату</button>',
+      '<button type="submit" class="btn btn-ochre">Записать трату</button>',
     ]) {
       assert.ok(flat.includes(text), text);
     }
+    assert.equal(balanceOn(page), '0,00 ₽');
     assert.equal((page.match(/<input/g) ?? []).length, 3);
   });
 
@@ -792,7 +795,7 @@ describe('the page of a pouch: balance, form, expenses', () => {
     await addOperation(1, 'expense', 124050, { from: id });
     const page = await (await get(`/saeckel/pouches/${id}`, 'anna', euro)).text();
     assert.ok(page.includes('<label for="amount">Сумма, €</label>'));
-    assert.ok(fold(page).includes('<p>Остаток −1 240,50 €</p>'));
+    assert.equal(balanceOn(page), '−1 240,50 €');
   });
 
   test('the last 10 movements of this pouch, newest first, by date and then by id', async () => {
@@ -814,9 +817,11 @@ describe('the page of a pouch: balance, form, expenses', () => {
       .map(([date, opId], index) => ({ date, opId, n: index + 1 }))
       .sort((a, b) => (a.date === b.date ? b.opId - a.opId : a.date < b.date ? 1 : -1))
       .slice(0, 9)
-      .map(({ date, n }) => `${date.slice(8)}.${date.slice(5, 7)} · трата ${n} · −${n},00 ₽`);
+      .map(
+        ({ date, n }) => `${date.slice(8)}.${date.slice(5, 7)} · Трата · трата ${n} · −${n},00 ₽`,
+      );
     // Since M6.3 the list holds every movement of the pouch: the laying out of 05.10 is the newest.
-    assert.deepEqual(expenseRows(page), ['05.10 · из казны · +50,00 ₽', ...expected]);
+    assert.deepEqual(movementLines(page), ['05.10 · из казны · +50,00 ₽', ...expected]);
     assert.ok(!page.includes('не отсюда'));
   });
 
@@ -825,9 +830,9 @@ describe('the page of a pouch: balance, form, expenses', () => {
     await addOperation(1, 'expense', 100, { from: id }, '2026-10-05', '');
     await addOperation(1, 'expense', 200, { from: id }, '2026-10-06', '<b>пир</b> & co');
     const page = await (await get(`/saeckel/pouches/${id}`, 'anna')).text();
-    assert.deepEqual(expenseRows(page), [
-      '06.10 · &lt;b&gt;пир&lt;/b&gt; &amp; co · −2,00 ₽',
-      '05.10 · −1,00 ₽',
+    assert.deepEqual(movementLines(page), [
+      '06.10 · Трата · &lt;b&gt;пир&lt;/b&gt; &amp; co · −2,00 ₽',
+      '05.10 · Трата · −1,00 ₽',
     ]);
   });
 
@@ -839,12 +844,12 @@ describe('the page of a pouch: balance, form, expenses', () => {
     const old = await addOperation(1, 'expense', 100, { from: id }, '2001-01-01', 'старая');
     for (let n = 0; n < 10; n++) await addOperation(1, 'expense', 100, { from: id }, '2026-09-01');
     const marked = await (await get(`/saeckel/pouches/${id}?fresh=${shown}`, 'anna')).text();
-    assert.equal((marked.match(/<mark>/g) ?? []).length, 1);
-    assert.match(marked.replace(/\s+/g, ' '), /<mark>05\.10 · новая · −1,00 ₽<\/mark>/);
+    assert.deepEqual(movementLines(marked, true), ['05.10 · Трата · новая · −1,00 ₽']);
+    assert.equal((marked.match(/<mark/g) ?? []).length, 1);
     // Somebody else's, one not among the ten shown, and ids of the wrong form mark nothing.
     for (const fresh of [String(foreign), String(old), `0${shown}`, `${shown}.0`, 'abc', '']) {
       const page = await (await get(`/saeckel/pouches/${id}?fresh=${fresh}`, 'anna')).text();
-      assert.ok(!page.includes('<mark>'), fresh);
+      assert.ok(!page.includes('<mark'), fresh);
     }
   });
 
@@ -852,10 +857,10 @@ describe('the page of a pouch: balance, form, expenses', () => {
     const id = await addPouch(1, 'Старый', true);
     await addOperation(1, 'expense', 100, { from: id });
     const page = await (await get(`/saeckel/pouches/${id}`, 'anna')).text();
-    assert.ok(fold(page).includes('<p>Остаток −1,00 ₽</p>'));
+    assert.equal(balanceOn(page), '−1,00 ₽');
     assert.ok(!page.includes('Записать трату'));
     assert.ok(!page.includes('/expense"'));
-    assert.deepEqual(expenseRows(page), ['05.10 · −1,00 ₽']);
+    assert.deepEqual(movementLines(page), ['05.10 · Трата · −1,00 ₽']);
   });
 });
 
@@ -879,8 +884,8 @@ describe('Записать трату', () => {
       note: 'овощи',
     });
     const page = await (await get(res.headers.get('location')!, 'anna')).text();
-    assert.ok(fold(page).includes('<p>Остаток −1 240,50 ₽</p>'));
-    assert.match(page.replace(/\s+/g, ' '), /<mark>05\.10 · овощи · −1 240,50 ₽<\/mark>/);
+    assert.equal(balanceOn(page), '−1 240,50 ₽');
+    assert.deepEqual(movementLines(page, true), ['05.10 · Трата · овощи · −1 240,50 ₽']);
     const list = await (await get('/saeckel/', 'anna')).text();
     assert.deepEqual(pouchLines(list), [
       `<a href="/saeckel/pouches/${id}">Продукты</a> · −1 240,50 ₽ · в долгу`,
@@ -897,7 +902,7 @@ describe('Записать трату', () => {
       ['29', '115', '57'],
     );
     const page = await (await get(`/saeckel/pouches/${id}`, 'anna')).text();
-    assert.ok(fold(page).includes('<p>Остаток −2,01 ₽</p>'));
+    assert.equal(balanceOn(page), '−2,01 ₽');
   });
 
   test('no date means today in the time zone of the court; ISO is accepted too', async () => {
@@ -988,13 +993,13 @@ describe('Записать трату', () => {
         if (error === undefined) {
           assert.ok(!page.includes(`id="${field}-error"`), field);
         } else {
-          assert.ok(page.includes(`<p id="${field}-error">${error}</p>`), field);
+          assert.ok(page.includes(`<p id="${field}-error" class="err-text">${error}</p>`), field);
           assert.match(page, new RegExp(`name="${field}"[^>]*aria-invalid="true"`), field);
         }
         const typed = fields[field as keyof typeof fields];
         assert.ok(page.includes(`value="${typed}"`), `${field} kept`);
       }
-      assert.ok(fold(page).includes('<p>Остаток 0,00 ₽</p>'));
+      assert.equal(balanceOn(page), '0,00 ₽');
       assert.deepEqual(await operations(), []);
     });
   }
@@ -1015,7 +1020,7 @@ describe('Записать трату', () => {
     const res = await spend(id, { amount: '1', date: '', note: '' });
     assert.equal(res.status, 400);
     const page = await res.text();
-    assert.ok(page.includes(`<p id="refusal">${ARCHIVED}</p>`));
+    assert.ok(page.includes(`<p id="refusal" class="note note-error">${ARCHIVED}</p>`));
     assert.ok(!page.includes('/expense"'));
     assert.deepEqual(await operations(), []);
     await assertNothingHeld(id);
@@ -1058,7 +1063,7 @@ describe('Записать трату', () => {
     }
     assert.deepEqual((await operations()).map((row) => row.amount).sort(), ['10000', '50']);
     const page = await (await get(`/saeckel/pouches/${id}`, 'anna')).text();
-    assert.ok(fold(page).includes('<p>Остаток −100,50 ₽</p>'));
+    assert.equal(balanceOn(page), '−100,50 ₽');
   });
 
   test('the pouch goes into the storeroom while the expense waits: the lock sees it, 400', async () => {
@@ -1142,6 +1147,13 @@ async function isArchived(id: number): Promise<boolean> {
 
 const notEmpty = (balance: string) =>
   `Убрать в кладовую можно только пустой мешок. Сейчас в нём ${balance}.`;
+// Why «В кладовую» is off, as the text of the block of «Изменить»; none for an empty pouch.
+function storeroomReason(page: string): string | undefined {
+  const reason = /<section class="to-storeroom">[\s\S]*?<p class="muted">([\s\S]*?)<\/p>/.exec(
+    page,
+  )?.[1];
+  return reason === undefined ? undefined : fold(reason.replace(/<[^>]*>/g, '')).trim();
+}
 const restoreTaken = (name: string) =>
   `Среди мешков уже есть «${name}». Переименуйте его и верните этот снова.`;
 
@@ -1208,25 +1220,27 @@ describe('В кладовую', () => {
   test('«Изменить» of an empty pouch: the block «В кладовую», its button on', async () => {
     const id = await addPouch(1, 'Продукты');
     const page = fold(await (await get(`/saeckel/pouches/${id}/edit`, 'anna')).text());
-    assert.ok(page.includes('<h2>В кладовую</h2>'));
+    assert.ok(page.includes('<h2 class="title t-3">В кладовую</h2>'));
     assert.ok(page.includes(`<form method="post" action="/saeckel/pouches/${id}/archive">`));
-    assert.match(page, /<button type="submit" ?>В кладовую<\/button>/);
-    assert.ok(!page.includes('Убрать в кладовую'));
+    assert.match(page, /<button type="submit" class="btn" ?> В кладовую <\/button>/);
+    assert.equal(storeroomReason(page), undefined);
   });
 
   test('«Изменить» of a pouch that is not empty: why, with the balance, and the button off', async () => {
     const id = await addPouch(1, 'Продукты');
     await addOperation(1, 'expense', 124050, { from: id });
     const page = fold(await (await get(`/saeckel/pouches/${id}/edit`, 'anna')).text());
-    assert.ok(page.includes(`<p>${notEmpty('−1 240,50 ₽')}</p>`));
-    assert.match(page, /<button type="submit" disabled>В кладовую<\/button>/);
+    assert.equal(storeroomReason(page), notEmpty('−1 240,50 ₽'));
+    assert.match(page, /<span class="money neg">−1 240,50 ₽<\/span ?>/);
+    assert.match(page, /<button type="submit" class="btn" disabled> В кладовую <\/button>/);
     // A refused rename shows the block the same way.
     const refused = fold(await (await edit(id, { name: '', icon: 'pouch' })).text());
-    assert.ok(refused.includes(`<p>${notEmpty('−1 240,50 ₽')}</p>`));
+    assert.equal(storeroomReason(refused), notEmpty('−1 240,50 ₽'));
     // Money left over is no more empty than a debt.
     await addOperation(1, 'assign', 124550, { to: id });
     const over = fold(await (await get(`/saeckel/pouches/${id}/edit`, 'anna')).text());
-    assert.ok(over.includes(`<p>${notEmpty('5,00 ₽')}</p>`));
+    assert.equal(storeroomReason(over), notEmpty('5,00 ₽'));
+    assert.match(over, /<span class="money">5,00 ₽<\/span ?>/);
   });
 
   test('an empty pouch: 303 to Мешки, then only in the storeroom', async () => {
@@ -1241,10 +1255,12 @@ describe('В кладовую', () => {
     assert.ok(page.includes('<summary>Кладовая (1)</summary>'));
     // Its page: the balance and «Вернуть», neither the form of an expense nor «Изменить».
     const own = fold(await (await get(`/saeckel/pouches/${id}`, 'anna')).text());
-    assert.ok(own.includes('<h1>Продукты</h1>'));
-    assert.ok(own.includes('<p>Остаток 0,00 ₽</p>'));
-    assert.ok(own.includes(`<form method="post" action="/saeckel/pouches/${id}/restore">`));
-    assert.ok(own.includes('<button type="submit">Вернуть</button>'));
+    assert.ok(own.includes('<h1 class="title t-1">Продукты</h1>'));
+    assert.equal(balanceOn(own), '0,00 ₽');
+    assert.ok(
+      own.includes(`<form class="restore" method="post" action="/saeckel/pouches/${id}/restore">`),
+    );
+    assert.ok(own.includes('<button type="submit" class="btn btn-ochre">Вернуть</button>'));
     assert.ok(!own.includes('Записать трату'));
     assert.ok(!own.includes('Изменить'));
     assert.equal((await get(`/saeckel/pouches/${id}/edit`, 'anna')).status, 404);
@@ -1259,9 +1275,9 @@ describe('В кладовую', () => {
     assert.equal((await archive(id)).status, 303);
     assert.equal(await isArchived(id), true);
     const page = await (await get(`/saeckel/pouches/${id}`, 'anna')).text();
-    assert.deepEqual(expenseRows(page), [
-      '07.10 · −0,50 ₽',
-      '06.10 · рынок · −99,50 ₽',
+    assert.deepEqual(movementLines(page), [
+      '07.10 · Трата · −0,50 ₽',
+      '06.10 · Трата · рынок · −99,50 ₽',
       '05.10 · из казны · +100,00 ₽',
     ]);
     assert.equal((await operations()).length, 3);
@@ -1281,13 +1297,13 @@ describe('В кладовую', () => {
       assert.equal(res.status, 400);
       const page = fold(await res.text());
       for (const text of [
-        '<h1>Мешок «Продукты»</h1>',
+        '<h1 class="title t-2">Мешок «Продукты»</h1>',
         `<form method="post" action="/saeckel/pouches/${id}/edit">`,
         'value="Продукты"',
-        `<p>${notEmpty(shown)}</p>`,
       ]) {
         assert.ok(page.includes(text), text);
       }
+      assert.equal(storeroomReason(page), notEmpty(shown));
       assert.deepEqual(signs(page).checked, ['cart']);
       assert.equal(await isArchived(id), false);
       assert.equal((await operations()).length, 1);
@@ -1356,7 +1372,7 @@ describe('В кладовую', () => {
     }
     // The balance is a statement of its own, after the lock: it sees the committed expense.
     assert.equal(res.status, 400);
-    assert.ok(fold(await res.text()).includes(notEmpty('−1,00 ₽')));
+    assert.equal(storeroomReason(await res.text()), notEmpty('−1,00 ₽'));
     assert.equal(await isArchived(id), false);
     assert.equal((await operations()).length, 1);
     await assertNothingHeld(id);
@@ -1388,7 +1404,7 @@ describe('В кладовую', () => {
     assert.equal(archived.status, 303);
     assert.equal(spent.status, 400);
     const page = await spent.text();
-    assert.ok(page.includes(`<p id="refusal">${ARCHIVED}</p>`));
+    assert.ok(page.includes(`<p id="refusal" class="note note-error">${ARCHIVED}</p>`));
     assert.ok(!page.includes('/expense"'));
     assert.deepEqual(await operations(), []);
     assert.equal(await isArchived(id), true);
@@ -1450,9 +1466,12 @@ describe('Вернуть', () => {
     assert.deepEqual(listItems(list), [`<a href="/saeckel/pouches/${id}">Отпуск</a>`]);
     assert.ok(!list.includes('<details'));
     const page = fold(await (await get(`/saeckel/pouches/${id}`, 'anna')).text());
-    assert.ok(page.includes('<p>Остаток 0,00 ₽</p>'));
+    assert.equal(balanceOn(page), '0,00 ₽');
     assert.ok(page.includes('Записать трату'));
-    assert.deepEqual(expenseRows(page), ['06.10 · билеты · −5,00 ₽', '05.10 · из казны · +5,00 ₽']);
+    assert.deepEqual(movementLines(page), [
+      '06.10 · Трата · билеты · −5,00 ₽',
+      '05.10 · из казны · +5,00 ₽',
+    ]);
   });
 
   test('a pouch that is already active: 303 again, nothing changes', async () => {
@@ -1471,15 +1490,21 @@ describe('Вернуть', () => {
     assert.equal(res.status, 400);
     const page = fold(await res.text());
     assert.ok(
-      page.includes(`<p id="refusal">${restoreTaken('Отпуск &amp; &lt;Ко&gt;')}</p>`),
+      page.includes(
+        `<p id="refusal" class="note note-error">${restoreTaken('Отпуск &amp; &lt;Ко&gt;')}</p>`,
+      ),
       page,
     );
     assert.ok(!page.includes('<Ко>'));
     // The page of the pouch in the storeroom: its balance, its expenses, «Вернуть» again.
-    assert.ok(page.includes('<p>Остаток −1,00 ₽</p>'));
-    assert.ok(page.includes(`<form method="post" action="/saeckel/pouches/${stored}/restore">`));
+    assert.equal(balanceOn(page), '−1,00 ₽');
+    assert.ok(
+      page.includes(
+        `<form class="restore" method="post" action="/saeckel/pouches/${stored}/restore">`,
+      ),
+    );
     assert.ok(!page.includes('Записать трату'));
-    assert.deepEqual(expenseRows(page), ['05.10 · −1,00 ₽']);
+    assert.deepEqual(movementLines(page), ['05.10 · Трата · −1,00 ₽']);
     assert.equal(await isArchived(stored), true);
     // Once the other one is renamed, it comes back.
     assert.equal((await edit(active, { name: 'Отпуск-2027', icon: 'pouch' })).status, 303);
@@ -1589,15 +1614,22 @@ describe('a form of an expense opened before the storeroom', () => {
       const res = await spend(id, fields);
       assert.equal(res.status, 400);
       const page = fold(await res.text());
-      assert.ok(page.includes(`<p id="refusal">${ARCHIVED}</p>`), fields.amount);
+      assert.ok(
+        page.includes(`<p id="refusal" class="note note-error">${ARCHIVED}</p>`),
+        fields.amount,
+      );
       // Its page as a pouch in the storeroom: the balance, the expenses, «Вернуть».
-      assert.ok(page.includes('<p>Остаток −1,00 ₽</p>'));
-      assert.deepEqual(expenseRows(page), ['05.10 · −1,00 ₽']);
-      assert.ok(page.includes(`<form method="post" action="/saeckel/pouches/${id}/restore">`));
+      assert.equal(balanceOn(page), '−1,00 ₽');
+      assert.deepEqual(movementLines(page), ['05.10 · Трата · −1,00 ₽']);
+      assert.ok(
+        page.includes(
+          `<form class="restore" method="post" action="/saeckel/pouches/${id}/restore">`,
+        ),
+      );
       // No form, so no fields, no errors of fields and nothing of what was typed.
       assert.ok(!page.includes('/expense"'));
       assert.ok(!page.includes('<input'));
-      assert.ok(!page.includes('-error"'));
+      assert.doesNotMatch(page, /id="\w+-error"/);
       assert.ok(!page.includes('1,2,3'));
       assert.ok(!page.includes('тайная'));
     }
@@ -1608,7 +1640,7 @@ describe('a form of an expense opened before the storeroom', () => {
   test('an active pouch keeps the errors under its fields', async () => {
     const id = await addPouch(1, 'Продукты');
     const page = await (await spend(id, { amount: '1,2,3', date: '', note: '' })).text();
-    assert.ok(page.includes('<p id="amount-error">'));
+    assert.ok(page.includes('<p id="amount-error" class="err-text">'));
     assert.ok(page.includes('value="1,2,3"'));
     assert.ok(!page.includes('id="refusal"'));
   });

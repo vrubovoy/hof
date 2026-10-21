@@ -52,8 +52,6 @@ const TAKEN_ERROR = 'Мешок с таким названием уже есть
 const ICON_ERROR = 'Выберите знак из списка.';
 const NOTE_ERROR = 'Заметка — до 200 символов, одной строкой.';
 const ARCHIVED_ERROR = 'Мешок в Кладовой: траты в нём не записываются.';
-const notEmptyError = (balance: string) =>
-  `Убрать в кладовую можно только пустой мешок. Сейчас в нём ${balance}.`;
 const restoreTakenError = (name: string) =>
   `Среди мешков уже есть «${name}». Переименуйте его и верните этот снова.`;
 // §4.6: a pouch in a form that is not this user's — somebody else's or none at all.
@@ -175,11 +173,13 @@ interface PouchColumn {
   stored: readonly StoredPouch[];
 }
 
-// Where a column stands: beside the page of a pouch, which it marks as the current one; and
-// whether the treasury has its buttons — not beside «Разложить», where one of them leads
+// Where a column stands: beside the page of a pouch, which it marks as the current one; on Мешки
+// beside the first pouch open on the right, which it marks by look only; and whether the
+// treasury has its buttons — not beside «Разложить», where one of them leads
 // (design/preview/SaeckelAssign.html).
 interface ColumnPlace {
   current?: number;
+  open?: number;
   buttons: boolean;
 }
 
@@ -480,14 +480,15 @@ function treasuryFrame(treasury: number, money: MoneyFormat, buttons: boolean) {
 }
 
 // One active pouch of the column: its sign, its name and what is said under it, its balance; a
-// balance below zero is red. The pouch of the page beside the column is the current one.
-function pouchRow(pouch: ListedPouch, money: MoneyFormat, current: boolean) {
+// balance below zero is red. The pouch of the page beside the column is the current one; the
+// pouch open on the right of Мешки only looks so.
+function pouchRow(pouch: ListedPouch, money: MoneyFormat, place: ColumnPlace) {
   const debt = pouch.balance < 0;
   return html`<li>
     <a
-      class="pouch"
+      class="${pouch.id === place.open ? 'pouch open' : 'pouch'}"
       href="/saeckel/pouches/${pouch.id}"
-      ${current ? html`aria-current="page"` : ''}
+      ${pouch.id === place.current ? html`aria-current="page"` : ''}
     >
       ${signPicture(pouch.icon)}
       <span class="pouch-text">
@@ -533,7 +534,7 @@ function pouchColumn(column: PouchColumn, money: MoneyFormat, place: ColumnPlace
   }
   return html`${treasury}
     <ul class="pouches">
-      ${column.pouches.map((pouch) => pouchRow(pouch, money, pouch.id === place.current))}
+      ${column.pouches.map((pouch) => pouchRow(pouch, money, place))}
     </ul>
     <div class="list-foot">
       <a class="link-plain" href="/saeckel/pouches/new">+ Новый мешок</a>
@@ -544,19 +545,33 @@ function pouchColumn(column: PouchColumn, money: MoneyFormat, place: ColumnPlace
 // Мешки, texts from design/preview/Saeckel.html, SaeckelMobile.html, SaeckelEmpty.html and
 // SaeckelEmptyMobile.html. The treasury is always there; the empty state is about the active
 // pouches, beside the treasury and the storeroom (M6.1: SaeckelEmpty has no treasury); on a
-// computer the picture and the form of the first pouch stand to the right of them.
-function pouchesPage(column: PouchColumn, money: MoneyFormat) {
-  const list = pouchColumn(column, money, { buttons: true });
-  if (column.pouches.length > 0) {
+// computer the picture and the form of the first pouch stand to the right of them. With pouches,
+// the first of the list is open on the right of a computer, as in Saeckel; the phone has only
+// the list, its pouches open on their own pages (SaeckelMobile).
+function pouchesPage(
+  column: PouchColumn,
+  money: MoneyFormat,
+  first: { pouch: Pouch; view: PouchView } | null,
+) {
+  if (first !== null) {
     return saeckelPage(
-      { title: 'Säckel — мешки', tab: 'pouches', column: list },
-      html`${blot('ink-blot-medium', 'blot-pouches-medium')}
-      ${blot('ink-splatter-a', 'blot-pouches-splatter')} ${blot('ink-drip', 'blot-pouches-drip')}
-      ${blot('ink-blot-small', 'blot-pouches-small')}`,
+      {
+        title: 'Säckel — мешки',
+        tab: 'pouches',
+        column: pouchColumn(column, money, { open: first.pouch.id, buttons: true }),
+      },
+      html`<div class="sk-main sk-first">${pouchPane(first.pouch, first.view, money, 2)}</div>
+        ${blot('ink-blot-medium', 'blot-pouches-medium')}
+        ${blot('ink-splatter-a', 'blot-pouches-splatter')} ${blot('ink-drip', 'blot-pouches-drip')}
+        ${blot('ink-blot-small', 'blot-pouches-small')}`,
     );
   }
   return saeckelPage(
-    { title: 'Säckel — мешки', tab: 'pouches', column: list },
+    {
+      title: 'Säckel — мешки',
+      tab: 'pouches',
+      column: pouchColumn(column, money, { buttons: true }),
+    },
     html`<div class="sk-main sk-empty">
         <img class="vignette" src="/saeckel/static/img/empty-saeckel.webp" alt="" />
         <div class="sk-empty-text">
@@ -575,6 +590,8 @@ function pouchesPage(column: PouchColumn, money: MoneyFormat) {
   );
 }
 
+// «Новый мешок» (no picture of its own): the form on the right, in a frame drawn by pen, like the
+// forms of SaeckelForms; on the phone one column (IncomeMobile).
 function newPouchPage(form: NewPouchForm, column: PouchColumn, money: MoneyFormat) {
   return saeckelPage(
     {
@@ -583,24 +600,32 @@ function newPouchPage(form: NewPouchForm, column: PouchColumn, money: MoneyForma
       back: { href: '/saeckel/', text: 'Мешки' },
       column: pouchColumn(column, money, { buttons: true }),
     },
-    html`<h1>Новый мешок</h1>
-      ${newPouchForm(form)}`,
+    html`<div class="sk-form">
+      <h1 class="title t-2">Новый мешок</h1>
+      ${newPouchForm(form)}
+    </div>`,
   );
 }
 
-// «Сумма», «Дата», «Заметка» of a form (design/preview/Saeckel.html, SaeckelForms.html). What
-// was typed stays in the fields; the error of a field is under it.
+// «Сумма», «Дата», «Заметка» of a form (design/preview/Saeckel.html, SaeckelForms.html,
+// PouchMobile.html): fields drawn by pen, the amount larger. What was typed stays in the fields;
+// the error of a field is under it, and the field is drawn red.
 function entryFields(form: EntryForm, money: MoneyFormat) {
   const attributes = (field: EntryField) =>
     form.errors[field] === undefined
       ? ''
       : html`aria-invalid="true" aria-describedby="${field}-error"`;
+  const fieldClass = (field: EntryField) =>
+    form.errors[field] === undefined ? `field field-${field}` : `field field-${field} err`;
   const error = (field: EntryField) =>
-    form.errors[field] === undefined ? '' : html`<p id="${field}-error">${form.errors[field]}</p>`;
-  return html`<p>
+    form.errors[field] === undefined
+      ? ''
+      : html`<p id="${field}-error" class="err-text">${form.errors[field]}</p>`;
+  return html`<div class="${fieldClass('amount')}">
       <label for="amount">Сумма, ${money.symbol}</label>
       <input
         id="amount"
+        class="input big"
         name="amount"
         type="text"
         inputmode="decimal"
@@ -609,27 +634,49 @@ function entryFields(form: EntryForm, money: MoneyFormat) {
         value="${form.amount}"
         ${attributes('amount')}
       />
-    </p>
-    ${error('amount')}
-    <p>
+      ${error('amount')}
+    </div>
+    <div class="${fieldClass('date')}">
       <label for="date">Дата</label>
-      <input id="date" name="date" type="text" value="${form.date}" ${attributes('date')} />
-    </p>
-    ${error('date')}
-    <p>
+      <input
+        id="date"
+        class="input"
+        name="date"
+        type="text"
+        value="${form.date}"
+        ${attributes('date')}
+      />
+      ${error('date')}
+    </div>
+    <div class="${fieldClass('note')}">
       <label for="note">Заметка</label>
-      <input id="note" name="note" type="text" value="${form.note}" ${attributes('note')} />
-    </p>
-    ${error('note')}`;
+      <input
+        id="note"
+        class="input"
+        name="note"
+        type="text"
+        value="${form.note}"
+        ${attributes('note')}
+      />
+      ${error('note')}
+    </div>`;
 }
 
-// The form «Записать трату» (design/preview/Saeckel.html, PouchMobile.html).
-function expenseForm(pouch: Pouch, form: EntryForm, money: MoneyFormat) {
-  return html`<h2>Записать трату</h2>
-    <form method="post" action="/saeckel/pouches/${pouch.id}/expense">
+// The form «Записать трату» (design/preview/Saeckel.html, PouchMobile.html): on a computer the
+// fields and the button in a row, on the phone in a frame, the amount the whole width. Its
+// heading is for the screen reader only on the phone; `level` is the level of that heading.
+function expenseForm(pouch: Pouch, form: EntryForm, money: MoneyFormat, level: 2 | 3) {
+  const heading =
+    level === 2
+      ? html`<h2 class="title t-3 visually-hidden-phone">Записать трату</h2>`
+      : html`<h3 class="title t-3 visually-hidden-phone">Записать трату</h3>`;
+  return html`<form class="expense" method="post" action="/saeckel/pouches/${pouch.id}/expense">
+    ${heading}
+    <div class="expense-row">
       ${entryFields(form, money)}
-      <button type="submit">Записать трату</button>
-    </form>`;
+      <button type="submit" class="btn btn-ochre">Записать трату</button>
+    </div>
+  </form>`;
 }
 
 // «Доход», texts from design/preview/SaeckelForms.html and IncomeMobile.html.
@@ -733,8 +780,8 @@ function coverLink(pouchId: number, balance: number) {
   const debt = -balance;
   const amount =
     debt <= AMOUNT_MAX_CENTS ? `&amount=${encodeURIComponent(amountForField(debt))}` : '';
-  return html`<p>
-    <a href="/saeckel/transfer?to=${pouchId}${amount}">Покрыть из другого мешка</a>
+  return html`<p class="cover">
+    <a class="link" href="/saeckel/transfer?to=${pouchId}${amount}">Покрыть из другого мешка</a>
   </p>`;
 }
 
@@ -790,10 +837,10 @@ function transferPage(column: PouchColumn, form: PouchesForm, money: MoneyFormat
   );
 }
 
-// One movement of a pouch, seen from that pouch: «ДД.ММ · заметка · −X» for an expense, with
-// «из казны», «из мешка «X»» or «в мешок «Y»» before the note for the others; what comes in has
-// «+», what goes out «−». The note is left out when there is none. The record just written is
-// marked.
+// One movement of a pouch, seen from that pouch, as a row of Saeckel and PouchMobile: the date
+// ДД.ММ, the kind — «Трата», «из казны», «из мешка «X»» or «в мешок «Y»» — the note, and the
+// amount: what comes in has «+», what goes out «−». The record just written is marked — `mark`,
+// drawn by pen — with no animation (§4.8: a record written twice is seen at once).
 function movementRow(
   movement: Operation,
   pouchId: number,
@@ -801,20 +848,27 @@ function movementRow(
   money: MoneyFormat,
 ) {
   const incoming = movement.toPouchId === pouchId;
-  const label =
-    movement.kind === 'assign'
-      ? 'из казны'
-      : movement.kind === 'transfer'
-        ? incoming
+  const kind =
+    movement.kind === 'expense'
+      ? 'Трата'
+      : movement.kind === 'assign'
+        ? 'из казны'
+        : incoming
           ? `из мешка «${movement.fromName}»`
-          : `в мешок «${movement.toName}»`
-        : null;
+          : `в мешок «${movement.toName}»`;
   const amount = incoming ? `+${money.format(movement.cents)}` : money.format(-movement.cents);
-  const text = html`${dateForList(movement.date)}${label === null ? '' : html` · ${label}`}${
-    movement.note === '' ? '' : html` · ${movement.note}`
-  }
-  · ${amount}`;
-  return html`<li>${String(movement.id) === fresh ? html`<mark>${text}</mark>` : text}</li>`;
+  const row = movement.kind === 'expense' ? 'move move-expense' : 'move';
+  const cells = html`<span class="move-date">${dateForList(movement.date)}</span>
+    <span class="move-kind">${kind}</span>
+    <span class="move-note">${movement.note}</span>
+    <span class="move-sum">${amount}</span>`;
+  return html`<li>
+    ${
+      String(movement.id) === fresh
+        ? html`<mark class="${row}">${cells}</mark>`
+        : html`<span class="${row}">${cells}</span>`
+    }
+  </li>`;
 }
 
 // Where a record of «Летопись» goes: «Казна» for an income, the pouch, or «Отпуск →
@@ -1004,9 +1058,58 @@ function operationEditPage(
   );
 }
 
-// The pouch, its balance, the form of an expense and its last movements; «Переложить» and, in
-// debt, «Покрыть из другого мешка». A pouch in the storeroom has none of these, only «Вернуть»:
-// it is brought back first.
+// An open pouch (design/preview/Saeckel.html on the right, PouchMobile.html): its sign and name
+// with «Переложить» and «Изменить», the balance in a frame drawn by pen — red below zero, then
+// «Покрыть из другого мешка» — the refusal, if any, the form of an expense and the last
+// movements. A pouch in the storeroom has neither the links nor the form, only «Вернуть»: it is
+// brought back first. `heading` is the level of its name: 1 on its own page, 2 on Мешки, where
+// the ribbon is the h1.
+function pouchPane(pouch: Pouch, view: PouchView, money: MoneyFormat, heading: 1 | 2) {
+  const name =
+    heading === 1
+      ? html`<h1 class="title t-1">${pouch.name}</h1>`
+      : html`<h2 class="title t-1">${pouch.name}</h2>`;
+  return html`<div class="pouch-pane">
+    <div class="pouch-head">
+      ${signPicture(pouch.icon)} ${name}
+      ${
+        pouch.is_archived
+          ? ''
+          : html`<p class="pouch-links">
+              <a class="link" href="/saeckel/transfer?from=${pouch.id}">Переложить</a>
+              <a class="link" href="/saeckel/pouches/${pouch.id}/edit">Изменить</a>
+            </p>`
+      }
+    </div>
+    <p class="balance">
+      <span class="caps">Остаток</span>
+      <span class="${view.balance < 0 ? 'money neg' : 'money'}">${money.format(view.balance)}</span>
+    </p>
+    ${pouch.is_archived ? '' : coverLink(pouch.id, view.balance)}
+    ${
+      view.refusal === undefined
+        ? ''
+        : html`<p id="refusal" class="note note-error">${view.refusal}</p>`
+    }
+    ${
+      pouch.is_archived
+        ? html`<form class="restore" method="post" action="/saeckel/pouches/${pouch.id}/restore">
+            <button type="submit" class="btn btn-ochre">Вернуть</button>
+          </form>`
+        : expenseForm(pouch, view.form, money, heading === 1 ? 2 : 3)
+    }
+    ${
+      view.movements.length === 0
+        ? ''
+        : html`<ul class="moves">
+            ${view.movements.map((movement) => movementRow(movement, pouch.id, view.fresh, money))}
+          </ul>`
+    }
+  </div>`;
+}
+
+// The page of a pouch: the open pouch beside the column, where it is the current one; the blots
+// of Saeckel on a computer and of PouchMobile on the phone.
 function pouchPage(pouch: Pouch, view: PouchView, money: MoneyFormat, column: PouchColumn) {
   return saeckelPage(
     {
@@ -1015,41 +1118,18 @@ function pouchPage(pouch: Pouch, view: PouchView, money: MoneyFormat, column: Po
       back: { href: '/saeckel/', text: 'Мешки' },
       column: pouchColumn(column, money, { current: pouch.id, buttons: true }),
     },
-    html`<h1>${pouch.name}</h1>
-      ${
-        pouch.is_archived
-          ? ''
-          : html`<p>
-              <a href="/saeckel/transfer?from=${pouch.id}">Переложить</a>
-              <a href="/saeckel/pouches/${pouch.id}/edit">Изменить</a>
-            </p>`
-      }
-      <p>Остаток ${money.format(view.balance)}</p>
-      ${pouch.is_archived ? '' : coverLink(pouch.id, view.balance)}
-      ${view.refusal === undefined ? '' : html`<p id="refusal">${view.refusal}</p>`}
-      ${
-        pouch.is_archived
-          ? html`<form method="post" action="/saeckel/pouches/${pouch.id}/restore">
-              <button type="submit">Вернуть</button>
-            </form>`
-          : expenseForm(pouch, view.form, money)
-      }
-      ${
-        view.movements.length === 0
-          ? ''
-          : html`<ul>
-              ${view.movements.map((movement) =>
-                movementRow(movement, pouch.id, view.fresh, money),
-              )}
-            </ul>`
-      }`,
+    html`${pouchPane(pouch, view, money, 1)} ${blot('ink-blot-medium', 'blot-pouches-medium')}
+    ${blot('ink-splatter-a', 'blot-pouches-splatter')} ${blot('ink-drip', 'blot-pouches-drip')}
+    ${blot('ink-splatter-b', 'blot-pouch-splatter')}`,
   );
 }
 
-// «Изменить», texts from design/preview/PouchEditMobile.html: the name and the sign, then «В
-// кладовую». The heading keeps the stored name; the fields show what was typed and chosen.
-// Only an empty pouch goes into the storeroom: with any other balance the block says why and
-// its button is off, as in the design; the server checks again under the lock.
+// «Изменить», texts from design/preview/PouchEditMobile.html and the frame «Мешок «Транспорт»» of
+// SaeckelForms.html: the name and the sign — each sign a picture with its word, the chosen one
+// ringed by pen — then «В кладовую», in the same frame under a line on a computer and in a frame
+// of its own on the phone. The heading keeps the stored name; the fields show what was typed and
+// chosen. Only an empty pouch goes into the storeroom: with any other balance the block says why
+// and its button is off, as in the design; the server checks again under the lock.
 function editPouchPage(
   pouch: Pouch,
   form: EditPouchForm,
@@ -1065,33 +1145,51 @@ function editPouchPage(
       back: { href: `/saeckel/pouches/${pouch.id}`, text: pouch.name },
       column: pouchColumn(column, money, { current: pouch.id, buttons: true }),
     },
-    html`<h1>Мешок «${pouch.name}»</h1>
+    html`<div class="sk-form pouch-edit">
       <form method="post" action="/saeckel/pouches/${pouch.id}/edit">
+        <h1 class="title t-2">Мешок «${pouch.name}»</h1>
         ${nameField(form.name, form.error)}
-        <fieldset ${describedBy}>
+        <fieldset class="signs" ${describedBy}>
           <legend>Знак мешка</legend>
-          ${(Object.keys(ICONS) as Icon[]).map(
-            (icon) =>
-              html`<label>
-                <input
-                  type="radio"
-                  name="icon"
-                  value="${icon}"
-                  ${icon === form.icon ? html`checked` : ''}
-                />
-                ${ICONS[icon]}
-              </label>`,
-          )}
+          <div class="icons">
+            ${(Object.keys(ICONS) as Icon[]).map(
+              (icon) =>
+                html`<label class="icon-pick">
+                  <input
+                    type="radio"
+                    name="icon"
+                    value="${icon}"
+                    ${icon === form.icon ? html`checked` : ''}
+                  />
+                  ${signPicture(icon)} ${ICONS[icon]}
+                </label>`,
+            )}
+          </div>
         </fieldset>
         ${formError(form.error, 'icon')}
-        <button type="submit">Сохранить</button>
+        <button type="submit" class="btn btn-ochre">Сохранить</button>
       </form>
-      <h2>В кладовую</h2>
-      ${balance === 0 ? '' : html`<p>${notEmptyError(money.format(balance))}</p>`}
-      <form method="post" action="/saeckel/pouches/${pouch.id}/archive">
-        <button type="submit" ${balance === 0 ? '' : html`disabled`}>В кладовую</button>
-      </form>
-      ${coverLink(pouch.id, balance)}`,
+      <section class="to-storeroom">
+        <h2 class="title t-3">В кладовую</h2>
+        ${
+          balance === 0
+            ? ''
+            : html`<p class="muted">
+                Убрать в кладовую можно только пустой мешок. Сейчас в нём
+                <span class="${balance < 0 ? 'money neg' : 'money'}">${money.format(balance)}</span
+                >.
+              </p>`
+        }
+        <div class="to-storeroom-actions">
+          <form method="post" action="/saeckel/pouches/${pouch.id}/archive">
+            <button type="submit" class="btn" ${balance === 0 ? '' : html`disabled`}>
+              В кладовую
+            </button>
+          </form>
+          ${coverLink(pouch.id, balance)}
+        </div>
+      </section>
+    </div>`,
   );
 }
 
@@ -1378,17 +1476,22 @@ export function createSaeckelApp(
     return rows[0] ?? null;
   }
 
-  // The balance of one pouch of this user and its last movements, for its page: every record
-  // into or out of it — laid out, spent, moved in, moved out; an income touches no pouch.
-  async function pouchState(pouchId: number, userId: number) {
-    const balance = await balanceOf(pool, pouchId, userId);
-    const recent = await pool.query<OperationRow>(
+  // The last movements of one pouch of this user, newest first: every record into or out of it —
+  // laid out, spent, moved in, moved out; an income touches no pouch. One statement.
+  async function recentMovements(pouchId: number, userId: number): Promise<Operation[]> {
+    const { rows } = await pool.query<OperationRow>(
       `${OPERATIONS} AND (o.from_pouch_id = $2 OR o.to_pouch_id = $2)
         ORDER BY o.date DESC, o.id DESC
         LIMIT ${RECENT_MOVEMENTS}`,
       [userId, pouchId],
     );
-    return { balance, movements: recent.rows.map(operationFrom) };
+    return rows.map(operationFrom);
+  }
+
+  // The balance of one pouch of this user and its last movements, for its page.
+  async function pouchState(pouchId: number, userId: number) {
+    const balance = await balanceOf(pool, pouchId, userId);
+    return { balance, movements: await recentMovements(pouchId, userId) };
   }
 
   // The record of the :id in the path, if it is the user's, with its pouches: no such record, a
@@ -1455,9 +1558,26 @@ export function createSaeckelApp(
     return { treasury, pouches, stored: stored.rows };
   }
 
-  // Мешки: the column is the page.
+  // Мешки: the column is the page. On a computer the first pouch of the column — the active pouch
+  // of this user with the smallest id, the list is in that order — is open on the right, as in
+  // Saeckel: its balance is the one the column has, only its last movements are read besides.
+  // No choice is kept anywhere: no cookie, no address, nothing written.
   saeckel.get('/saeckel/', signedIn, async (c) => {
-    return c.html(pouchesPage(await columnOf(c.get('user').id), money));
+    const userId = c.get('user').id;
+    const column = await columnOf(userId);
+    const listed = column.pouches[0];
+    const first =
+      listed === undefined
+        ? null
+        : {
+            pouch: { id: listed.id, name: listed.name, icon: listed.icon, is_archived: false },
+            view: {
+              balance: listed.balance,
+              movements: await recentMovements(listed.id, userId),
+              form: emptyEntryForm(),
+            },
+          };
+    return c.html(pouchesPage(column, money, first));
   });
 
   // Registered before /saeckel/pouches/:id, which would match it too.

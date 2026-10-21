@@ -341,7 +341,7 @@ describe('Переложить', () => {
     assert.equal(res.status, 400);
     const page = await res.text();
     for (const id of ['amount-error', 'date-error', 'note-error']) {
-      assert.ok(page.includes(`<p id="${id}">`), id);
+      assert.ok(page.includes(`<p id="${id}" class="err-text">`), id);
     }
     assert.ok(page.includes('value="1,2,3"'));
     assert.ok(page.includes('value="31.02.2026"'));
@@ -370,7 +370,9 @@ describe('«Переложить» and «Покрыть из другого ме
   test('«Переложить» on an active pouch; neither link on a pouch in the storeroom', async () => {
     const food = await addPouch(1, 'Продукты');
     const page = await (await get(`/saeckel/pouches/${food}`, 'anna')).text();
-    assert.ok(page.includes(`<a href="/saeckel/transfer?from=${food}">Переложить</a>`));
+    assert.ok(
+      page.includes(`<a class="link" href="/saeckel/transfer?from=${food}">Переложить</a>`),
+    );
     const old = await addPouch(1, 'Старый');
     await addOperation(1, 'expense', 100, { from: old });
     await pool.query('UPDATE pouches SET is_archived = true WHERE id = $1', [old]);
@@ -390,7 +392,7 @@ describe('«Переложить» and «Покрыть из другого ме
     const href = `/saeckel/transfer?to=${cart}&amp;amount=1%C2%A0240%2C50`;
     for (const path of [`/saeckel/pouches/${cart}`, `/saeckel/pouches/${cart}/edit`]) {
       const page = fold(await (await get(path, 'anna')).text());
-      assert.ok(page.includes(`<a href="${href}">Покрыть из другого мешка</a>`), path);
+      assert.ok(page.includes(`<a class="link" href="${href}">Покрыть из другого мешка</a>`), path);
     }
     const form = await (await get(href.replace('&amp;', '&'), 'anna')).text();
     assert.deepEqual(chosen(form, 'to'), [String(cart)]);
@@ -403,7 +405,11 @@ describe('«Переложить» and «Покрыть из другого ме
     await addOperation(1, 'expense', 100_000_000_000, { from: cart });
     await addOperation(1, 'expense', 1, { from: cart });
     const page = await (await get(`/saeckel/pouches/${cart}`, 'anna')).text();
-    assert.ok(page.includes(`<a href="/saeckel/transfer?to=${cart}">Покрыть из другого мешка</a>`));
+    assert.ok(
+      page.includes(
+        `<a class="link" href="/saeckel/transfer?to=${cart}">Покрыть из другого мешка</a>`,
+      ),
+    );
   });
 });
 
