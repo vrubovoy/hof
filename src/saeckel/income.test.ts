@@ -16,12 +16,15 @@ import {
   failingTrigger,
   fold,
   get,
+  mainPart,
   operations,
   pool,
   post,
   pouchLines,
   pouches,
+  treasurySum,
   waitingQueries,
+  wayBack,
 } from './test-helpers.ts';
 
 before(() => migrate(pool, join(import.meta.dirname, 'migrations')));
@@ -54,7 +57,7 @@ function archive(id: number, who = 'anna') {
 
 // The sum the block «Казна» shows on a page, with whitespace folded.
 function treasury(page: string): string | undefined {
-  return /<h2>Казна<\/h2> <p>([^<]*)<\/p>/.exec(fold(page))?.[1];
+  return treasurySum(page);
 }
 
 // The rows of «Разложить»: the name, the balance and what is in the field.
@@ -75,9 +78,12 @@ describe('Казна on Мешки', () => {
   test('a new person: 0,00 ₽, «Разложить» and «+ Доход», above the empty state', async () => {
     const page = fold(await (await get('/saeckel/', 'anna')).text());
     assert.equal(treasury(page), '0,00 ₽');
-    assert.ok(page.includes('<a href="/saeckel/assign">Разложить</a>'));
-    assert.ok(page.includes('<a href="/saeckel/income">+ Доход</a>'));
-    assert.ok(page.indexOf('<h2>Казна</h2>') < page.indexOf('<h2>Мешков пока нет</h2>'));
+    assert.ok(page.includes('<a class="btn btn-ochre" href="/saeckel/assign">Разложить</a>'));
+    assert.ok(page.includes('<a class="btn" href="/saeckel/income">+ Доход</a>'));
+    assert.ok(
+      page.indexOf('<h2 class="title t-3">Казна</h2>') <
+        page.indexOf('<h2 class="title">Мешков пока нет</h2>'),
+    );
   });
 
   test('income adds, laying out takes away; expenses and records of others count for nothing', async () => {
@@ -124,7 +130,6 @@ describe('Доход', () => {
     const page = fold(await res.text());
     for (const text of [
       '<title>Säckel — доход</title>',
-      '<p><a href="/saeckel/">Мешки</a></p>',
       '<h1>Доход</h1>',
       '<form method="post" action="/saeckel/income">',
       '<label for="amount">Сумма, ₽</label>',
@@ -135,6 +140,10 @@ describe('Доход', () => {
     ]) {
       assert.ok(page.includes(text), text);
     }
+    assert.equal(wayBack(page), '/saeckel/ Мешки');
+    // The column beside the form: the treasury with both of its buttons.
+    assert.equal(treasury(page), '0,00 ₽');
+    assert.ok(page.includes('<a class="btn btn-ochre" href="/saeckel/assign">Разложить</a>'));
   });
 
   test('written for the one signed in: 303 to «Разложить» with its id; other fields ignored', async () => {
@@ -239,9 +248,15 @@ describe('the page «Разложить»', () => {
       ['Продукты', '0,00 ₽', ''],
       ['Квартира', '−1 240,50 ₽', ''],
     ]);
-    assert.ok(!page.includes('Старый'));
+    // The pouch in the storeroom has no row: it is only in «Кладовая» of the column.
+    assert.ok(!mainPart(page).includes('Старый'));
+    assert.ok(page.split('<details class="storeroom">')[1]!.includes('Старый'));
     assert.ok(!page.includes('Мешок Бориса'));
     assert.ok(!page.includes('лёг в казну'));
+    // The column beside it: the same treasury, no buttons — they lead here (SaeckelAssign).
+    assert.equal(treasury(page), '1 000,00 ₽');
+    assert.ok(!page.includes('href="/saeckel/assign">Разложить</a>'));
+    assert.ok(!page.includes('href="/saeckel/income">+ Доход</a>'));
   });
 
   test('no active pouch: «Мешков пока нет» and «+ Новый мешок» instead of the rows', async () => {
@@ -251,7 +266,8 @@ describe('the page «Разложить»', () => {
     assert.ok(page.includes('<p>В казне: 5,00 ₽.</p>'));
     assert.ok(page.includes('<h2>Мешков пока нет</h2>'));
     assert.ok(page.includes('<a href="/saeckel/pouches/new">+ Новый мешок</a>'));
-    assert.ok(!page.includes('<form'));
+    // No form of laying out; the only forms are «Вернуть» of the storeroom in the column.
+    assert.ok(!mainPart(page).includes('<form'));
   });
 
   test('an income of this user is named above the rows', async () => {

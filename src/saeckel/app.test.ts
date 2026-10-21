@@ -19,7 +19,9 @@ import {
   deadPool,
   failingTrigger,
   fold,
+  currentTab,
   get,
+  mainPart,
   operations,
   pool,
   post,
@@ -27,6 +29,7 @@ import {
   pouches,
   signedIn,
   waitingQueries,
+  wayBack,
 } from './test-helpers.ts';
 
 before(() => migrate(pool, join(import.meta.dirname, 'migrations')));
@@ -38,7 +41,7 @@ const TAKEN = 'Мешок с таким названием уже есть.';
 
 // The pouches of the list, as their links, in the order shown. pouchLines gives the whole lines.
 function listItems(page: string): string[] {
-  return [...activeList(page).matchAll(/<li>\s*(<a [^>]*>[^<]*<\/a>)/g)].map((m) => m[1]!);
+  return pouchLines(page).map((line) => line.split(' · ')[0]!);
 }
 
 // Resolves once a query of hof_test waits for a lock held by another transaction.
@@ -121,18 +124,21 @@ describe('Мешки', () => {
     const page = (await res.text()).replace(/\s+/g, ' ');
     for (const text of [
       '<title>Säckel — мешки</title>',
-      '<a href="/">← Двор</a>',
-      '<h1>Säckel</h1>',
-      '<a href="/saeckel/" aria-current="page">Мешки</a>',
-      '<h2>Мешков пока нет</h2>',
+      '<h1 class="ribbon ribbon-md"><span>Säckel</span></h1>',
+      '<a class="tab" href="/saeckel/" aria-current="page">Мешки</a>',
+      '<h2 class="title">Мешков пока нет</h2>',
       'Заведите первый мешок: «Продукты», «Квартира», «Транспорт». Траты берутся из мешка, а остаток переходит дальше сам.',
-      '<form method="post" action="/saeckel/pouches/new">',
+      '<form class="form-row new-pouch" method="post" action="/saeckel/pouches/new">',
       '<label for="name">Название</label>',
-      '<button type="submit">Завести мешок</button>',
+      '<button type="submit" class="btn btn-ochre">Завести мешок</button>',
     ]) {
       assert.ok(page.includes(text), text);
     }
-    assert.ok(page.includes('<p>Знак мешка можно выбрать потом, в «Изменить».</p>'));
+    assert.match(page, /<a class="sk-gate sk-court" href="\/" ?><img [^>]*\/>Двор<\/a ?>/);
+    assert.equal(wayBack(page), undefined);
+    assert.ok(
+      page.includes('<p class="hint text-full">Знак мешка можно выбрать потом, в «Изменить».</p>'),
+    );
     // The first pouch is made from its name only.
     assert.equal((page.match(/<input/g) ?? []).length, 1);
     assert.ok(!page.includes('+ Новый мешок'));
@@ -153,7 +159,7 @@ describe('Мешки', () => {
       `<a href="/saeckel/pouches/${apples}">Яблоки</a>`,
       `<a href="/saeckel/pouches/${oranges}">Апельсины</a>`,
     ]);
-    assert.ok(page.includes('<a href="/saeckel/pouches/new">+ Новый мешок</a>'));
+    assert.ok(page.includes('<a class="link-plain" href="/saeckel/pouches/new">+ Новый мешок</a>'));
     assert.ok(!page.includes('Мешков пока нет'));
     assert.ok(!page.includes('Мешок Бориса'));
     // The one in the storeroom is not in the list: it is in «Кладовая».
@@ -178,14 +184,16 @@ describe('Новый мешок', () => {
     const page = await res.text();
     for (const text of [
       '<title>Säckel — новый мешок</title>',
-      '<p><a href="/saeckel/">Мешки</a></p>',
+      '<p class="ribbon ribbon-md"><span>Säckel</span></p>',
       '<h1>Новый мешок</h1>',
-      '<form method="post" action="/saeckel/pouches/new">',
+      '<form class="form-row new-pouch" method="post" action="/saeckel/pouches/new">',
       '<label for="name">Название</label>',
-      '<button type="submit">Завести мешок</button>',
+      '<button type="submit" class="btn btn-ochre">Завести мешок</button>',
     ]) {
       assert.ok(page.includes(text), text);
     }
+    assert.equal(wayBack(page), '/saeckel/ Мешки');
+    assert.equal(currentTab(page), 'Мешки');
     assert.equal((page.match(/<input/g) ?? []).length, 1);
   });
 
@@ -226,7 +234,7 @@ describe('Новый мешок', () => {
       const res = await post('/saeckel/pouches/new', { name }, 'anna');
       assert.equal(res.status, 400);
       const page = await res.text();
-      assert.ok(page.includes(`<p id="name-error">${NAME_ERROR}</p>`));
+      assert.ok(page.includes(`<p id="name-error" class="err-text">${NAME_ERROR}</p>`));
       assert.match(page, /name="name"[^>]*aria-invalid="true"/);
       assert.deepEqual(await pouches(), []);
     });
@@ -244,7 +252,7 @@ describe('Новый мешок', () => {
       const res = await post('/saeckel/pouches/new', { name }, 'anna');
       assert.equal(res.status, 400, name);
       const page = await res.text();
-      assert.ok(page.includes(`<p id="name-error">${TAKEN}</p>`), name);
+      assert.ok(page.includes(`<p id="name-error" class="err-text">${TAKEN}</p>`), name);
       assert.ok(page.includes(`value="${name}"`), name);
     }
     await addPouch(1, '<i>x</i>');
@@ -312,13 +320,16 @@ describe('the page of a pouch', () => {
     const res = await get(`/saeckel/pouches/${id}`, 'anna');
     assert.equal(res.status, 200);
     const page = await res.text();
-    for (const text of [
-      '<title>Säckel — Продукты</title>',
-      '<p><a href="/saeckel/">Мешки</a></p>',
-      '<h1>Продукты</h1>',
-    ]) {
+    for (const text of ['<title>Säckel — Продукты</title>', '<h1>Продукты</h1>']) {
       assert.ok(page.includes(text), text);
     }
+    assert.equal(wayBack(page), '/saeckel/ Мешки');
+    assert.equal(currentTab(page), 'Мешки');
+    // The pouch is the current one in the column beside the page.
+    assert.match(
+      page,
+      new RegExp(`<a\\s+class="pouch"\\s+href="/saeckel/pouches/${id}"\\s+aria-current="page"`),
+    );
   });
 
   test('a pouch of somebody else is the same 404 as one that does not exist', async () => {
@@ -394,7 +405,7 @@ describe('Новый мешок: a sign sent with the name', () => {
       const res = await post('/saeckel/pouches/new', { name: 'Еда', icon }, 'anna');
       assert.equal(res.status, 400);
       const page = await res.text();
-      assert.ok(page.includes(`<p id="icon-error">${ICON_ERROR}</p>`));
+      assert.ok(page.includes(`<p id="icon-error" class="err-text">${ICON_ERROR}</p>`));
       assert.ok(page.includes('value="Еда"'));
       assert.deepEqual(await pouches(), []);
     });
@@ -411,7 +422,6 @@ describe('Изменить мешок', () => {
     const flat = page.replace(/\s+/g, ' ');
     for (const text of [
       '<title>Säckel — Продукты</title>',
-      `<p><a href="/saeckel/pouches/${id}">Продукты</a></p>`,
       '<h1>Мешок «Продукты»</h1>',
       `<form method="post" action="/saeckel/pouches/${id}/edit">`,
       '<label for="name">Название</label>',
@@ -424,6 +434,8 @@ describe('Изменить мешок', () => {
     for (const [key, label] of SIGNS) {
       assert.match(flat, new RegExp(`value="${key}"( checked)? /> ${label} </label>`), key);
     }
+    // The way back on the phone leads to the pouch itself.
+    assert.equal(wayBack(page), `/saeckel/pouches/${id} Продукты`);
     assert.deepEqual(signs(page), { offered: SIGNS.map(([key]) => key), checked: ['cart'] });
   });
 
@@ -483,7 +495,7 @@ describe('Изменить мешок', () => {
       const res = await edit(id, { name, icon: 'jug' });
       assert.equal(res.status, 400, name);
       const page = await res.text();
-      assert.ok(page.includes(`<p id="name-error">${TAKEN}</p>`), name);
+      assert.ok(page.includes(`<p id="name-error" class="err-text">${TAKEN}</p>`), name);
       assert.ok(page.includes(`value="${name}"`), name);
       assert.deepEqual(signs(page).checked, ['jug'], name);
       // The heading keeps the stored name.
@@ -513,7 +525,7 @@ describe('Изменить мешок', () => {
       const res = await edit(id, { name, icon: 'jug' });
       assert.equal(res.status, 400);
       const page = await res.text();
-      assert.ok(page.includes(`<p id="name-error">${NAME_ERROR}</p>`));
+      assert.ok(page.includes(`<p id="name-error" class="err-text">${NAME_ERROR}</p>`));
       assert.deepEqual(signs(page).checked, ['jug']);
       assert.equal((await pouch(id))!.name, 'Продукты');
     });
@@ -531,7 +543,7 @@ describe('Изменить мешок', () => {
       const res = await edit(id, fields);
       assert.equal(res.status, 400);
       const page = await res.text();
-      assert.ok(page.includes(`<p id="icon-error">${ICON_ERROR}</p>`));
+      assert.ok(page.includes(`<p id="icon-error" class="err-text">${ICON_ERROR}</p>`));
       assert.ok(page.includes('value="Еда"'));
       assert.deepEqual(signs(page).checked, []);
       assert.deepEqual(await pouch(id), {
@@ -659,7 +671,7 @@ function spend(id: number | string, fields: Record<string, string>, who = 'anna'
 
 // The rows of the list of expenses on a pouch page, with whitespace folded.
 function expenseRows(page: string): string[] {
-  const list = /<\/form>([\s\S]*)$/.exec(page)?.[1] ?? page;
+  const list = /<\/form>([\s\S]*)$/.exec(mainPart(page))?.[1] ?? page;
   return [...list.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]!.replace(/\s+/g, ' ').trim());
 }
 
@@ -1147,13 +1159,13 @@ describe('Кладовая on Мешки', () => {
     const oranges = await addPouch(1, 'Апельсины', true);
     const page = fold(await (await get('/saeckel/', 'anna')).text());
     assert.deepEqual(listItems(page), [`<a href="/saeckel/pouches/${active}">Продукты</a>`]);
-    const storeroom = page.split('<details>')[1]!;
+    const storeroom = page.split('<details class="storeroom">')[1]!;
     assert.ok(storeroom.startsWith(' <summary>Кладовая (2)</summary>'));
     assert.deepEqual(
       [...storeroom.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]!.trim()),
       [apples, oranges].map(
         (id) =>
-          `<a href="/saeckel/pouches/${id}">${id === apples ? 'Яблоки' : 'Апельсины'}</a> <form method="post" action="/saeckel/pouches/${id}/restore"> <button type="submit">Вернуть</button> </form>`,
+          `<a class="stored" href="/saeckel/pouches/${id}" ><img src="/saeckel/static/img/emblem-saeckel-small.webp" srcset="/saeckel/static/img/emblem-saeckel-small@2x.webp 2x" alt="" /><span>${id === apples ? 'Яблоки' : 'Апельсины'}</span></a > <form method="post" action="/saeckel/pouches/${id}/restore"> <button type="submit" class="btn">Вернуть</button> </form>`,
       ),
     );
     assert.ok(!page.includes('Старый Бориса'));
@@ -1167,15 +1179,19 @@ describe('Кладовая on Мешки', () => {
     await addPouch(1, 'Продукты');
     await addPouch(2, 'Старый Бориса', true);
     const page = await (await get('/saeckel/', 'anna')).text();
-    assert.ok(!page.includes('<details>'));
+    assert.ok(!page.includes('<details'));
     assert.ok(!page.includes('Кладовая'));
   });
 
   test('no active pouch: the empty state, and the storeroom beside it', async () => {
     const id = await addPouch(1, 'Отпуск', true);
     const page = fold(await (await get('/saeckel/', 'anna')).text());
-    assert.ok(page.includes('<h2>Мешков пока нет</h2>'));
-    assert.ok(page.includes('<form method="post" action="/saeckel/pouches/new">'));
+    assert.ok(page.includes('<h2 class="title">Мешков пока нет</h2>'));
+    assert.ok(
+      page.includes(
+        '<form class="form-row new-pouch" method="post" action="/saeckel/pouches/new">',
+      ),
+    );
     assert.ok(page.includes('<summary>Кладовая (1)</summary>'));
     assert.ok(page.includes(`<form method="post" action="/saeckel/pouches/${id}/restore">`));
   });
@@ -1221,7 +1237,7 @@ describe('В кладовую', () => {
     assert.equal(await isArchived(id), true);
     const page = fold(await (await get('/saeckel/', 'anna')).text());
     assert.deepEqual(listItems(page), []);
-    assert.ok(page.includes('<h2>Мешков пока нет</h2>'));
+    assert.ok(page.includes('<h2 class="title">Мешков пока нет</h2>'));
     assert.ok(page.includes('<summary>Кладовая (1)</summary>'));
     // Its page: the balance and «Вернуть», neither the form of an expense nor «Изменить».
     const own = fold(await (await get(`/saeckel/pouches/${id}`, 'anna')).text());
@@ -1432,7 +1448,7 @@ describe('Вернуть', () => {
     assert.equal((await operations()).length, 2);
     const list = await (await get('/saeckel/', 'anna')).text();
     assert.deepEqual(listItems(list), [`<a href="/saeckel/pouches/${id}">Отпуск</a>`]);
-    assert.ok(!list.includes('<details>'));
+    assert.ok(!list.includes('<details'));
     const page = fold(await (await get(`/saeckel/pouches/${id}`, 'anna')).text());
     assert.ok(page.includes('<p>Остаток 0,00 ₽</p>'));
     assert.ok(page.includes('Записать трату'));

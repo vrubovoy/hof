@@ -16,12 +16,15 @@ import {
   failingTrigger,
   fold,
   get,
+  mainPart,
   operations,
   pool,
   post,
   pouchLines,
   pouches,
+  treasurySum,
   waitingQueries,
+  wayBack,
 } from './test-helpers.ts';
 
 before(() => migrate(pool, join(import.meta.dirname, 'migrations')));
@@ -70,8 +73,7 @@ const chosen = (page: string, field: 'from' | 'to') =>
 
 // The sum the block «Казна» shows on Мешки.
 async function treasury(who = 'anna'): Promise<string | undefined> {
-  const page = fold(await (await get('/saeckel/', who)).text());
-  return /<h2>Казна<\/h2> <p>([^<]*)<\/p>/.exec(page)?.[1];
+  return treasurySum(await (await get('/saeckel/', who)).text());
 }
 
 // The balance of each active pouch on Мешки, by name.
@@ -98,7 +100,6 @@ describe('the page «Переложить»', () => {
     const folded = fold(page);
     for (const text of [
       '<title>Säckel — переложить</title>',
-      '<p><a href="/saeckel/">Мешки</a></p>',
       '<h1>Переложить из мешка в мешок</h1>',
       '<form method="post" action="/saeckel/transfer">',
       '<label for="from">Из мешка</label>',
@@ -116,8 +117,10 @@ describe('the page «Переложить»', () => {
         [String(flat), 'Квартира — −1 240,50 ₽', false],
       ]);
     }
-    assert.ok(!page.includes('Старый'));
+    // The pouch in the storeroom is in no list: only in «Кладовая» of the column.
+    assert.ok(!mainPart(page).includes('Старый'));
     assert.ok(!page.includes('Мешок Бориса'));
+    assert.equal(wayBack(page), '/saeckel/ Мешки');
   });
 
   test('`from` and `to` choose an active pouch of this user, and nothing else', async () => {
@@ -133,7 +136,7 @@ describe('the page «Переложить»', () => {
       assert.deepEqual(chosen(other, 'from'), [], String(value));
       assert.deepEqual(chosen(other, 'to'), [], String(value));
       assert.ok(!other.includes('Тайный'), String(value));
-      assert.ok(!other.includes('Старый'), String(value));
+      assert.ok(!mainPart(other).includes('Старый'), String(value));
     }
   });
 
