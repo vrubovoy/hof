@@ -177,6 +177,12 @@ a {
   font-size: 18px;
   color: var(--ink);
 }
+/* сумма — поле крупнее, цифры жирные */
+.input.big {
+  height: 56px;
+  font-size: 26px;
+  font-weight: 700;
+}
 /* поле в фокусе: та же линия пером, только синяя и жирнее (у поля с ошибкой — красная) */
 .input:focus {
   outline: none;
@@ -279,6 +285,10 @@ a {
 }
 .btn-wide {
   width: 100%;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* уведомление — записка, запечатанная сургучом: синяя печать — сообщение, красная — отказ.
@@ -726,6 +736,198 @@ a {
   overflow-x: auto;
 }
 
+/* открытый мешок: знак, имя и ссылки строкой; остаток в рамке пером; форма траты; движения */
+.pouch-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* под мешком остаётся пустая бумага для клякс (Saeckel, PouchMobile) */
+  padding-bottom: 56px;
+}
+.pouch-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.pouch-head > img {
+  display: block;
+  flex: none;
+  width: 58px;
+  height: 58px;
+  object-fit: contain;
+}
+.pouch-head .title {
+  /* имя стоит рядом со знаком и забирает остаток строки; ссылки, которым рядом с ним (хотя бы
+     10 знаков) нет места, уходят строкой ниже */
+  flex: 1 1 10ch;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pouch-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  margin: 0 0 0 auto;
+}
+.balance {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 10px 22px;
+  border: 2px solid transparent;
+  border-image: url(img/pen-panel.svg) 16 fill / 16px stretch;
+}
+.balance .money {
+  font-size: 40px;
+  line-height: 1.05;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.cover,
+.restore {
+  margin: 0;
+}
+.expense {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+.expense-row {
+  display: grid;
+  gap: 10px 12px;
+  align-items: start;
+}
+
+/* движения мешка: дата, вид, заметка, сумма; линия пером под строкой. Только что записанная —
+   выделение пером, без движения */
+.moves {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.move {
+  display: grid;
+  align-items: center;
+  /* ячейки таблицы прототипа: по 10 px с каждой стороны текста */
+  column-gap: 20px;
+  padding: 8px;
+  border: 2px solid transparent;
+  background: url(img/pen-rule-light.svg) left bottom / 100% 6px no-repeat;
+  color: var(--ink);
+}
+mark.move {
+  background: none;
+  border-image: url(img/pen-pick.svg) 16 fill / 16px stretch;
+}
+.move-date {
+  color: var(--ink-2);
+}
+.move-kind,
+.move-note {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.move-note {
+  font-style: italic;
+  color: var(--ink-2);
+}
+.move-sum {
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* форма справа от колонки — рамка пером с веточками (SaeckelForms); на телефоне одна колонка
+   (IncomeMobile). Её же получают «Доход», «Переложить» и запись */
+.sk-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 660px;
+  border: 22px solid transparent;
+  border-image: url(img/frame.webp) 107 / 54px stretch;
+  padding: 30px 34px 28px;
+}
+.sk-form form {
+  margin: 0;
+}
+
+/* «Изменить»: имя, знак, «Сохранить»; «В кладовую» — под линией пером */
+.pouch-edit > form,
+.pouch-edit > section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.pouch-edit .btn-ochre {
+  align-self: flex-start;
+}
+.to-storeroom p {
+  margin: 0;
+}
+.to-storeroom-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+}
+.to-storeroom-actions form {
+  margin: 0;
+}
+/* знак мешка: радиокнопки картинками; выбранный знак обведён пером, фокус клавиатуры — синей
+   рамкой вокруг знака */
+.signs {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.signs legend {
+  padding: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.icons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  gap: 4px 6px;
+}
+.icon-pick {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 9px 2px 4px;
+  /* в прототипе подпись знака набрана как подпись поля: 15 px, полужирная */
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.icon-pick input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.icon-pick img {
+  display: block;
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+}
+.icon-pick:has(input:checked) {
+  background: url(img/pen-ring.svg) center 0 / 66px 62px no-repeat;
+  color: var(--ink);
+}
+.icon-pick:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
 /* мешков пока нет: виньетка, заголовок с веточкой, текст и форма первого мешка */
 .sk-empty .vignette {
   width: 100%;
@@ -802,6 +1004,39 @@ a {
     padding: 18px 48px;
   }
 
+  /* на компьютере ссылки уходят под имя раньше: длинному имени остаётся почти вся строка */
+  .pouch-head .title {
+    flex-basis: 14ch;
+  }
+  /* мешок, открытый справа на Мешках, — тем же видом, что текущий */
+  .pouch.open {
+    background: none;
+    border-image: url(img/pen-pick.svg) 16 fill / 16px stretch;
+  }
+  /* поля траты и кнопка в ряд, кнопка вровень с полями и при ошибке под полем */
+  .expense-row {
+    grid-template-columns: 190px 160px minmax(0, 1fr) auto;
+  }
+  .expense-row .btn {
+    margin-top: calc(15px * 1.42 + 5px);
+  }
+  .expense-row .input.big {
+    height: 46px;
+    font-size: 18px;
+    font-weight: 400;
+  }
+  .move {
+    grid-template-columns: 60px minmax(0, 211px) minmax(0, 1fr) auto;
+  }
+  /* вид записи с большой буквы, как в Saeckel; в тексте он прежний */
+  .move-kind::first-letter {
+    text-transform: uppercase;
+  }
+  .to-storeroom {
+    padding-top: 16px;
+    background: url(img/pen-rule-light.svg) left top / 100% 6px no-repeat;
+  }
+
   /* мешков пока нет: виньетка и текст рядом посередине правой части; ветка — в углу, колонка
      оставляет ей место под собой */
   .sk-empty {
@@ -847,13 +1082,29 @@ a {
     opacity: 0.6;
     transform: rotate(30deg);
   }
-  .blot-pouches-small {
+  .blot-pouches-small,
+  .blot-pouch-splatter {
     display: none;
   }
 }
 
-/* компьютер поуже: виньетка над текстом, а не рядом */
+/* компьютер поуже: виньетка над текстом, а не рядом; поля траты в две строки, кнопка под ними;
+   у движений столбец вида уже */
 @media (min-width: 1024px) and (max-width: 1279.98px) {
+  .expense-row {
+    grid-template-columns: 170px minmax(0, 1fr);
+  }
+  .expense-row .field-note {
+    grid-column: 1 / -1;
+  }
+  .expense-row .btn {
+    justify-self: start;
+    margin-top: 0;
+  }
+  .move {
+    grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr) auto;
+    column-gap: 14px;
+  }
   .sk-empty {
     grid-template-columns: minmax(0, 520px);
   }
@@ -974,11 +1225,127 @@ a {
     margin-top: 0;
   }
 
+  /* мешок первым справа на Мешках — только на компьютере */
+  .sk-first {
+    display: none;
+  }
+  /* мешок — кадр PouchMobile: знак 48, имя, ссылки мельче; форма траты в рамке, сумма во всю
+     ширину, дата и заметка рядом, кнопка во всю ширину; заголовок формы — только для screen
+     reader */
+  .pouch-head > img {
+    width: 48px;
+    height: 48px;
+  }
+  .pouch-links {
+    gap: 4px 16px;
+    font-size: 15px;
+  }
+  .balance .money {
+    font-size: 34px;
+  }
+  .expense {
+    gap: 10px;
+    border: 22px solid transparent;
+    border-image: url(img/frame.webp) 107 / 54px stretch;
+    padding: 22px 20px 18px;
+  }
+  .expense-row {
+    grid-template-columns: 116px minmax(0, 1fr);
+  }
+  .expense-row .field-amount,
+  .expense-row .btn {
+    grid-column: 1 / -1;
+  }
+  .restore .btn {
+    width: 100%;
+  }
+  /* движение: дата, вид и заметка друг под другом, сумма справа; у траты вида нет — только
+     заметка (PouchMobile) */
+  .move {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    column-gap: 10px;
+  }
+  .move-date {
+    grid-row: span 2;
+    align-self: start;
+    font-size: 15px;
+  }
+  .move-sum {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    align-self: start;
+  }
+  .move-kind,
+  .move-note {
+    grid-column: 2;
+  }
+  .move-note:empty {
+    display: none;
+  }
+  .move-expense .move-kind {
+    display: none;
+  }
+  /* печать записки у края экрана не уходит за него */
+  .note {
+    margin-left: 22px;
+  }
+
+  /* форма — одна колонка, рамка во всю ширину; «Изменить» — две рамки: знак и «В кладовую» */
+  .sk-form {
+    max-width: none;
+    gap: 10px;
+    padding: 20px 18px 18px;
+  }
+  .pouch-edit {
+    border: 0;
+    border-image: none;
+    padding: 0;
+    gap: 12px;
+  }
+  .pouch-edit > form,
+  .pouch-edit > section {
+    gap: 10px;
+    border: 22px solid transparent;
+    border-image: url(img/frame.webp) 107 / 54px stretch;
+    padding: 20px 18px 18px;
+  }
+  .pouch-edit .btn-ochre,
+  .to-storeroom-actions .btn,
+  .to-storeroom-actions form {
+    width: 100%;
+  }
+  .to-storeroom-actions {
+    flex-direction: column;
+  }
+  .to-storeroom .muted {
+    font-size: 15px;
+  }
+
+  /* на телефоне скрыт с экрана, но остаётся для screen reader */
+  .visually-hidden-phone {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
   .blot-pouches-medium,
   .blot-pouches-splatter,
   .blot-pouches-drip,
   .blot-empty-medium {
     display: none;
+  }
+  .blot-pouch-splatter {
+    right: 24px;
+    bottom: -12px;
+    width: 66px;
+    opacity: 0.5;
+    transform: rotate(10deg);
   }
   .blot-pouches-small {
     right: 18px;

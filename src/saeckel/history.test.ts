@@ -10,11 +10,12 @@ import {
   addOperation,
   addPouch,
   appWithoutDatabase,
-  deadPool,
+  balanceOn,
   currentTab,
+  deadPool,
   fold,
   get,
-  mainPart,
+  movementLines,
   pool,
   post,
   pouchLines,
@@ -68,13 +69,6 @@ function filterOptions(page: string): [string, string, boolean][] {
   return [...list.matchAll(/<option\s+value="([^"]*)"\s*(selected)?\s*>([\s\S]*?)<\/option>/g)].map(
     (m) => [m[1]!, fold(m[3]!).trim(), m[2] !== undefined],
   );
-}
-
-// The rows of the list on a pouch page, with whitespace folded.
-function movementRows(page: string): string[] {
-  const list =
-    /<ul>([\s\S]*?)<\/ul>/.exec(mainPart(page).split('Записать трату').at(-1) ?? '')?.[1] ?? '';
-  return [...list.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => fold(m[1]!).trim());
 }
 
 const cents = (n: number) => `+${(n / 100).toFixed(2).replace('.', ',')} ₽`;
@@ -404,14 +398,14 @@ describe('the page of a pouch: its last movements', () => {
     await addOperation(1, 'expense', 300, { from: a }, '2026-10-05');
     await addOperation(1, 'expense', 900, { from: b }, '2026-10-06', 'не отсюда');
     const page = await (await get(`/saeckel/pouches/${a}`, 'anna')).text();
-    assert.deepEqual(movementRows(page), [
-      '05.10 · −3,00 ₽',
+    assert.deepEqual(movementLines(page), [
+      '05.10 · Трата · −3,00 ₽',
       '04.10 · в мешок «В» · на такси · −5,00 ₽',
       '03.10 · из мешка «&lt;b&gt;Б&lt;/b&gt;» · +20,00 ₽',
       '02.10 · из казны · зарплата · +100,00 ₽',
     ]);
     assert.ok(!page.includes('не отсюда'));
-    assert.ok(fold(page).includes('<p>Остаток 112,00 ₽</p>'));
+    assert.equal(balanceOn(page), '112,00 ₽');
   });
 
   test('the last 10; the 11th, records of others and an income are not shown', async () => {
@@ -429,7 +423,7 @@ describe('the page of a pouch: its last movements', () => {
     await addOperation(1, 'income', 999, {}, '2026-10-20');
     await addOperation(2, 'assign', 999, { to: his }, '2026-10-20');
     const page = await (await get(`/saeckel/pouches/${a}`, 'anna')).text();
-    const shown = movementRows(page);
+    const shown = movementLines(page);
     assert.equal(shown.length, 10);
     assert.equal(shown[0], '11.10 · из казны · +11,00 ₽');
     assert.equal(shown[9], '02.10 · из казны · +2,00 ₽');
@@ -446,13 +440,10 @@ describe('the page of a pouch: its last movements', () => {
     const moved = await addOperation(1, 'transfer', 500, { from: b, to: a }, '2026-10-20');
     const income = await addOperation(1, 'income', 700, {}, '2026-10-21');
     const marked = await (await get(`/saeckel/pouches/${a}?fresh=${moved}`, 'anna')).text();
-    assert.deepEqual(
-      movementRows(marked).filter((row) => row.startsWith('<mark>')),
-      ['<mark>20.10 · из мешка «Б» · +5,00 ₽</mark>'],
-    );
+    assert.deepEqual(movementLines(marked, true), ['20.10 · из мешка «Б» · +5,00 ₽']);
     for (const value of [old, income, 'abc']) {
       const page = await (await get(`/saeckel/pouches/${a}?fresh=${value}`, 'anna')).text();
-      assert.ok(!page.includes('<mark>'), String(value));
+      assert.ok(!page.includes('<mark'), String(value));
     }
   });
 

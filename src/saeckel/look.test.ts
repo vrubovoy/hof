@@ -23,7 +23,9 @@ import {
   get,
   pool,
   post,
+  operations,
   pouchLines,
+  pouches,
   treasurySum,
   wayBack,
 } from './test-helpers.ts';
@@ -135,6 +137,18 @@ async function drawnPages(): Promise<[string, number, string][]> {
     post(`/saeckel/pouches/${food}/edit`, { name: '', icon: 'pouch' }, 'anna'),
   );
   await add('a refused archiving', post(`/saeckel/pouches/${food}/archive`, {}, 'anna'));
+  await add(
+    'a refused sign of Изменить',
+    post(`/saeckel/pouches/${food}/edit`, { name: 'Продукты', icon: 'dragon' }, 'anna'),
+  );
+  await add('a pouch in debt', get(`/saeckel/pouches/${ids['Транспорт']}`, 'anna'));
+  await add(
+    'a refused expense of every field',
+    post(`/saeckel/pouches/${food}/expense`, { amount: 'x', date: 'x', note: 'a\u0001b' }, 'anna'),
+  );
+  // «Вернуть» refused: an active pouch has the name of the one in the storeroom.
+  await addPouch(ANNA, 'подарки');
+  await add('a refused return', post('/saeckel/pouches/5/restore', {}, 'anna'));
   await add('Доход', get('/saeckel/income', 'anna'));
   await add('a refused income', post('/saeckel/income', { amount: 'x', date: 'x' }, 'anna'));
   await add('Разложить', get('/saeckel/assign?income=1', 'anna'));
@@ -369,8 +383,9 @@ describe('the column of pouches', () => {
       few.map(([, lists]) => lists),
       [1, 1, 1, 1, 1, 1, 1],
     );
-    // Мешки: the list, the treasury, the storeroom, and nothing else.
-    assert.equal(few[0]![0], 3);
+    // Мешки: the list, the treasury, the storeroom and the movements of the first pouch, and
+    // nothing else: its balance is the one of the list.
+    assert.equal(few[0]![0], 4);
   });
 
   test('read outside a transaction: after the ROLLBACK of a refusal under a lock', async (t: TestContext) => {
@@ -438,6 +453,157 @@ describe('the column of pouches', () => {
   });
 });
 
+// The pouch open on the right of Мешки: its name, the address its form of an expense is sent to,
+// and the row of the column marked as open; nothing of it without a pouch.
+function openPouch(page: string) {
+  const pane = page.split('<div class="sk-main sk-first">')[1] ?? '';
+  return {
+    name: /<h2 class="title t-1">([^<]*)<\/h2>/.exec(pane)?.[1],
+    action: /<form class="expense" method="post" action="([^"]*)">/.exec(pane)?.[1],
+    row: /<a\s+class="pouch open"\s+href="([^"]*)"/.exec(page)?.[1],
+  };
+}
+
+describe('the first pouch on Мешки', () => {
+  test('the active pouch of this user with the smallest id, and the same every time', async () => {
+    const theirs = await addPouch(BORIS, 'Чужой');
+    const stored = await addPouch(ANNA, 'В кладовой', true);
+    const first = await addPouch(ANNA, 'Первый');
+    const second = await addPouch(ANNA, 'Второй');
+    assert.ok(theirs < stored && stored < first && first < second);
+    const expected = {
+      name: 'Первый',
+      action: `/saeckel/pouches/${first}/expense`,
+      row: `/saeckel/pouches/${first}`,
+    };
+    for (let n = 0; n < 3; n++) {
+      assert.deepEqual(openPouch(await (await get('/saeckel/', 'anna')).text()), expected);
+    }
+    // Neither a new name nor money moves the choice; the open row is not «the current page».
+    await pool.query("UPDATE pouches SET name = 'Яяя' WHERE id = $1", [first]);
+    await addOperation(ANNA, 'assign', 500, { to: second });
+    await addOperation(ANNA, 'expense', 900, { from: first });
+    const page = await (await get('/saeckel/', 'anna')).text();
+    assert.deepEqual(openPouch(page), { ...expected, name: 'Яяя' });
+    assert.ok(!page.includes('aria-current="page" >'));
+    assert.doesNotMatch(page, /class="pouch open"[^>]*aria-current/);
+    // Boris has his own first pouch.
+    const his = openPouch(await (await get('/saeckel/', 'boris')).text());
+    assert.equal(his.row, `/saeckel/pouches/${theirs}`);
+  });
+
+  test('the first goes into the storeroom: the next one opens; none left: the empty state', async () => {
+    const first = await addPouch(ANNA, 'Первый');
+    const second = await addPouch(ANNA, 'Второй');
+    assert.equal((await post(`/saeckel/pouches/${first}/archive`, {}, 'anna')).status, 303);
+    assert.equal(
+      openPouch(await (await get('/saeckel/', 'anna')).text()).row,
+      `/saeckel/pouches/${second}`,
+    );
+    assert.equal((await post(`/saeckel/pouches/${second}/archive`, {}, 'anna')).status, 303);
+    const empty = await (await get('/saeckel/', 'anna')).text();
+    assert.deepEqual(openPouch(empty), { name: undefined, action: undefined, row: undefined });
+    assert.ok(empty.includes('<h2 class="title">Мешков пока нет</h2>'));
+  });
+
+  test('its expense is the expense of the pouch page: the same form, 303 with fresh, the same row', async () => {
+    const food = await addPouch(ANNA, 'Продукты');
+    const fields = { amount: '1 240,50', date: '05.10.2026', note: 'овощи' };
+    const fromList = openPouch(await (await get('/saeckel/', 'anna')).text()).action!;
+    const ownPage = await (await get(`/saeckel/pouches/${food}`, 'anna')).text();
+    assert.ok(ownPage.includes(`<form class="expense" method="post" action="${fromList}">`));
+    const written = [];
+    for (let n = 0; n < 2; n++) {
+      const res = await post(fromList, fields, 'anna');
+      assert.equal(res.status, 303);
+      const [last] = (await operations()).slice(-1);
+      const { id, ...record } = last!;
+      assert.equal(res.headers.get('location'), `/saeckel/pouches/${food}?fresh=${id}`);
+      written.push(record);
+    }
+    assert.deepEqual(written[0], written[1]);
+    assert.deepEqual(written[0], {
+      user_id: ANNA,
+      kind: 'expense',
+      amount: '124050',
+      currency: 'RUB',
+      from_pouch_id: food,
+      to_pouch_id: null,
+      date: '2026-10-05',
+      note: 'овощи',
+    });
+  });
+
+  test('GET /saeckel/ writes nothing', async (t: TestContext) => {
+    const food = await addPouch(ANNA, 'Продукты');
+    await addPouch(ANNA, 'Старый', true);
+    await addOperation(ANNA, 'income', 10_000);
+    await addOperation(ANNA, 'assign', 5_000, { to: food });
+    const before = [await pouches(), await operations()];
+    const query = t.mock.method(pool, 'query');
+    for (let n = 0; n < 3; n++) assert.equal((await get('/saeckel/', 'anna')).status, 200);
+    for (const call of query.mock.calls) {
+      assert.match(String(call.arguments[0]).trim(), /^SELECT/, String(call.arguments[0]));
+    }
+    query.mock.restore();
+    assert.deepEqual([await pouches(), await operations()], before);
+  });
+});
+
+describe('the page of a pouch', () => {
+  test('in debt: red, and «Покрыть…»; not in debt: neither', async () => {
+    const cart = await addPouch(ANNA, 'Транспорт');
+    const page = async () => fold(await (await get(`/saeckel/pouches/${cart}`, 'anna')).text());
+    assert.match(await page(), /<span class="money">0,00 ₽<\/span>/);
+    assert.ok(!(await page()).includes('Покрыть'));
+    await addOperation(ANNA, 'expense', 76_000, { from: cart });
+    const debt = await page();
+    assert.match(debt, /<span class="money neg">−760,00 ₽<\/span>/);
+    assert.ok(debt.includes('Покрыть из другого мешка'));
+  });
+
+  test('errors of the expense: each field drawn red, described by its error, one aria-invalid each', async () => {
+    const food = await addPouch(ANNA, 'Продукты');
+    for (const [fields, wrong] of [
+      [{ amount: '0', date: '05.10.2026', note: '' }, ['amount']],
+      [{ amount: '1', date: 'вчера', note: 'a\u0001b' }, ['date', 'note']],
+      [{ amount: 'x', date: 'x', note: 'a\u0001b' }, ['amount', 'date', 'note']],
+    ] as const) {
+      const res = await post(`/saeckel/pouches/${food}/expense`, fields, 'anna');
+      assert.equal(res.status, 400);
+      const page = await res.text();
+      assert.equal((page.match(/aria-invalid="true"/g) ?? []).length, wrong.length);
+      for (const field of wrong) {
+        assert.match(page, new RegExp(`<div class="field field-${field} err">`), field);
+        assert.match(page, new RegExp(`aria-describedby="${field}-error"`), field);
+        assert.match(page, new RegExp(`<p id="${field}-error" class="err-text">`), field);
+      }
+    }
+    assert.deepEqual(await operations(), []);
+  });
+
+  test('Изменить: the 17 signs as pictures with their words, the current one chosen', async () => {
+    const food = await addPouch(ANNA, 'Продукты');
+    await pool.query("UPDATE pouches SET icon = 'cart' WHERE id = $1", [food]);
+    const page = fold(await (await get(`/saeckel/pouches/${food}/edit`, 'anna')).text());
+    const offered = [
+      ...page.matchAll(
+        /<label class="icon-pick"> <input type="radio" name="icon" value="([^"]*)" ?(checked)? \/> <img src="([^"]*)"[^>]*alt="" \/> ([^<]*) <\/label>/g,
+      ),
+    ].map(([, key, checked, src]) => [key, checked !== undefined, src]);
+    assert.deepEqual(
+      offered,
+      SIGN_FILES.map(([key, file]) => [key, key === 'cart', `/saeckel/static/img/${file}.webp`]),
+    );
+    // A name refused: one field invalid, the chosen sign kept.
+    const refused = await (
+      await post(`/saeckel/pouches/${food}/edit`, { name: '', icon: 'lute' }, 'anna')
+    ).text();
+    assert.equal((refused.match(/aria-invalid="true"/g) ?? []).length, 1);
+    assert.match(refused, /value="lute"\s+checked/);
+  });
+});
+
 describe('the signs, the money and the storeroom of the column', () => {
   test('each sign of the set its picture; an unknown key the default one', async () => {
     for (const [key] of SIGN_FILES) {
@@ -447,9 +613,9 @@ describe('the signs, the money and the storeroom of the column', () => {
     const unknown = await addPouch(ANNA, 'неизвестный');
     await pool.query("UPDATE pouches SET icon = '../saeckel.css' WHERE id = $1", [unknown]);
     const page = await (await get('/saeckel/', 'anna')).text();
-    const pictures = [...page.matchAll(/<a\s+class="pouch"[^>]*>\s*<img\s+src="([^"]*)"/g)].map(
-      (match) => match[1]!,
-    );
+    const pictures = [
+      ...page.matchAll(/<a\s+class="pouch[^"]*"[^>]*>\s*<img\s+src="([^"]*)"/g),
+    ].map((match) => match[1]!);
     assert.deepEqual(pictures, [
       ...SIGN_FILES.map(([, file]) => `/saeckel/static/img/${file}.webp`),
       '/saeckel/static/img/emblem-saeckel-small.webp',

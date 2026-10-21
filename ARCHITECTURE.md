@@ -100,7 +100,7 @@ Core о Säckel не знает ничего. Список приложений 
 
 | Метод, путь | Вход | Успех | Ошибки |
 |---|---|---|---|
-| `GET /saeckel/` | — | 200 Мешки: Казна, список, Кладовая в `<details>` | — |
+| `GET /saeckel/` | — | 200 Мешки: Казна, список, Кладовая в `<details>`; на компьютере справа — первый активный мешок (наименьший id) | — |
 | `GET /saeckel/pouches/:id` | `fresh`? | 200 мешок и форма траты; архивный — без форм, с «Вернуть» | 404 |
 | `POST /saeckel/pouches/:id/expense` | `amount`, `date`, `note` | → 303 `/saeckel/pouches/:id?fresh=<op>` | 400 (ввод; мешок в Кладовой) |
 | `GET, POST /saeckel/pouches/new` | `name`, `icon` | → 303 `/saeckel/pouches/<new>` | 400 (ввод; имя занято) |

@@ -115,7 +115,7 @@ export function activeList(page: string): string {
 // name», with whitespace folded: the link, its text and the two amounts of each row.
 export function pouchLines(page: string): string[] {
   return [
-    ...activeList(page).matchAll(/<a\s+class="pouch"\s+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g),
+    ...activeList(page).matchAll(/<a\s+class="pouch[^"]*"\s+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g),
   ].map(([, href, row]) => {
     const text = (name: string) =>
       fold(new RegExp(`<span class="${name}[^"]*">([^<]*)</span>`).exec(row!)?.[1] ?? '').trim();
@@ -141,6 +141,27 @@ export function wayBack(page: string): string | undefined {
 // The tab marked as the current one, by its text.
 export function currentTab(page: string): string | undefined {
   return /<a class="tab" href="[^"]*" aria-current="page">([^<]*)<\/a>/.exec(page)?.[1];
+}
+
+// The balance of the open pouch on a page, as it is shown under «Остаток».
+export function balanceOn(page: string): string | undefined {
+  return /<p class="balance"> <span class="caps">Остаток<\/span> <span class="money[^"]*">([^<]*)<\/span>/.exec(
+    fold(page),
+  )?.[1];
+}
+
+// The movements of the open pouch on a page, as «ДД.ММ · kind · note · amount», the note left out
+// when there is none; with `fresh`, only the one marked as just written.
+export function movementLines(page: string, fresh = false): string[] {
+  const list = /<ul class="moves">([\s\S]*?)<\/ul>/.exec(page)?.[1] ?? '';
+  return [...list.matchAll(/<(span|mark) class="move[^"]*">([\s\S]*?)<\/\1>\s*<\/li>/g)]
+    .filter(([, tag]) => !fresh || tag === 'mark')
+    .map(([, , row]) =>
+      [...row!.matchAll(/<span class="move-[a-z]+">([^<]*)<\/span>/g)]
+        .map((cell) => fold(cell[1]!).trim())
+        .filter((text) => text !== '')
+        .join(' · '),
+    );
 }
 
 // The page itself, without the shell and the column beside it.

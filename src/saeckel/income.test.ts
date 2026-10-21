@@ -191,9 +191,9 @@ describe('Доход', () => {
     assert.equal(res.status, 400);
     const page = fold(await res.text());
     for (const text of [
-      `<p id="amount-error">${FORMAT}</p>`,
-      '<p id="date-error">Дата — ДД.ММ.ГГГГ, не раньше 01.01.2000 и не дальше года вперёд.</p>',
-      '<p id="note-error">Заметка — до 200 символов, одной строкой.</p>',
+      `<p id="amount-error" class="err-text">${FORMAT}</p>`,
+      '<p id="date-error" class="err-text">Дата — ДД.ММ.ГГГГ, не раньше 01.01.2000 и не дальше года вперёд.</p>',
+      '<p id="note-error" class="err-text">Заметка — до 200 символов, одной строкой.</p>',
       'value="1,2,3"',
       'value="31.02.2026"',
       '<form method="post" action="/saeckel/income">',
