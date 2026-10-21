@@ -108,14 +108,44 @@ export const fold = (page: string) => page.replace(/\s+/g, ' ');
 
 // Мешки without the storeroom: the treasury and the active pouches only.
 export function activeList(page: string): string {
-  return page.split('<details>')[0]!;
+  return page.split('<details')[0]!;
 }
 
-// The lines of the list of pouches, with whitespace folded.
+// The lines of the column of pouches as «<a href="…">name</a> · balance · what is said under the
+// name», with whitespace folded: the link, its text and the two amounts of each row.
 export function pouchLines(page: string): string[] {
-  return [...activeList(page).matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) =>
-    m[1]!.replace(/\s+/g, ' ').trim(),
+  return [
+    ...activeList(page).matchAll(/<a\s+class="pouch"\s+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g),
+  ].map(([, href, row]) => {
+    const text = (name: string) =>
+      fold(new RegExp(`<span class="${name}[^"]*">([^<]*)</span>`).exec(row!)?.[1] ?? '').trim();
+    return `<a href="${href}">${text('name')}</a> · ${text('bal')} · ${text('sub')}`;
+  });
+}
+
+// The sum of «Казна» in the column of a page of Мешки, with whitespace folded.
+export function treasurySum(page: string): string | undefined {
+  return /<h2 class="title t-3">Казна<\/h2> <p class="money[^"]*">([^<]*)<\/p>/.exec(
+    fold(page),
+  )?.[1];
+}
+
+// The way back on the band of a page below a tab, as «address text»; none on the tabs themselves.
+export function wayBack(page: string): string | undefined {
+  const back = /<a class="sk-gate sk-back" href="([^"]*)"\s*><span>([^<]*)<\/span><\/a\s*>/.exec(
+    page,
   );
+  return back === null ? undefined : `${back[1]} ${back[2]}`;
+}
+
+// The tab marked as the current one, by its text.
+export function currentTab(page: string): string | undefined {
+  return /<a class="tab" href="[^"]*" aria-current="page">([^<]*)<\/a>/.exec(page)?.[1];
+}
+
+// The page itself, without the shell and the column beside it.
+export function mainPart(page: string): string {
+  return page.split(/<main class="sk-main[^"]*">/)[1] ?? '';
 }
 
 // Resolves once `count` queries of hof_test wait for locks; returns them.

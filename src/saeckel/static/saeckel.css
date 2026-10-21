@@ -1,0 +1,989 @@
+/* Säckel — облик (ARCHITECTURE.md §6). Общая основа — копии проверенных правил
+   src/core/static/hof.css: общей static и пакета нет (§4.1), значения повторяются, а не выносятся.
+   Своё — из утверждённого design/screens.css: охра, шапка казначейской, закладки, колонка мешков.
+   Эффектов здесь нет: ни анимаций, ни переходов (M10). Координаты и кадры — только классами: CSP
+   запрещает атрибут style. Компьютер — от 1024 px, ниже — телефон. */
+
+/* EB Garamond — одна семья (лицензия OFL, fonts/OFL.txt): прямой и курсив, латиница, кириллица и
+   latin-ext — в нём знак ₽. Браузер скачивает файл подмножества, только если на странице есть его
+   символы. Диапазоны — те же, что у версии v33 на Google Fonts */
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(fonts/eb-garamond-cyrillic.woff2) format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(fonts/eb-garamond-latin-ext.woff2) format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(fonts/eb-garamond-latin.woff2) format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: italic;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(fonts/eb-garamond-italic-cyrillic.woff2) format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: italic;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(fonts/eb-garamond-italic-latin-ext.woff2) format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: italic;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(fonts/eb-garamond-italic-latin.woff2) format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  --paper: #f7efe0;
+  --ink: #14243d;
+  --ink-2: #4f5868;
+  --blue: #1f4e9e;
+  --red: #a83224;
+  --pen: #1b2e52; /* чернила надписей на ленте */
+  --ochre-ink: #2a1e0b; /* надпись на охре: выбранная закладка, плашка */
+  /* заливка поля пером поверх бумаги: #FFFCF4 с прозрачностью 0,78 */
+  --field: #fdf8ee;
+  --font: 'EB Garamond', Georgia, serif;
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* бумага: пятна тона (multiply) поверх бесшовной плитки; размеры не кратны, повтор не виден */
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    url(img/paper-clouds.webp) 0 0 / 1500px 1500px,
+    url(img/paper-tile.webp) 0 0 / 1124px 1124px,
+    var(--paper);
+  background-blend-mode: multiply, normal;
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 18px;
+  line-height: 1.42;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+a {
+  color: var(--blue);
+}
+
+/* текст */
+.title {
+  margin: 0;
+  font-style: italic;
+  font-weight: 600;
+  line-height: 1.12;
+  color: var(--ink);
+}
+.t-1 {
+  font-size: 42px;
+}
+.t-2 {
+  font-size: 33px;
+}
+.t-3 {
+  font-size: 26px;
+}
+.muted {
+  color: var(--ink-2);
+}
+.small {
+  margin: 0;
+  font-size: 15px;
+}
+.caps {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+/* суммы: жирные, одной строкой; минус — красный */
+.money {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.neg {
+  color: var(--red);
+}
+
+/* поля: рамка пером, внутри светлая бумага — заливка по тому же неровному контуру */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.field label {
+  font-size: 15px;
+  font-weight: 600;
+}
+.input {
+  width: 100%;
+  height: 46px;
+  margin: 0;
+  padding: 0 12px;
+  border: 2px solid transparent;
+  border-image: url(img/pen-field.svg) 16 fill / 16px stretch;
+  border-radius: 0;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  font: inherit;
+  font-size: 18px;
+  color: var(--ink);
+}
+/* поле в фокусе: та же линия пером, только синяя и жирнее (у поля с ошибкой — красная) */
+.input:focus {
+  outline: none;
+  border-image-source: url(img/pen-field-focus.svg);
+}
+.field.err label {
+  color: var(--red);
+}
+.field.err .input {
+  border-image-source: url(img/pen-field-err.svg);
+}
+.field.err .input:focus {
+  border-image-source: url(img/pen-field-err-focus.svg);
+}
+/* автозаполнение браузера красит поле своим цветом: под линией пером остаётся бумага */
+.input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 40px var(--field) inset;
+  -webkit-text-fill-color: var(--ink);
+}
+.input:autofill {
+  box-shadow: 0 0 0 40px var(--field) inset;
+}
+/* список выбора: то же поле, справа стрелка пером */
+.select {
+  position: relative;
+  display: block;
+}
+.select .input {
+  padding-right: 34px;
+}
+.select::after {
+  content: '';
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  background: url(img/pen-chevron.svg) 0 0 / 14px no-repeat;
+  pointer-events: none;
+}
+.hint {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ink-2);
+}
+.err-text {
+  margin: 0;
+  font-size: 15px;
+  font-style: italic;
+  color: var(--red);
+}
+
+/* кнопки — нарисованные плашки (560×96): концы с вырезами и гвоздиками неизменны (срез 41 px),
+   середина тянется под длину надписи; у Säckel главная плашка — охра */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  margin: 0;
+  padding: 0 12px;
+  border-style: solid;
+  border-width: 0 20px;
+  border-color: transparent;
+  border-image-source: url(img/btn-paper.webp);
+  border-image-slice: 0 41 fill;
+  border-image-width: 0 20px;
+  border-image-repeat: stretch;
+  border-radius: 0;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.btn-ochre {
+  border-image-source: url(img/btn-ochre.webp);
+  color: var(--ochre-ink);
+}
+.btn-danger {
+  border-image-source: url(img/btn-danger.webp);
+  color: var(--red);
+}
+/* фокус с клавиатуры — без рамки: кнопка затемняется так же, как при наведении мышью; нажатие —
+   темнее и на пиксель вниз */
+.btn:is(:hover, :focus-visible):not(:disabled) {
+  outline: none;
+  filter: brightness(0.82);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+  filter: brightness(0.74);
+}
+.btn-wide {
+  width: 100%;
+}
+
+/* уведомление — записка, запечатанная сургучом: синяя печать — сообщение, красная — отказ.
+   Печать выступает влево за край записки, как в прототипах */
+.note {
+  position: relative;
+  margin: 0;
+  padding: 12px 16px 12px 48px;
+  border: 2px solid transparent;
+  border-image-source: url(img/pen-note-info.svg);
+  border-image-slice: 16 fill;
+  border-image-width: 16px;
+  border-image-repeat: stretch;
+  font-size: 17px;
+  font-style: italic;
+  color: var(--ink);
+}
+.note::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  margin-top: -27px;
+  background: url(img/seal-blue.webp) 0 0 / 52px no-repeat;
+  transform: rotate(-9deg);
+}
+.note-error {
+  border-image-source: url(img/pen-note-error.svg);
+}
+.note-error::before {
+  background-image: url(img/seal-red.webp);
+}
+
+/* рамка пером с веточками: углы неизменны, линии тянутся, внутри бумага */
+.framed {
+  position: relative;
+  border: 22px solid transparent;
+  border-image: url(img/frame.webp) 107 / 54px stretch;
+  padding: 30px 34px 28px;
+}
+
+.link-plain,
+.link {
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--blue);
+}
+/* ссылка рядом с кнопкой: подчёркивание пером */
+.link {
+  padding-bottom: 3px;
+  background: url(img/pen-underline.svg) left bottom / 100% 5px no-repeat;
+}
+
+/* таблица: линия пером под заголовками и под каждой строкой */
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.table th {
+  padding: 8px 10px;
+  background: url(img/pen-rule.svg) left bottom / 100% 6px no-repeat;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+.table td {
+  padding: 10px;
+  background: url(img/pen-rule-light.svg) left bottom / 100% 6px no-repeat;
+  vertical-align: middle;
+}
+
+/* виньетка: бумага картинки белая, multiply «печатает» рисунок прямо на бумагу страницы */
+.vignette {
+  display: block;
+  height: auto;
+  mix-blend-mode: multiply;
+}
+
+/* веточка — разделитель под заголовком */
+.sprig {
+  display: block;
+  width: 220px;
+  height: auto;
+}
+
+/* поля в ряд с кнопкой: кнопка стоит вровень с полями, и когда под полем ошибка; где места
+   мало, кнопка уходит на следующую строку */
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+.form-row .field {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.form-row .btn {
+  margin-top: calc(15px * 1.42 + 5px);
+}
+.form-row > .err-text {
+  flex-basis: 100%;
+}
+
+/* кляксы: только на пустой бумаге, бледно; у каждой страницы свои */
+.blot {
+  position: absolute;
+  height: auto;
+  z-index: 2;
+  pointer-events: none;
+  user-select: none;
+  mix-blend-mode: multiply;
+}
+
+/* надпись на ленте — как написанная на ней: чернила впитываются (multiply) и чуть расплываются,
+   поэтому не выглядят резче материала */
+.ribbon > span {
+  mix-blend-mode: multiply;
+  color: var(--pen);
+  text-shadow: 0 0 0.8px rgb(27 46 82 / 0.75);
+}
+
+/* лента для заголовков: концы неизменны, середина тянется под текст */
+.ribbon {
+  display: inline-block;
+  height: 72px;
+  margin: 0;
+  padding-top: 17px;
+  border-style: solid;
+  border-width: 0 127px 0 121px;
+  border-color: transparent;
+  border-image: url(img/ribbon-soft.webp) 0 327 0 310 fill / 0 127px 0 121px stretch;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 30px;
+  line-height: 32px;
+  text-align: center;
+  white-space: nowrap;
+}
+.ribbon-md {
+  height: 60px;
+  padding-top: 13px;
+  border-width: 0 106px 0 101px;
+  border-image-width: 0 106px 0 101px;
+  font-size: 25px;
+  line-height: 28px;
+}
+
+/* Säckel: страница. Кляксы и ветка в углу лежат на её бумаге и не выходят за край окна */
+.sk {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100svh;
+  overflow: clip;
+}
+
+/* сцена казначейской до краёв, снизу — охристая линия пером; на ней «Двор» */
+.sk-head {
+  position: relative;
+  flex: none;
+}
+/* картинка лежит под шапкой целиком: высоту шапки задаёт кадр, а не размер картинки */
+.sk-scene {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.sk-head::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 6px;
+  background: url(img/pen-rule-ochre.svg) 0 0 / 100% 6px no-repeat;
+}
+/* «Двор» и «назад» — бумажная плашка с маникулой поверх сцены */
+.sk-gate {
+  position: absolute;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 2px;
+  border-style: solid;
+  border-width: 0 18px;
+  border-color: transparent;
+  border-image: url(img/btn-paper.webp) 0 41 fill / 0 18px stretch;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--blue);
+}
+.sk-gate::before {
+  content: '';
+  flex: none;
+  width: 36px;
+  height: 24px;
+  background: url(img/manicule.webp) 0 0 / 36px 24px no-repeat;
+}
+.sk-gate img {
+  display: block;
+  flex: none;
+}
+.sk-gate:is(:hover, :focus-visible) {
+  outline: none;
+  filter: brightness(0.82);
+}
+/* длинное имя мешка на «назад» видно не целиком; ссылка читается полностью */
+.sk-back span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* лента с названием и закладки «Мешки / Летопись»: открыты снизу и стоят на линии пером;
+   выбранная — охрой. Фокус с клавиатуры — без рамки: закладка затемняется, как при наведении */
+.sk-nav {
+  flex: none;
+  display: flex;
+  background: url(img/pen-rule-light.svg) left bottom / 100% 6px no-repeat;
+}
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  margin-bottom: 3px;
+  padding: 0 20px;
+  border-style: solid;
+  border-width: 2px 2px 0;
+  border-color: transparent;
+  border-image: url(img/pen-tab.svg) 16 16 0 16 fill / 16px 16px 0 16px stretch;
+  font-size: 19px;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--ink-2);
+}
+.tab:is(:hover, :focus-visible) {
+  outline: none;
+  color: var(--ink);
+  filter: brightness(0.82);
+}
+.tab[aria-current='page'] {
+  border-image-source: url(img/pen-tab-on.svg);
+  color: var(--ochre-ink);
+}
+
+/* колонка мешков: Казна в рамке с сундуком, мешки строками, внизу «+ Новый мешок» и Кладовая */
+.sk-list {
+  display: flex;
+  flex-direction: column;
+}
+.treasury {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  align-items: center;
+  gap: 0 14px;
+  margin: 6px 12px 4px;
+  padding: 20px 24px 16px;
+}
+.treasury .chest {
+  grid-row: span 2;
+  display: block;
+  width: 62px;
+  height: 52px;
+  object-fit: contain;
+}
+.treasury .money {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.1;
+}
+.treasury .long {
+  font-size: 24px;
+}
+/* сумма шире рамки и тогда переносится, а не вылезает за неё */
+.treasury .money,
+.pouch .bal {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.treasury-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0 0;
+}
+
+.pouches {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* мешок: знак, имя и строка под ним, остаток справа; линия пером снизу. Текущий мешок, наведение и
+   фокус — выделение пером вместо линии */
+.pouch {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  margin: 0 10px;
+  padding: 7px 14px 9px;
+  border: 2px solid transparent;
+  background: url(img/pen-rule-light.svg) left bottom / 100% 6px no-repeat;
+  text-decoration: none;
+  color: var(--ink);
+}
+.pouch:is([aria-current='page'], :hover, :focus-visible) {
+  outline: none;
+  background: none;
+  border-image: url(img/pen-pick.svg) 16 fill / 16px stretch;
+}
+.pouch:focus-visible .name {
+  text-decoration: underline;
+}
+.pouch img {
+  display: block;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+.pouch-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.pouch .name {
+  font-size: 19px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.pouch .sub {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.pouch .bal {
+  max-width: 11em;
+  font-size: 19px;
+  font-weight: 700;
+  text-align: right;
+}
+
+/* «+ Новый мешок» слева и «Кладовая (N)» справа одной строкой. Раскрытая Кладовая ложится
+   строкой ниже во всю ширину, её заголовок остаётся на месте */
+.list-foot {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 12px 24px;
+}
+.storeroom {
+  margin-left: auto;
+}
+.storeroom[open] {
+  flex-basis: 100%;
+}
+.storeroom[open] > summary {
+  position: absolute;
+  right: 24px;
+  top: 12px;
+}
+/* без «+ Новый мешок» раскрытый список начинается под заголовком */
+.storeroom[open]:only-child {
+  padding-top: calc(15px * 1.42 + 6px);
+}
+.storeroom summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.storeroom summary::-webkit-details-marker {
+  display: none;
+}
+.storeroom summary::after {
+  content: '';
+  flex: none;
+  width: 12px;
+  height: 12px;
+  background: url(img/pen-chevron.svg) 0 0 / 12px no-repeat;
+}
+.storeroom[open] summary::after {
+  transform: rotate(180deg);
+}
+.storeroom ul {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.storeroom li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 6px 0 8px;
+  background: url(img/pen-rule-light.svg) left bottom / 100% 6px no-repeat;
+}
+.storeroom form {
+  margin: 0;
+}
+.stored {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+.stored img {
+  display: block;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+/* страница во всю ширину (Летопись, запись): то, что шире окна, прокручивается внутри неё и не
+   обрезается краем страницы */
+.sk-wide {
+  overflow-x: auto;
+}
+
+/* мешков пока нет: виньетка, заголовок с веточкой, текст и форма первого мешка */
+.sk-empty .vignette {
+  width: 100%;
+  max-width: 440px;
+}
+.sk-empty-text {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sk-empty-text p {
+  margin: 0;
+}
+.sk-corner {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 170px;
+  height: auto;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+
+/* компьютер — кадр Saeckel и SaeckelEmpty 1440×900 */
+@media (min-width: 1024px) {
+  /* сцена в пропорции кадра 1440×330 на любой ширине: картинка не обрезается сильнее, чем в
+     прототипе; при нехватке высоты страница прокручивается */
+  .sk-head {
+    aspect-ratio: 1440 / 330;
+  }
+  .sk-scene {
+    object-position: 50% 0;
+  }
+  .sk-gate {
+    left: 24px;
+    top: 20px;
+    height: 44px;
+  }
+  .sk-back {
+    display: none;
+  }
+  .sk-nav {
+    align-items: flex-end;
+    gap: 6px;
+    height: 84px;
+    padding: 0 32px 0 20px;
+  }
+  .sk-nav .ribbon {
+    align-self: center;
+    margin-right: 22px;
+  }
+  .sk-motto {
+    margin: 0 0 18px auto;
+  }
+
+  .sk-body {
+    position: relative;
+    flex: 1 0 auto;
+    display: grid;
+    grid-template-columns: 400px minmax(0, 1fr);
+  }
+  .sk-list {
+    padding-bottom: 12px;
+    background: url(img/pen-vrule-light.svg) right top / 6px 100% no-repeat;
+  }
+  .sk-main {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px 44px;
+  }
+  .sk-wide {
+    flex: 1 0 auto;
+    padding: 18px 48px;
+  }
+
+  /* мешков пока нет: виньетка и текст рядом посередине правой части; ветка — в углу, колонка
+     оставляет ей место под собой */
+  .sk-empty {
+    display: grid;
+    grid-template-columns: minmax(200px, 400px) minmax(300px, 520px);
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    padding: 24px 40px 48px;
+  }
+  .sk-empty .title {
+    font-size: 42px;
+  }
+  .sk-pouches:has(.sk-empty) .sk-list {
+    padding-bottom: 210px;
+  }
+
+  /* кляксы в кадре 1440×900, от верха и низа части под закладками */
+  .blot-pouches-medium {
+    right: 30px;
+    bottom: 0;
+    width: 60px;
+    opacity: 0.6;
+    transform: rotate(30deg);
+  }
+  .blot-pouches-splatter {
+    left: 470px;
+    bottom: -10px;
+    width: 64px;
+    opacity: 0.5;
+    transform: rotate(-12deg);
+  }
+  .blot-pouches-drip {
+    right: 12px;
+    top: 36px;
+    width: 20px;
+    opacity: 0.7;
+  }
+  .blot-empty-medium {
+    right: 50px;
+    bottom: 20px;
+    width: 60px;
+    opacity: 0.6;
+    transform: rotate(30deg);
+  }
+  .blot-pouches-small {
+    display: none;
+  }
+}
+
+/* компьютер поуже: виньетка над текстом, а не рядом */
+@media (min-width: 1024px) and (max-width: 1279.98px) {
+  .sk-empty {
+    grid-template-columns: minmax(0, 520px);
+  }
+  .sk-empty .vignette {
+    max-width: 360px;
+  }
+}
+
+/* телефон — кадры SaeckelMobile и SaeckelEmptyMobile */
+@media (max-width: 1023.98px) {
+  /* полоса сцены 128 px — кадр SaeckelMobile; на окне шире 500 px полоса растёт с ним, и
+     картинка видна целиком */
+  .sk-head {
+    aspect-ratio: 1536 / 392;
+    min-height: 128px;
+  }
+  .sk-scene {
+    object-position: 55% 72%;
+  }
+  .sk-gate {
+    left: 12px;
+    top: 12px;
+    height: 40px;
+    max-width: calc(100% - 24px);
+  }
+  .sk-gate img {
+    display: none;
+  }
+  /* на странице ниже закладки: только «назад» на полосе, без ленты, закладок и колонки */
+  .sk-below .sk-court,
+  .sk-below .sk-nav,
+  .sk-below .sk-list {
+    display: none;
+  }
+  .sk-nav {
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 16px 0;
+  }
+  .sk-motto {
+    display: none;
+  }
+  .sk-main {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 16px 16px;
+  }
+  .sk-wide {
+    flex: 1 0 auto;
+  }
+  .sk-body {
+    position: relative;
+    flex: 1 0 auto;
+  }
+
+  .treasury {
+    grid-template-columns: 54px minmax(0, 1fr);
+    margin: 8px 10px 4px;
+    padding: 18px 18px 14px;
+  }
+  .treasury .chest {
+    width: 54px;
+    height: 46px;
+  }
+  .treasury .money {
+    font-size: 28px;
+  }
+  .treasury .long {
+    font-size: 22px;
+  }
+  .treasury-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .pouch {
+    margin: 0 6px;
+    padding: 6px 10px 8px;
+  }
+  .list-foot {
+    padding: 12px 16px;
+  }
+  .storeroom[open] > summary {
+    right: 16px;
+  }
+  /* место для кляксы под списком */
+  .sk-pouches {
+    padding-bottom: 44px;
+  }
+
+  /* мешков пока нет: виньетка, заголовок во всю ширину, текст, поле и кнопка во всю ширину;
+     подсказки о знаке на телефоне нет (SaeckelEmptyMobile) */
+  .sk-empty {
+    align-items: center;
+    gap: 10px;
+    padding: 8px 20px 16px;
+  }
+  .sk-empty .vignette {
+    width: 280px;
+  }
+  .sk-empty-text {
+    align-self: stretch;
+    gap: 10px;
+  }
+  .sk-empty .title {
+    font-size: 33px;
+  }
+  .sk-empty .sprig,
+  .sk-corner,
+  .text-full {
+    display: none;
+  }
+  .sk-empty-text .muted {
+    font-size: 15px;
+  }
+  .new-pouch .btn {
+    flex-basis: 100%;
+    margin-top: 0;
+  }
+
+  .blot-pouches-medium,
+  .blot-pouches-splatter,
+  .blot-pouches-drip,
+  .blot-empty-medium {
+    display: none;
+  }
+  .blot-pouches-small {
+    right: 18px;
+    bottom: 11px;
+    width: 32px;
+    opacity: 0.7;
+  }
+}

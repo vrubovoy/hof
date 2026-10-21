@@ -22,7 +22,9 @@ import {
   pool,
   post,
   pouches,
+  treasurySum,
   waitingQueries,
+  wayBack,
 } from './test-helpers.ts';
 
 before(() => migrate(pool, join(import.meta.dirname, 'migrations')));
@@ -64,8 +66,7 @@ async function balance(pouchId: number): Promise<string | undefined> {
 
 // The sum the block «Казна» shows on Мешки.
 async function treasury(): Promise<string | undefined> {
-  const page = fold(await (await get('/saeckel/', 'anna')).text());
-  return /<h2>Казна<\/h2> <p>([^<]*)<\/p>/.exec(page)?.[1];
+  return treasurySum(await (await get('/saeckel/', 'anna')).text());
 }
 
 // The lists of a form: for each, its options as [value, text, chosen].
@@ -151,8 +152,8 @@ describe('the page of a record', () => {
       assert.equal(res.status, 200, heading);
       const page = await res.text();
       const folded = fold(page);
+      assert.equal(wayBack(page), '/saeckel/history Летопись', heading);
       for (const text of [
-        '<p><a href="/saeckel/history">Летопись</a></p>',
         `<h1>${heading}</h1>`,
         `<form method="post" action="/saeckel/operations/${id}">`,
         '<label for="amount">Сумма, ₽</label>',

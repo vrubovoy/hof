@@ -11,11 +11,14 @@ import {
   addPouch,
   appWithoutDatabase,
   deadPool,
+  currentTab,
   fold,
   get,
+  mainPart,
   pool,
   post,
   pouchLines,
+  wayBack,
 } from './test-helpers.ts';
 
 before(() => migrate(pool, join(import.meta.dirname, 'migrations')));
@@ -69,7 +72,8 @@ function filterOptions(page: string): [string, string, boolean][] {
 
 // The rows of the list on a pouch page, with whitespace folded.
 function movementRows(page: string): string[] {
-  const list = /<ul>([\s\S]*?)<\/ul>/.exec(page.split('Записать трату').at(-1) ?? '')?.[1] ?? '';
+  const list =
+    /<ul>([\s\S]*?)<\/ul>/.exec(mainPart(page).split('Записать трату').at(-1) ?? '')?.[1] ?? '';
   return [...list.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => fold(m[1]!).trim());
 }
 
@@ -83,8 +87,9 @@ describe('Летопись: pages', () => {
     const page = fold(await res.text());
     for (const text of [
       '<title>Säckel — летопись</title>',
-      '<a href="/saeckel/history" aria-current="page">Летопись</a>',
-      '<a href="/saeckel/" >Мешки</a>',
+      '<h1 class="ribbon ribbon-md"><span>Säckel</span></h1>',
+      '<a class="tab" href="/saeckel/history" aria-current="page">Летопись</a>',
+      '<a class="tab" href="/saeckel/" >Мешки</a>',
       '<h2>Летопись пока пуста</h2>',
       `<p>${EMPTY_TEXT}</p>`,
       '<a href="/saeckel/income">Записать доход</a>',
@@ -348,7 +353,8 @@ describe('a record', () => {
       const res = await get(`/saeckel/operations/${id}`, 'anna');
       assert.equal(res.status, 200, String(id));
       const page = fold(await res.text());
-      assert.ok(page.includes('<p><a href="/saeckel/history">Летопись</a></p>'));
+      assert.equal(wayBack(page), '/saeckel/history Летопись');
+      assert.equal(currentTab(page), 'Летопись');
       assert.ok(page.includes(`<h1>${present[0]}</h1>`), present[0]);
       for (const text of present.slice(1)) assert.ok(page.includes(text), `${id}: ${text}`);
       for (const text of absent) assert.ok(!page.includes(`<dt>${text}</dt>`), `${id}: ${text}`);

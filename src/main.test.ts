@@ -5,8 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { after, before, beforeEach, describe, test, type TestContext } from 'node:test';
 import { DatabaseError, Pool } from 'pg';
 import type { FirstRun } from './core/gate-key.ts';
@@ -19,7 +18,6 @@ const HOST = 'hof.example';
 // The headings of the common error pages, as Core draws them.
 const NOT_FOUND_H1 = '<h1 class="title t-1">Такой тропы во дворе нет</h1>';
 const SERVER_ERROR_H1 = '<h1 class="title t-1">Во дворе что-то стряслось</h1>';
-const SAECKEL_STATIC = join(import.meta.dirname, 'saeckel', 'static');
 const FORM = 'application/x-www-form-urlencoded';
 
 // Copied from ARCHITECTURE.md §4.9 on purpose: the test must not share the constant with the code.
@@ -238,7 +236,7 @@ describe('static files of Core and Säckel', () => {
       '/saeckel/static/',
       '/saeckel/static/img/',
       '/saeckel/static/hof.css',
-      '/saeckel/static/img/hof-mark.svg',
+      '/saeckel/static/img/key-tag.webp',
       '/saeckel/static/%2e%2e%2fapp.ts',
     ]) {
       const res = await staticRequest(path);
@@ -534,13 +532,11 @@ describe('Säckel in the court', () => {
       /<a class="sign at-treasury" href="\/saeckel\/"\s*><span>Säckel<\/span><\/a\s*>/,
     );
     assert.ok(page.includes('<a class="sign sign-sm" href="/saeckel/"><span>Säckel</span></a>'));
-    // The static folder of Säckel holds what the courtyard names, nothing else.
-    for (const file of readdirSync(SAECKEL_STATIC, { recursive: true, withFileTypes: true })) {
-      if (!file.isFile()) continue;
-      const address = `/saeckel/static/${relative(SAECKEL_STATIC, join(file.parentPath, file.name))}`;
-      assert.ok(page.includes(`src="${address}"`), address);
-      assert.equal((await get(address)).status, 200, address);
-    }
+    // Of the static folder of Säckel the courtyard names the emblem only, and it is served; every
+    // other file of that folder is named by the pages of Säckel (src/saeckel/look.test.ts).
+    const named = new Set([...page.matchAll(/="(\/saeckel\/static\/[^"]*)"/g)].map((m) => m[1]!));
+    assert.deepEqual([...named], ['/saeckel/static/img/emblem-saeckel-small.webp']);
+    assert.equal((await get('/saeckel/static/img/emblem-saeckel-small.webp')).status, 200);
   });
 
   test('Säckel gets id and login only, not the role', async () => {
