@@ -1754,9 +1754,10 @@ mark.move {
     align-self: center;
   }
 
-  /* Летопись — кадр HistoryMobile: заголовок только для screen reader, фильтр во всю ширину;
-     запись — строка: дата и сумма, «мешок · запись» и заметка; ссылка записи накрывает всю строку,
-     и строка — одна ссылка; трата красная. Заголовки столбцов остаются для screen reader */
+  /* Летопись — кадр HistoryMobile: заголовок только для screen reader, фильтр и «Показать» во
+     всю ширину; запись — строка: дата и сумма, «мешок · запись» и заметка; ссылка записи
+     накрывает всю строку, и строка — одна ссылка; трата красная. Заголовки столбцов остаются для
+     screen reader */
   .sk-wide:has(> .history-head) {
     padding-top: 12px;
     gap: 8px;
@@ -1766,9 +1767,12 @@ mark.move {
     align-items: stretch;
     gap: 8px;
   }
+  /* «Показать» под списком во всю ширину: рядом с кнопкой список узок, и на телефоне 375 px
+     обрывается даже «Продукты (в Кладовой)» */
   .history-filter {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
   }
   .history-filter .field {
     width: auto;
