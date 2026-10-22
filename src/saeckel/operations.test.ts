@@ -154,11 +154,11 @@ describe('the page of a record', () => {
       const folded = fold(page);
       assert.equal(wayBack(page), '/saeckel/history Летопись', heading);
       for (const text of [
-        `<h1>${heading}</h1>`,
-        `<form method="post" action="/saeckel/operations/${id}">`,
+        `<h1 class="title t-2">${heading}</h1>`,
+        `<form id="record" class="entry" method="post" action="/saeckel/operations/${id}">`,
         '<label for="amount">Сумма, ₽</label>',
-        '<p>Вид записи не меняется. Удаление попросит подтверждения.</p>',
-        '<button type="submit">Сохранить</button>',
+        '<p class="hint">Вид записи не меняется. Удаление попросит подтверждения.</p>',
+        '<button type="submit" form="record" class="btn btn-ochre">Сохранить</button>',
       ]) {
         assert.ok(folded.includes(text), `${heading}: ${text}`);
       }
@@ -179,14 +179,20 @@ describe('the page of a record', () => {
     await pool.query('UPDATE pouches SET is_archived = true WHERE id = ANY($1)', [[old, older]]);
     const one = fold(await (await get(`/saeckel/operations/${spent}`, 'anna')).text());
     assert.ok(!one.includes('<form'));
-    assert.ok(one.includes(`<p> Мешок «<a href="/saeckel/pouches/${old}">Старый</a>» в Кладовой:`));
+    assert.ok(
+      one.includes(
+        `<p class="note note-error"> Мешок «<a class="link" href="/saeckel/pouches/${old}">Старый</a>» в Кладовой:`,
+      ),
+    );
     assert.ok(one.includes('исправляется и не удаляется. Сначала верните мешок. </p>'));
     const two = await (await get(`/saeckel/operations/${moved}`, 'anna')).text();
     assert.equal((two.match(/в Кладовой: запись с ним не/g) ?? []).length, 2);
     for (const id of [kept, income]) {
       const page = await (await get(`/saeckel/operations/${id}`, 'anna')).text();
       assert.ok(
-        page.includes(`<form method="post" action="/saeckel/operations/${id}">`),
+        page.includes(
+          `<form id="record" class="entry" method="post" action="/saeckel/operations/${id}">`,
+        ),
         String(id),
       );
     }
@@ -311,7 +317,7 @@ describe('Исправить', () => {
       assert.ok(page.includes(`<p id="${id}" class="err-text">`), id);
     }
     assert.deepEqual(values(page).slice(0, 2), ['1,2,3', '31.02.2026']);
-    assert.ok(fold(page).includes('<h1>Трата · 05.10.2026</h1>'));
+    assert.ok(fold(page).includes('<h1 class="title t-2">Трата · 05.10.2026</h1>'));
     assert.deepEqual(lists(page).from!.filter(([, , chosen]) => chosen).length, 1);
     const row = await record(spent);
     assert.deepEqual([row!.amount, row!.date, row!.note], ['100', '2026-10-05', 'было']);
@@ -677,11 +683,15 @@ describe('Удалить: the page', () => {
       const page = fold(await (await get(`/saeckel/operations/${id}`, 'anna')).text());
       assert.ok(
         page.includes(
-          `<details> <summary>Удалить</summary> <form method="post" action="/saeckel/operations/${id}/delete"> <button type="submit">Удалить запись</button> </form> </details>`,
+          `<details class="delete"> <summary class="btn btn-danger">Удалить</summary> <form method="post" action="/saeckel/operations/${id}/delete"> <button type="submit" class="btn btn-danger">Удалить запись</button> </form> </details>`,
         ),
         String(id),
       );
-      assert.ok(page.includes('<p>Вид записи не меняется. Удаление попросит подтверждения.</p>'));
+      assert.ok(
+        page.includes(
+          '<p class="hint">Вид записи не меняется. Удаление попросит подтверждения.</p>',
+        ),
+      );
     }
   });
 

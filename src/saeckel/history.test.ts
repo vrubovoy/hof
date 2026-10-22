@@ -15,6 +15,7 @@ import {
   deadPool,
   fold,
   get,
+  historyRows as rows,
   movementLines,
   pool,
   post,
@@ -29,6 +30,7 @@ after(() => Promise.all([pool.end(), deadPool.end()]));
 const EMPTY_TEXT =
   'Сюда ляжет каждый доход, трата и перекладывание — по порядку, с датой и заметкой.';
 const EMPTY_POUCH = 'По этому мешку записей пока нет.';
+const PAST_LAST = 'На этой странице записей нет.';
 
 // `count` incomes of user 1 on one day, of 0,01, 0,02 … in the order of their ids.
 async function addIncomes(count: number): Promise<void> {
@@ -43,29 +45,21 @@ function history(query = '', who = 'anna') {
   return get(`/saeckel/history${query}`, who);
 }
 
-// The rows of «Летопись»: date, pouches, kind, note, amount — and the address of the record.
-function rows(page: string): string[][] {
-  const body = /<tbody>([\s\S]*?)<\/tbody>/.exec(page)?.[1] ?? '';
-  return [...body.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map((row) => {
-    const cells = [...row[1]!.matchAll(/<td>([\s\S]*?)<\/td>/g)].map((m) => fold(m[1]!).trim());
-    const href = /<a href="([^"]*)" aria-label="Открыть запись"/.exec(row[1]!)?.[1] ?? '';
-    return [...cells.slice(0, 5), href];
-  });
-}
-
 // The amounts of the rows, in hundredths written as «0,51 ₽» and so on: which incomes are shown.
 const amounts = (page: string) => rows(page).map((row) => row[4]);
 
 // The links of the pages: «Назад» and «Следующие 50», with their addresses as written.
 function pageLinks(page: string): Record<string, string> {
   return Object.fromEntries(
-    [...page.matchAll(/<a href="([^"]*)">(Назад|Следующие 50)<\/a>/g)].map((m) => [m[2]!, m[1]!]),
+    [...page.matchAll(/<a class="btn" href="([^"]*)"\s*>(Назад|Следующие 50)<\/a\s*>/g)].map(
+      (m) => [m[2]!, m[1]!],
+    ),
   );
 }
 
 // The options of the filter: value, text, chosen.
 function filterOptions(page: string): [string, string, boolean][] {
-  const list = /<select id="pouch" name="pouch">([\s\S]*?)<\/select>/.exec(page)?.[1] ?? '';
+  const list = /<select id="pouch" name="pouch"[^>]*>([\s\S]*?)<\/select>/.exec(page)?.[1] ?? '';
   return [...list.matchAll(/<option\s+value="([^"]*)"\s*(selected)?\s*>([\s\S]*?)<\/option>/g)].map(
     (m) => [m[1]!, fold(m[3]!).trim(), m[2] !== undefined],
   );
@@ -84,10 +78,10 @@ describe('Летопись: pages', () => {
       '<h1 class="ribbon ribbon-md"><span>Säckel</span></h1>',
       '<a class="tab" href="/saeckel/history" aria-current="page">Летопись</a>',
       '<a class="tab" href="/saeckel/" >Мешки</a>',
-      '<h2>Летопись пока пуста</h2>',
-      `<p>${EMPTY_TEXT}</p>`,
-      '<a href="/saeckel/income">Записать доход</a>',
-      '<a href="/saeckel/">К мешкам</a>',
+      '<h2 class="title">Летопись пока пуста</h2>',
+      `<p class="muted"> ${EMPTY_TEXT} </p>`,
+      '<a class="btn btn-ochre" href="/saeckel/income">Записать доход</a>',
+      '<a class="link" href="/saeckel/">К мешкам</a>',
     ]) {
       assert.ok(page.includes(text), text);
     }
@@ -151,6 +145,7 @@ describe('Летопись: pages', () => {
     assert.deepEqual(pageLinks(page), { Назад: '/saeckel/history?page=1' });
     assert.ok(!page.includes('Летопись пока пуста'));
     assert.ok(!page.includes(EMPTY_POUCH));
+    assert.ok(page.includes(`<p class="muted history-none">${PAST_LAST}</p>`));
   });
 
   test('page 1000 with a record after it: its 50 rows and «Назад», no link to 1001', async () => {
@@ -231,9 +226,11 @@ describe('Летопись: the filter by pouch', () => {
     const flat = await addPouch(1, 'Квартира');
     await addOperation(1, 'assign', 100, { to: food });
     const page = await (await history(`?pouch=${flat}`)).text();
-    assert.ok(fold(page).includes('<form method="get" action="/saeckel/history">'));
+    assert.ok(
+      fold(page).includes('<form class="history-filter" method="get" action="/saeckel/history">'),
+    );
     assert.ok(fold(page).includes('<label for="pouch">Мешок</label>'));
-    assert.ok(page.includes('<button type="submit">Показать</button>'));
+    assert.ok(page.includes('<button type="submit" class="btn">Показать</button>'));
     assert.deepEqual(filterOptions(page), [
       ['', 'Все мешки', false],
       [String(food), 'Продукты', false],
@@ -255,8 +252,8 @@ describe('Летопись: the filter by pouch', () => {
     const flat = await addPouch(1, 'Квартира');
     await addOperation(1, 'assign', 100, { to: food });
     const page = fold(await (await history(`?pouch=${flat}`)).text());
-    assert.ok(page.includes(`<p>${EMPTY_POUCH}</p>`));
-    assert.ok(page.includes('<select id="pouch" name="pouch">'));
+    assert.ok(page.includes(`<p class="muted history-none">${EMPTY_POUCH}</p>`));
+    assert.ok(page.includes('<select id="pouch" name="pouch" class="input slim">'));
     assert.ok(!page.includes('<table'));
     assert.ok(!page.includes('Летопись пока пуста'));
   });
@@ -349,7 +346,7 @@ describe('a record', () => {
       const page = fold(await res.text());
       assert.equal(wayBack(page), '/saeckel/history Летопись');
       assert.equal(currentTab(page), 'Летопись');
-      assert.ok(page.includes(`<h1>${present[0]}</h1>`), present[0]);
+      assert.ok(page.includes(`<h1 class="title t-2">${present[0]}</h1>`), present[0]);
       for (const text of present.slice(1)) assert.ok(page.includes(text), `${id}: ${text}`);
       for (const text of absent) assert.ok(!page.includes(`<dt>${text}</dt>`), `${id}: ${text}`);
       assert.ok(!page.includes('<form'), String(id));

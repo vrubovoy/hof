@@ -75,6 +75,7 @@ const HISTORY_PAGE_SIZE = 50;
 const HISTORY_LAST_PAGE = 1000;
 
 const EMPTY_POUCH_HISTORY = 'По этому мешку записей пока нет.';
+const PAST_LAST_PAGE = 'На этой странице записей нет.';
 
 // The signs of a pouch (§5.4, design/preview/PouchEditMobile.html): the key kept in
 // pouches.icon and its label. Only these keys are accepted; a stored key the set does not know
@@ -940,138 +941,183 @@ function historyHref(pouch: number | null, page: number): string {
   return `/saeckel/history?${query.toString()}`;
 }
 
-// «Летопись», texts from design/preview/SaeckelHistory.html and SaeckelHistoryEmpty.html: a
-// filter by pouch, 50 records a page, «Назад» and «Следующие 50». With no record at all, the
-// empty page instead.
+// One record of «Летопись» (design/preview/SaeckelHistory.html): a row of the table — the date,
+// the pouches, the kind, the note, the amount and «›» to the record. On the phone the same row is a
+// line of HistoryMobile — the date and the amount, «pouch · kind», the note — and its link covers
+// the whole line: one link a record, named as before, described by its row. The kind is in its
+// own cell on a computer and after the pouches on the phone, where a transfer is «Переложено», as
+// HistoryMobile has it; CSS shows one of the two. An expense is red on the phone only, as the two
+// prototypes have it.
+function historyRow(operation: Operation, money: MoneyFormat) {
+  const kind = KIND_LABELS[operation.kind];
+  const phoneKind = operation.kind === 'transfer' ? 'Переложено' : kind;
+  return html`<tr id="op-${operation.id}">
+    <td class="h-date">${dateForField(operation.date)}</td>
+    <td class="h-pouch">
+      ${operationPouches(operation)}<span class="h-kind-phone"> · ${phoneKind}</span>
+    </td>
+    <td class="h-kind">${kind}</td>
+    <td class="h-note">${operation.note}</td>
+    <td class="${operation.kind === 'expense' ? 'h-sum neg' : 'h-sum'}">
+      ${signedAmount(operation, money)}
+    </td>
+    <td class="h-go">
+      <a
+        class="link-plain"
+        href="/saeckel/operations/${operation.id}"
+        aria-label="Открыть запись"
+        aria-describedby="op-${operation.id}"
+        >›</a
+      >
+    </td>
+  </tr>`;
+}
+
+// «Летопись», texts from design/preview/SaeckelHistory.html, HistoryMobile.html and
+// SaeckelHistoryEmpty.html: the whole width under the tabs, no column of pouches. A filter by
+// pouch with «Показать» — without a script the list does not send the form itself — 50 records a
+// page, «Назад» and «Следующие 50». With no record at all, the empty page: the closed book, on the
+// phone above the text, as in SaeckelEmptyMobile. A pouch without records and a page past the
+// last one say so under the filter (no picture of their own).
 function historyPage(view: HistoryView, money: MoneyFormat) {
   if (view.operations.length === 0 && view.page === 1 && view.pouch === null) {
     return saeckelPage(
       { title: 'Säckel — летопись', tab: 'history' },
-      html`<h2>Летопись пока пуста</h2>
-        <p>Сюда ляжет каждый доход, трата и перекладывание — по порядку, с датой и заметкой.</p>
-        <p><a href="/saeckel/income">Записать доход</a> <a href="/saeckel/">К мешкам</a></p>`,
+      html`<div class="sk-empty history-empty">
+          <img class="vignette" src="/saeckel/static/img/empty-history-closed.webp" alt="" />
+          <div class="sk-empty-text">
+            <h2 class="title">Летопись пока пуста</h2>
+            <img class="sprig" src="/saeckel/static/img/sprig-divider.webp" alt="" />
+            <p class="muted">
+              Сюда ляжет каждый доход, трата и перекладывание — по порядку, с датой и заметкой.
+            </p>
+            <p class="empty-actions">
+              <a class="btn btn-ochre" href="/saeckel/income">Записать доход</a>
+              <a class="link" href="/saeckel/">К мешкам</a>
+            </p>
+          </div>
+        </div>
+        <img class="sk-corner" src="/saeckel/static/img/sprig-corner.webp" alt="" loading="lazy" />
+        ${blot('ink-blot-small', 'blot-history-empty')}`,
     );
   }
+  const none = view.page === 1 ? EMPTY_POUCH_HISTORY : PAST_LAST_PAGE;
+  const back = view.page > 1;
   return saeckelPage(
     { title: 'Säckel — летопись', tab: 'history' },
-    html`<h2>Летопись</h2>
-      <form method="get" action="/saeckel/history">
-        <p>
-          <label for="pouch">Мешок</label>
-          <select id="pouch" name="pouch">
-            <option value="">Все мешки</option>
-            ${view.pouches.map(
-              (pouch) =>
-                html`<option value="${pouch.id}" ${pouch.id === view.pouch ? html`selected` : ''}>
-                  ${pouch.is_archived ? `${pouch.name} (в Кладовой)` : pouch.name}
-                </option>`,
-            )}
-          </select>
-          <button type="submit">Показать</button>
-        </p>
-      </form>
+    html`<div class="history-head">
+        <h2 class="title t-2 visually-hidden-phone">Летопись</h2>
+        <form class="history-filter" method="get" action="/saeckel/history">
+          <div class="field">
+            <label for="pouch">Мешок</label>
+            <span class="select">
+              <select id="pouch" name="pouch" class="input slim">
+                <option value="">Все мешки</option>
+                ${view.pouches.map(
+                  (pouch) =>
+                    html`<option
+                      value="${pouch.id}"
+                      ${pouch.id === view.pouch ? html`selected` : ''}
+                    >
+                      ${pouch.is_archived ? `${pouch.name} (в Кладовой)` : pouch.name}
+                    </option>`,
+                )}
+              </select>
+            </span>
+          </div>
+          <button type="submit" class="btn">Показать</button>
+        </form>
+      </div>
       ${
         view.operations.length > 0
-          ? html`<table>
+          ? html`<table class="table history">
               <thead>
                 <tr>
-                  <th>Дата</th>
-                  <th>Мешок</th>
-                  <th>Запись</th>
-                  <th>Заметка</th>
-                  <th>Сумма</th>
-                  <th></th>
+                  <th class="h-date">Дата</th>
+                  <th class="h-pouch">Мешок</th>
+                  <th class="h-kind">Запись</th>
+                  <th class="h-note">Заметка</th>
+                  <th class="h-sum">Сумма</th>
+                  <th class="h-go"></th>
                 </tr>
               </thead>
               <tbody>
-                ${view.operations.map(
-                  (operation) =>
-                    html`<tr>
-                      <td>${dateForField(operation.date)}</td>
-                      <td>${operationPouches(operation)}</td>
-                      <td>${KIND_LABELS[operation.kind]}</td>
-                      <td>${operation.note}</td>
-                      <td>${signedAmount(operation, money)}</td>
-                      <td>
-                        <a href="/saeckel/operations/${operation.id}" aria-label="Открыть запись"
-                          >›</a
-                        >
-                      </td>
-                    </tr>`,
-                )}
+                ${view.operations.map((operation) => historyRow(operation, money))}
               </tbody>
             </table>`
-          : view.page === 1
-            ? html`<p>${EMPTY_POUCH_HISTORY}</p>`
-            : ''
+          : html`<p class="muted history-none">${none}</p>`
       }
-      <p>
-        ${view.page > 1 ? html`<a href="${historyHref(view.pouch, view.page - 1)}">Назад</a>` : ''}
-        ${
-          view.hasNext
-            ? html`<a href="${historyHref(view.pouch, view.page + 1)}">Следующие 50</a>`
-            : ''
-        }
-      </p>`,
+      ${
+        back || view.hasNext
+          ? html`<nav class="pages" aria-label="Страницы летописи">
+              ${back ? html`<a class="btn" href="${historyHref(view.pouch, view.page - 1)}">Назад</a>` : ''}
+              ${
+                view.hasNext
+                  ? html`<a class="btn" href="${historyHref(view.pouch, view.page + 1)}"
+                      >Следующие 50</a
+                    >`
+                  : ''
+              }
+            </nav>`
+          : ''
+      }
+      ${blot('ink-blot-medium', 'blot-history-medium')}
+      ${blot('ink-splatter-b', 'blot-history-splatter')}`,
   );
 }
 
 // Whether a pouch of the record is in the storeroom: then the record is not changed (§5.4).
 const inStoreroom = (operation: Operation) => operation.fromArchived || operation.toArchived;
 
-// A record of «Летопись», to read: its kind and date, its amount, its pouches and its note. For
-// each of its pouches in the storeroom, why it is not changed, with the way to that pouch.
+// A record of «Летопись», to read (no picture of its own): the frame of a record, for each of its
+// pouches in the storeroom a note with the red seal — why it is not changed, with the way to that
+// pouch — then its amount, date, pouches and note as lines ruled by pen.
 function operationPage(operation: Operation, money: MoneyFormat) {
   const stored = [
     [operation.fromArchived, operation.fromPouchId, operation.fromName],
     [operation.toArchived, operation.toPouchId, operation.toName],
   ] as const;
+  const pouchLink = (id: number | null, name: string | null) =>
+    html`<a class="link" href="/saeckel/pouches/${id}">${name}</a>`;
+  const line = (term: string, value: string, kind = 'line') =>
+    html`<div class="${kind}">
+      <dt>${term}</dt>
+      <dd>${value}</dd>
+    </div>`;
   return saeckelPage(
     {
       title: 'Säckel — запись',
       tab: 'history',
       back: { href: '/saeckel/history', text: 'Летопись' },
     },
-    html`<h1>${KIND_LABELS[operation.kind]} · ${dateForField(operation.date)}</h1>
+    html`<div class="sk-form record">
+      <h1 class="title t-2">${KIND_LABELS[operation.kind]} · ${dateForField(operation.date)}</h1>
       ${stored.map(([archived, id, name]) =>
         archived
-          ? html`<p>
-              Мешок «<a href="/saeckel/pouches/${id}">${name}</a>» в Кладовой: запись с ним не
-              исправляется и не удаляется. Сначала верните мешок.
+          ? html`<p class="note note-error">
+              Мешок «${pouchLink(id, name)}» в Кладовой: запись с ним не исправляется и не
+              удаляется. Сначала верните мешок.
             </p>`
           : '',
       )}
-      <dl>
-        <dt>Сумма</dt>
-        <dd>${money.format(operation.cents)}</dd>
-        <dt>Дата</dt>
-        <dd>${dateForField(operation.date)}</dd>
-        ${
-          operation.fromName === null
-            ? ''
-            : html`<dt>Из мешка</dt>
-                <dd>${operation.fromName}</dd>`
-        }
-        ${
-          operation.toName === null
-            ? ''
-            : html`<dt>В мешок</dt>
-                <dd>${operation.toName}</dd>`
-        }
-        ${
-          operation.note === ''
-            ? ''
-            : html`<dt>Заметка</dt>
-                <dd>${operation.note}</dd>`
-        }
-      </dl>`,
+      <dl class="record-lines">
+        ${line('Сумма', money.format(operation.cents), 'line line-sum')}
+        ${line('Дата', dateForField(operation.date))}
+        ${operation.fromName === null ? '' : line('Из мешка', operation.fromName)}
+        ${operation.toName === null ? '' : line('В мешок', operation.toName)}
+        ${operation.note === '' ? '' : line('Заметка', operation.note, 'line line-note')}
+      </dl>
+    </div>`,
   );
 }
 
 // A record to change (design/preview/SaeckelForms.html, «Трата · 05.10.2026»): the lists of its
 // pouches by its kind — the active pouches by name, the chosen one first chosen — then the
-// amount, the date and the note. The heading keeps the stored date; the kind does not change.
-// Below, «Удалить» folded in <details> (§4.1): opening it is the confirmation, no script.
+// amount, the date and the note. One list stands beside the amount, the date and the note under
+// them, as in the prototype; two lists stand above the fields, as in «Переложить»; an income has
+// the fields only. The heading keeps the stored date; the kind does not change. «Сохранить» and
+// «Удалить» stand in a row: «Сохранить» belongs to the form by its `form`, «Удалить» is a
+// <details> (§4.1) whose opening is the confirmation — no script, and no form inside another.
 function operationEditPage(
   operation: Operation,
   pouches: readonly { id: number; name: string }[],
@@ -1080,26 +1126,39 @@ function operationEditPage(
 ) {
   const choices = pouches.map((pouch) => ({ id: pouch.id, text: pouch.name }));
   const fields = POUCH_FIELDS[operation.kind];
+  const lists = html`${fields.includes('from') ? pouchSelect('from', 'Из мешка', choices, form, false) : ''}
+  ${fields.includes('to') ? pouchSelect('to', 'В мешок', choices, form, false) : ''}`;
+  let body;
+  if (fields.length === 1) {
+    body = html`<div class="record-row">${lists} ${entryFields(form, money)}</div>`;
+  } else if (fields.length === 2) {
+    body = html`<div class="pouch-pair">${lists}</div>
+      <div class="entry-row">${entryFields(form, money)}</div>`;
+  } else {
+    body = html`<div class="entry-row">${entryFields(form, money)}</div>`;
+  }
   return saeckelPage(
     {
       title: 'Säckel — запись',
       tab: 'history',
       back: { href: '/saeckel/history', text: 'Летопись' },
     },
-    html`<h1>${KIND_LABELS[operation.kind]} · ${dateForField(operation.date)}</h1>
-      <form method="post" action="/saeckel/operations/${operation.id}">
-        ${fields.includes('from') ? pouchSelect('from', 'Из мешка', choices, form, false) : ''}
-        ${fields.includes('to') ? pouchSelect('to', 'В мешок', choices, form, false) : ''}
-        ${entryFields(form, money)}
-        <p>Вид записи не меняется. Удаление попросит подтверждения.</p>
-        <button type="submit">Сохранить</button>
+    html`<div class="sk-form record">
+      <h1 class="title t-2">${KIND_LABELS[operation.kind]} · ${dateForField(operation.date)}</h1>
+      <form id="record" class="entry" method="post" action="/saeckel/operations/${operation.id}">
+        ${body}
+        <p class="hint">Вид записи не меняется. Удаление попросит подтверждения.</p>
       </form>
-      <details>
-        <summary>Удалить</summary>
-        <form method="post" action="/saeckel/operations/${operation.id}/delete">
-          <button type="submit">Удалить запись</button>
-        </form>
-      </details>`,
+      <div class="record-actions">
+        <button type="submit" form="record" class="btn btn-ochre">Сохранить</button>
+        <details class="delete">
+          <summary class="btn btn-danger">Удалить</summary>
+          <form method="post" action="/saeckel/operations/${operation.id}/delete">
+            <button type="submit" class="btn btn-danger">Удалить запись</button>
+          </form>
+        </details>
+      </div>
+    </div>`,
   );
 }
 
