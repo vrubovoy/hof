@@ -1467,8 +1467,8 @@ mark.move {
   }
 
   /* «Разложить» — кадр AssignMobile: строка — знак, имя и остаток под ним, поле справа; ошибка
-     строки — под её полем, во всю строку; заголовков столбцов нет. Ячейки отдают своё содержимое
-     сетке строки */
+     строки — под её полем, во всю строку; заголовки столбцов не видны, но остаются для screen
+     reader. Ячейки отдают своё содержимое сетке строки */
   .sk-main:has(> .assign-head) {
     gap: 10px;
   }
@@ -1487,7 +1487,12 @@ mark.move {
     display: block;
   }
   .assign-table thead {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .assign-table tr {
     display: grid;
