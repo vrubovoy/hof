@@ -730,10 +730,9 @@ a {
   object-fit: contain;
 }
 
-/* страница во всю ширину (Летопись, запись): то, что шире окна, прокручивается внутри неё и не
-   обрезается краем страницы */
+/* страница во всю ширину (Летопись, запись): без колонки мешков; кляксы лежат от неё */
 .sk-wide {
-  overflow-x: auto;
+  position: relative;
 }
 
 /* открытый мешок: знак, имя и ссылки строкой; остаток в рамке пером; форма траты; движения */
@@ -1058,6 +1057,133 @@ mark.move {
   mix-blend-mode: multiply;
 }
 
+/* «Летопись» (SaeckelHistory, HistoryMobile): заголовок и фильтр в строку; записи — таблица,
+   у суммы знак, у заметки курсив; «Назад» и «Следующие 50» — бумажные плашки */
+.history-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 24px;
+  max-width: 1100px;
+}
+.history-head .title,
+.history-none {
+  margin: 0;
+}
+.history-filter {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 0;
+}
+.history-filter .field {
+  width: 260px;
+}
+/* «Показать» вровень с узким списком */
+.history-filter .btn {
+  height: 40px;
+}
+.history {
+  max-width: 1100px;
+}
+.history td {
+  overflow-wrap: anywhere;
+}
+.history .h-date {
+  width: 110px;
+  color: var(--ink-2);
+}
+.history th.h-pouch {
+  width: 240px;
+}
+.history th.h-kind {
+  width: 180px;
+}
+.history td.h-note {
+  font-style: italic;
+  color: var(--ink-2);
+}
+.history .h-sum {
+  text-align: right;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.history td.h-sum {
+  font-weight: 700;
+}
+.history .h-go {
+  width: 40px;
+  text-align: right;
+}
+.h-kind-phone {
+  display: none;
+}
+.pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+/* Летопись пока пуста (SaeckelHistoryEmpty): закрытая книга, текст, «Записать доход» и «К мешкам» */
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+}
+
+/* запись (SaeckelForms «Трата · 05.10.2026»): рамка формы; «Сохранить» и «Удалить» в ряд,
+   «Удалить запись» — после раскрытия «Удалить»; запись мешка из Кладовой — строки с линией пером */
+.record-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px 12px;
+  align-items: start;
+}
+.record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+.delete > summary {
+  list-style: none;
+}
+.delete > summary::-webkit-details-marker {
+  display: none;
+}
+/* «Удалить запись» — под раскрытым «Удалить» */
+.delete form {
+  margin: 10px 0 0;
+}
+.record-lines {
+  margin: 0;
+}
+.record-lines .line {
+  display: grid;
+  grid-template-columns: 8em minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 16px;
+  padding: 8px 4px 10px;
+  background: url(img/pen-rule-light.svg) left bottom / 100% 6px no-repeat;
+}
+.record-lines dt {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.record-lines dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.line-sum dd {
+  font-weight: 700;
+}
+.line-note dd {
+  font-style: italic;
+  color: var(--ink-2);
+}
+
 /* компьютер — кадр Saeckel и SaeckelEmpty 1440×900 */
 @media (min-width: 1024px) {
   /* сцена в пропорции кадра 1440×330 на любой ширине: картинка не обрезается сильнее, чем в
@@ -1152,6 +1278,35 @@ mark.move {
   .entry-row .field-note {
     margin-top: 10px;
   }
+  /* запись одного мешка: список рядом с суммой, дата и заметка под ними (SaeckelForms) */
+  .record-row {
+    row-gap: 14px;
+    grid-template-columns: 160px minmax(0, 1fr) 190px;
+    grid-template-areas:
+      'list list amount'
+      'date note note';
+  }
+  .record-row .field-from,
+  .record-row .field-to {
+    grid-area: list;
+    margin-top: 10px;
+  }
+  .record-row .field-amount {
+    grid-area: amount;
+  }
+  .record-row .field-date {
+    grid-area: date;
+  }
+  .record-row .field-note {
+    grid-area: note;
+  }
+  /* Летопись: в SaeckelHistory суммы трат — чернилами, красные они только на телефоне */
+  .history .neg {
+    color: var(--ink);
+  }
+  .sk-wide:has(> .history-head) {
+    gap: 10px;
+  }
 
   /* мешков пока нет: виньетка и текст рядом посередине правой части; ветка — в углу, колонка
      оставляет ей место под собой */
@@ -1168,6 +1323,16 @@ mark.move {
   }
   .sk-pouches:has(.sk-empty) .sk-list {
     padding-bottom: 210px;
+  }
+  /* Летопись пока пуста: книга и текст посередине под закладками (SaeckelHistoryEmpty) */
+  .history-empty {
+    flex: 1 0 auto;
+    grid-template-columns: minmax(0, 420px) minmax(0, 520px);
+    gap: 48px;
+    padding: 0;
+  }
+  .history-empty .empty-actions {
+    margin-top: 6px;
   }
 
   /* кляксы в кадре 1440×900, от верха и низа части под закладками */
@@ -1211,9 +1376,39 @@ mark.move {
     opacity: 0.42;
     transform: rotate(15deg);
   }
+  .blot-history-empty {
+    right: 38px;
+    bottom: 27px;
+    width: 42px;
+    opacity: 0.7;
+  }
   .blot-pouches-small,
   .blot-pouch-splatter {
     display: none;
+  }
+}
+
+/* кляксы Летописи — справа от таблицы шириной 1100 px, только там, где ей хватает места */
+.blot-history-medium,
+.blot-history-splatter {
+  display: none;
+}
+@media (min-width: 1360px) {
+  .blot-history-medium {
+    display: block;
+    right: 76px;
+    top: 56px;
+    width: 64px;
+    opacity: 0.55;
+    transform: rotate(25deg);
+  }
+  .blot-history-splatter {
+    display: block;
+    right: 100px;
+    top: 376px;
+    width: 90px;
+    opacity: 0.5;
+    transform: rotate(10deg);
   }
 }
 
@@ -1550,6 +1745,120 @@ mark.move {
     align-self: center;
   }
 
+  /* Летопись — кадр HistoryMobile: заголовок только для screen reader, фильтр во всю ширину;
+     запись — строка: дата и сумма, «мешок · запись» и заметка; ссылка записи накрывает всю строку,
+     и строка — одна ссылка; трата красная. Заголовки столбцов остаются для screen reader */
+  .sk-wide:has(> .history-head) {
+    padding-top: 12px;
+    gap: 8px;
+  }
+  .history-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .history-filter {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .history-filter .field {
+    width: auto;
+  }
+  .history,
+  .history tbody {
+    display: block;
+  }
+  .history thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .history tr {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) fit-content(50%);
+    column-gap: 12px;
+    padding: 8px 4px 10px;
+    background: url(img/pen-rule-light.svg) left bottom / 100% 6px no-repeat;
+  }
+  .history td {
+    width: auto;
+    padding: 0;
+    background: none;
+  }
+  .history .h-date {
+    grid-area: 1 / 1;
+    width: auto;
+    font-size: 15px;
+  }
+  .history .h-sum {
+    grid-area: 1 / 2;
+  }
+  .history .h-pouch {
+    grid-area: 2 / 1;
+  }
+  .history .h-kind {
+    display: none;
+  }
+  .h-kind-phone {
+    display: inline;
+  }
+  .history .h-note {
+    grid-area: 2 / 2;
+    font-size: 15px;
+  }
+  .history .h-go {
+    display: contents;
+  }
+  .history .h-go a {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    color: transparent;
+  }
+  .history .h-go a:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: -2px;
+  }
+  .pages {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    gap: 10px;
+  }
+  /* Летопись пока пуста — как SaeckelEmptyMobile: книга над текстом, кнопка во всю ширину */
+  .history-empty {
+    display: flex;
+    flex-direction: column;
+    padding: 0 4px;
+  }
+  .empty-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .empty-actions .link {
+    align-self: center;
+  }
+
+  /* запись — одна колонка; «Сохранить», «Удалить» и «Удалить запись» во всю ширину */
+  .record-actions,
+  .record-actions .btn,
+  .delete form {
+    width: 100%;
+  }
+  .record-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .record-lines .line {
+    grid-template-columns: 6.5em minmax(0, 1fr);
+  }
+
   /* на телефоне скрыт с экрана, но остаётся для screen reader */
   .visually-hidden-phone {
     position: absolute;
@@ -1568,7 +1877,8 @@ mark.move {
   .blot-pouches-drip,
   .blot-empty-medium,
   .blot-assign-small,
-  .blot-assign-ring {
+  .blot-assign-ring,
+  .blot-history-empty {
     display: none;
   }
   .blot-pouch-splatter {

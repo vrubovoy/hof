@@ -108,12 +108,23 @@ async function prototypeBudget() {
   return ids;
 }
 
-// Every page of Säckel in the states drawn so far, as [name, status, page]: Мешки with pouches,
-// with every sign and an unknown one, empty, empty beside the storeroom, below zero; «Доход»,
-// «Разложить» and «Переложить» without pouches, with them, with every sign and the treasury below
-// zero, filled in to cover a debt, refused field by field, row by row and as a whole; and the
-// other pages in the shell — a pouch, one in the storeroom, the forms with and without an error,
-// «Летопись» empty and with records, a record to change and one to read.
+// `count` incomes of anna on one day, of 0,01, 0,02 … in the order of their ids.
+async function addIncomes(count: number): Promise<void> {
+  await pool.query(
+    `INSERT INTO operations (user_id, kind, amount, currency, date)
+     SELECT $1, 'income', n, 'RUB', '2026-10-06' FROM generate_series(1, $2) n`,
+    [ANNA, count],
+  );
+}
+
+// Every page of Säckel in every state, as [name, status, page]: Мешки with pouches, with every
+// sign and an unknown one, empty, empty beside the storeroom, below zero; «Доход», «Разложить»
+// and «Переложить» without pouches, with them, with every sign and the treasury below zero,
+// filled in to cover a debt, refused field by field, row by row and as a whole; a pouch, one in
+// the storeroom, the forms of a pouch with and without an error; «Летопись» empty, with records,
+// by a pouch — active, in the storeroom, without records — past the last page and three pages of
+// 120; a record of each kind to change, refused, and one of the storeroom to read, also when a
+// change or a deletion is sent anyway.
 async function drawnPages(): Promise<[string, number, string][]> {
   const pages: [string, number, string][] = [];
   const add = async (name: string, res: Response | Promise<Response>) => {
@@ -187,9 +198,39 @@ async function drawnPages(): Promise<[string, number, string][]> {
     ),
   );
   const stored = await addOperation(ANNA, 'assign', 100, { to: 5 });
+  const moved = await addOperation(
+    ANNA,
+    'transfer',
+    76_000,
+    { from: ids['Отпуск'], to: ids['Транспорт'] },
+    '2026-10-04',
+  );
   await add('Летопись', get('/saeckel/history', 'anna'));
+  await add('Летопись of a pouch', get(`/saeckel/history?pouch=${food}`, 'anna'));
+  await add('Летопись of a pouch in the storeroom', get('/saeckel/history?pouch=5', 'anna'));
+  await add('Летопись of a pouch without records', get('/saeckel/history?pouch=6', 'anna'));
+  await add('Летопись past the last page', get('/saeckel/history?page=2', 'anna'));
+  await add('a record: an income', get('/saeckel/operations/1', 'anna'));
+  await add('a record: laid out', get('/saeckel/operations/2', 'anna'));
   await add('a record', get('/saeckel/operations/3', 'anna'));
+  await add('a record: a transfer', get(`/saeckel/operations/${moved}`, 'anna'));
+  await add(
+    'a refused record of every field',
+    post('/saeckel/operations/3', { from: '', amount: 'x', date: 'x', note: 'a\u0001b' }, 'anna'),
+  );
+  await add(
+    'a refused transfer of one pouch',
+    post(`/saeckel/operations/${moved}`, { from: '1', to: '1', amount: '1' }, 'anna'),
+  );
   await add('a record of the storeroom', get(`/saeckel/operations/${stored}`, 'anna'));
+  await add(
+    'a refused change of the storeroom',
+    post(`/saeckel/operations/${stored}`, { amount: '1' }, 'anna'),
+  );
+  await add(
+    'a refused deletion of the storeroom',
+    post(`/saeckel/operations/${stored}/delete`, {}, 'anna'),
+  );
 
   // Every sign, an unknown one, the treasury below zero and a long sum.
   await pool.query('TRUNCATE operations, pouches RESTART IDENTITY');
@@ -203,6 +244,11 @@ async function drawnPages(): Promise<[string, number, string][]> {
   await add('Мешки, every sign, below zero', get('/saeckel/', 'anna'));
   await add('Разложить, every sign, below zero', get('/saeckel/assign', 'anna'));
   await add('Переложить, every sign', get('/saeckel/transfer', 'anna'));
+  // 120 records more: three pages of «Летопись».
+  await addIncomes(120);
+  for (const page of [1, 2, 3]) {
+    await add(`Летопись, page ${page} of 3`, get(`/saeckel/history?page=${page}`, 'anna'));
+  }
   return pages;
 }
 
@@ -811,6 +857,202 @@ describe('Доход, Разложить, Переложить', () => {
         name,
       );
     }
+  });
+});
+
+// The rows of the table of «Летопись» as [id, row].
+function historyTable(page: string) {
+  const table = /<table class="table history">([\s\S]*?)<\/table>/.exec(page)?.[1] ?? '';
+  const body = /<tbody>([\s\S]*?)<\/tbody>/.exec(table)?.[1] ?? '';
+  return { table, body, rows: [...body.matchAll(/<tr id="op-(\d+)">([\s\S]*?)<\/tr>/g)] };
+}
+
+describe('Летопись and a record', () => {
+  test('the table: rows only, one link a record — named as before, described by its row — and the headers', async () => {
+    const ids = await prototypeBudget();
+    await addOperation(ANNA, 'transfer', 76_000, { from: ids['Отпуск'], to: ids['Транспорт'] });
+    const page = await (await get('/saeckel/history', 'anna')).text();
+    const { table, body, rows } = historyTable(page);
+    assert.deepEqual(
+      [...table.matchAll(/<th class="[^"]*">([^<]*)<\/th>/g)].map(([, text]) => text),
+      ['Дата', 'Мешок', 'Запись', 'Заметка', 'Сумма', ''],
+    );
+    // Nothing in the body but rows, no link around a row.
+    assert.equal(body.replace(/<tr id="op-\d+">[\s\S]*?<\/tr>/g, '').trim(), '');
+    assert.doesNotMatch(page, /<a\s[^>]*>\s*<tr/);
+    assert.equal(rows.length, 9);
+    for (const [, id, row] of rows) {
+      const links = [...row!.matchAll(/<a\s[^>]*>/g)].map(([link]) => fold(link));
+      assert.deepEqual(
+        links,
+        [
+          `<a class="link-plain" href="/saeckel/operations/${id}" aria-label="Открыть запись" aria-describedby="op-${id}" >`,
+        ],
+        id,
+      );
+      // The kind the phone shows after the pouches is the kind of the row; a transfer is
+      // «Переложено» there (HistoryMobile).
+      const kind = /<td class="h-kind">([^<]*)<\/td>/.exec(row!)![1];
+      const phone = kind === 'Из мешка в мешок' ? 'Переложено' : kind;
+      assert.ok(fold(row!).includes(`<span class="h-kind-phone"> · ${phone}</span>`), id);
+    }
+    // No link to a record anywhere else on the page.
+    assert.equal((page.match(/href="\/saeckel\/operations\//g) ?? []).length, rows.length);
+  });
+
+  test('three pages of 120: «Назад» and «Следующие 50» as plaques; past the last one, a line', async () => {
+    await pool.query(
+      `INSERT INTO operations (user_id, kind, amount, currency, date)
+       SELECT $1, 'income', n, 'RUB', '2026-10-06' FROM generate_series(1, 120) n`,
+      [ANNA],
+    );
+    const pager = (page: string) =>
+      fold(
+        /<nav class="pages" aria-label="Страницы летописи">([\s\S]*?)<\/nav>/.exec(page)?.[1] ?? '',
+      );
+    const expected: [number, number, string[]][] = [
+      [1, 50, ['Следующие 50']],
+      [2, 50, ['Назад', 'Следующие 50']],
+      [3, 20, ['Назад']],
+      [4, 0, ['Назад']],
+    ];
+    for (const [number, count, links] of expected) {
+      const page = await (await get(`/saeckel/history?page=${number}`, 'anna')).text();
+      assert.equal(historyTable(page).rows.length, count, String(number));
+      assert.deepEqual(
+        [...pager(page).matchAll(/<a class="btn" href="[^"]*" ?>([^<]*)<\/a ?>/g)].map(
+          ([, text]) => text,
+        ),
+        links,
+        String(number),
+      );
+      assert.equal(
+        page.includes('<p class="muted history-none">На этой странице записей нет.</p>'),
+        count === 0,
+        String(number),
+      );
+    }
+  });
+
+  test('the empty Летопись: the closed book, the sprig, «Записать доход» and «К мешкам»; no table, no filter', async () => {
+    const page = fold(await (await get('/saeckel/history', 'anna')).text());
+    for (const text of [
+      '<img class="vignette" src="/saeckel/static/img/empty-history-closed.webp" alt="" />',
+      '<h2 class="title">Летопись пока пуста</h2>',
+      '<img class="sprig" src="/saeckel/static/img/sprig-divider.webp" alt="" />',
+      '<a class="btn btn-ochre" href="/saeckel/income">Записать доход</a>',
+      '<a class="link" href="/saeckel/">К мешкам</a>',
+    ]) {
+      assert.ok(page.includes(text), text);
+    }
+    assert.ok(!page.includes('<table') && !page.includes('<form') && !page.includes('<select'));
+  });
+
+  test('a record: the form of its kind — one list beside the amount, two above the fields, none for an income', async () => {
+    const ids = await prototypeBudget();
+    const moved = await addOperation(ANNA, 'transfer', 100, {
+      from: ids['Отпуск'],
+      to: ids['Транспорт'],
+    });
+    for (const [id, layout, lists] of [
+      [1, /<div class="entry-row">\s*<div class="field field-amount">/, []],
+      [2, /<div class="record-row">\s*<div class="field field-to">/, ['to']],
+      [3, /<div class="record-row">\s*<div class="field field-from">/, ['from']],
+      [moved, /<div class="pouch-pair">\s*<div class="field field-from">/, ['from', 'to']],
+    ] as const) {
+      const page = await (await get(`/saeckel/operations/${id}`, 'anna')).text();
+      assert.match(page, layout, String(id));
+      assert.deepEqual(
+        [...page.matchAll(/<select id="(\w+)"/g)].map(([, list]) => list),
+        lists,
+        String(id),
+      );
+      assert.ok(page.includes('<p class="hint">Вид записи не меняется.'), String(id));
+    }
+  });
+
+  test('Удалить: a form only inside <details>, posting to /delete; no form in another; «Сохранить» of the form of the record', async () => {
+    await prototypeBudget();
+    for (const id of [1, 3]) {
+      const page = await (await get(`/saeckel/operations/${id}`, 'anna')).text();
+      assert.deepEqual(
+        [...page.matchAll(/<form\b[^>]*>/g)].map(([form]) => form),
+        [
+          `<form id="record" class="entry" method="post" action="/saeckel/operations/${id}">`,
+          `<form method="post" action="/saeckel/operations/${id}/delete">`,
+        ],
+      );
+      // Each form closes before the next one opens.
+      assert.doesNotMatch(page, /<form\b(?:(?!<\/form>)[\s\S])*<form\b/);
+      assert.ok(
+        fold(page).includes(
+          `<details class="delete"> <summary class="btn btn-danger">Удалить</summary> <form method="post" action="/saeckel/operations/${id}/delete"> <button type="submit" class="btn btn-danger">Удалить запись</button> </form> </details>`,
+        ),
+      );
+      // The form of the record has no button of its own: «Сохранить» stands beside «Удалить»
+      // and belongs to it by `form`.
+      const record = /<form id="record"[\s\S]*?<\/form>/.exec(page)![0];
+      assert.ok(!record.includes('<button'));
+      assert.ok(
+        page.includes(
+          '<button type="submit" form="record" class="btn btn-ochre">Сохранить</button>',
+        ),
+      );
+    }
+  });
+
+  test('a record refused: each wrong field and list red, its error under it; what was typed kept', async () => {
+    const ids = await prototypeBudget();
+    const spent = await post(
+      '/saeckel/operations/3',
+      { from: '', amount: 'x', date: 'x', note: 'a\u0001b' },
+      'anna',
+    );
+    assert.equal(spent.status, 400);
+    const page = await spent.text();
+    assertInvalid(page, ['from', 'amount', 'date', 'note'], 'an expense');
+    for (const value of ['x', 'a\u0001b']) assert.ok(page.includes(`value="${value}"`), value);
+    const moved = await addOperation(ANNA, 'transfer', 100, {
+      from: ids['Отпуск'],
+      to: ids['Транспорт'],
+    });
+    const same = await post(
+      `/saeckel/operations/${moved}`,
+      { from: String(ids['Отпуск']), to: String(ids['Отпуск']), amount: '1' },
+      'anna',
+    );
+    assert.equal(same.status, 400);
+    assertInvalid(await same.text(), ['to'], 'a transfer into the same pouch');
+  });
+
+  test('a record of a pouch in the storeroom: to read, also when a change or a deletion is sent anyway', async () => {
+    const old = await addPouch(ANNA, 'Старый');
+    const id = await addOperation(ANNA, 'expense', 124_050, { from: old }, '2026-10-05', 'овощи');
+    await pool.query('UPDATE pouches SET is_archived = true');
+    const read = await get(`/saeckel/operations/${id}`, 'anna');
+    const changed = await post(
+      `/saeckel/operations/${id}`,
+      { amount: '1', from: String(old) },
+      'anna',
+    );
+    const deleted = await post(`/saeckel/operations/${id}/delete`, {}, 'anna');
+    assert.deepEqual([read.status, changed.status, deleted.status], [200, 400, 400]);
+    const page = await read.text();
+    for (const answer of [changed, deleted]) assert.equal(await answer.text(), page);
+    const folded = fold(page);
+    assert.ok(
+      folded.includes(
+        `<p class="note note-error"> Мешок «<a class="link" href="/saeckel/pouches/${old}">Старый</a>» в Кладовой: запись с ним не исправляется и не удаляется. Сначала верните мешок. </p>`,
+      ),
+    );
+    assert.deepEqual(
+      [
+        ...folded.matchAll(/<div class="line[^"]*"> <dt>([^<]*)<\/dt> <dd>([^<]*)<\/dd> <\/div>/g),
+      ].map(([, term, value]) => `${term}: ${value}`),
+      ['Сумма: 1 240,50 ₽', 'Дата: 05.10.2026', 'Из мешка: Старый', 'Заметка: овощи'],
+    );
+    assert.ok(!page.includes('<form') && !page.includes('<details') && !page.includes('<input'));
+    assert.equal((await operations()).length, 1);
   });
 });
 

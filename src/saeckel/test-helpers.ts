@@ -180,6 +180,28 @@ export function assignRows(page: string): string[][] {
   ]);
 }
 
+// The rows of «Летопись»: date, pouches, kind, note, amount — and the address of the record. The
+// kind the phone shows after the pouches is left out of the pouches.
+export function historyRows(page: string): string[][] {
+  const body = /<tbody>([\s\S]*?)<\/tbody>/.exec(page)?.[1] ?? '';
+  return [...body.matchAll(/<tr id="op-\d+">([\s\S]*?)<\/tr>/g)].map(([, row]) => {
+    const cell = (name: string) =>
+      new RegExp(`<td class="${name}[^"]*">([\\s\\S]*?)</td>`).exec(row!)?.[1] ?? '';
+    const pouches = cell('h-pouch').replace(/<span class="h-kind-phone">[\s\S]*?<\/span>/, '');
+    const href = /<a\s+class="link-plain"\s+href="([^"]*)"\s+aria-label="Открыть запись"/.exec(
+      row!,
+    )?.[1];
+    return [
+      textOf(cell('h-date')),
+      textOf(pouches),
+      textOf(cell('h-kind')),
+      textOf(cell('h-note')),
+      textOf(cell('h-sum')),
+      href ?? '',
+    ];
+  });
+}
+
 // The page itself, without the shell and the column beside it.
 export function mainPart(page: string): string {
   return page.split(/<main class="sk-main[^"]*">/)[1] ?? '';
