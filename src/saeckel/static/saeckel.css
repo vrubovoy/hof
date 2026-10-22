@@ -1363,19 +1363,6 @@ mark.move {
     opacity: 0.6;
     transform: rotate(30deg);
   }
-  .blot-assign-small {
-    right: 36px;
-    top: 56px;
-    width: 44px;
-    opacity: 0.7;
-  }
-  .blot-assign-ring {
-    right: 10px;
-    bottom: -6px;
-    width: 100px;
-    opacity: 0.42;
-    transform: rotate(15deg);
-  }
   .blot-history-empty {
     right: 38px;
     bottom: 27px;
@@ -1388,12 +1375,30 @@ mark.move {
   }
 }
 
-/* кляксы Летописи — справа от таблицы шириной 1100 px, только там, где ей хватает места */
+/* кляксы Летописи и «Разложить» — справа от таблицы (1100 и 760 px), только там, где им хватает
+   места: в окне уже 1360 px они легли бы на строки */
 .blot-history-medium,
-.blot-history-splatter {
+.blot-history-splatter,
+.blot-assign-small,
+.blot-assign-ring {
   display: none;
 }
 @media (min-width: 1360px) {
+  .blot-assign-small {
+    display: block;
+    right: 36px;
+    top: 56px;
+    width: 44px;
+    opacity: 0.7;
+  }
+  .blot-assign-ring {
+    display: block;
+    right: 10px;
+    bottom: -6px;
+    width: 100px;
+    opacity: 0.42;
+    transform: rotate(15deg);
+  }
   .blot-history-medium {
     display: block;
     right: 76px;
@@ -1441,6 +1446,10 @@ mark.move {
   }
   .sk-empty .vignette {
     max-width: 360px;
+  }
+  /* виньетка над текстом опускает форму к низу: клякса легла бы на «Завести мешок» */
+  .blot-empty-medium {
+    display: none;
   }
 }
 
@@ -1876,8 +1885,6 @@ mark.move {
   .blot-pouches-splatter,
   .blot-pouches-drip,
   .blot-empty-medium,
-  .blot-assign-small,
-  .blot-assign-ring,
   .blot-history-empty {
     display: none;
   }
