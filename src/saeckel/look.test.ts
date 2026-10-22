@@ -17,10 +17,12 @@ import { staticFiles } from '../static.ts';
 import {
   addOperation,
   addPouch,
+  assignRows,
   currentTab,
   deadPool,
   fold,
   get,
+  mainPart,
   pool,
   post,
   operations,
@@ -107,7 +109,9 @@ async function prototypeBudget() {
 }
 
 // Every page of Säckel in the states drawn so far, as [name, status, page]: Мешки with pouches,
-// with every sign and an unknown one, empty, empty beside the storeroom, below zero; and the
+// with every sign and an unknown one, empty, empty beside the storeroom, below zero; «Доход»,
+// «Разложить» and «Переложить» without pouches, with them, with every sign and the treasury below
+// zero, filled in to cover a debt, refused field by field, row by row and as a whole; and the
 // other pages in the shell — a pouch, one in the storeroom, the forms with and without an error,
 // «Летопись» empty and with records, a record to change and one to read.
 async function drawnPages(): Promise<[string, number, string][]> {
@@ -118,6 +122,8 @@ async function drawnPages(): Promise<[string, number, string][]> {
   };
   await add('Мешки, nothing at all', get('/saeckel/', 'anna'));
   await add('Летопись, empty', get('/saeckel/history', 'anna'));
+  await add('Разложить, no pouch', get('/saeckel/assign', 'anna'));
+  await add('Переложить, no pouch', get('/saeckel/transfer', 'anna'));
   await addPouch(ANNA, 'В кладовой', true);
   await add('Мешки, only the storeroom', get('/saeckel/', 'anna'));
   await pool.query('TRUNCATE operations, pouches RESTART IDENTITY');
@@ -151,10 +157,35 @@ async function drawnPages(): Promise<[string, number, string][]> {
   await add('a refused return', post('/saeckel/pouches/5/restore', {}, 'anna'));
   await add('Доход', get('/saeckel/income', 'anna'));
   await add('a refused income', post('/saeckel/income', { amount: 'x', date: 'x' }, 'anna'));
+  await add(
+    'a refused income of every field',
+    post('/saeckel/income', { amount: '0', date: 'вчера', note: 'a\u0001b' }, 'anna'),
+  );
   await add('Разложить', get('/saeckel/assign?income=1', 'anna'));
   await add('a refused laying out', post('/saeckel/assign', { [`amount_${food}`]: 'x' }, 'anna'));
+  await add(
+    'a refused row of each pouch',
+    post(
+      '/saeckel/assign',
+      { amount_1: 'x', amount_2: '0', amount_3: '-1', amount_4: '1,2,3' },
+      'anna',
+    ),
+  );
+  await add('a refused laying out as a whole', post('/saeckel/assign', {}, 'anna'));
   await add('Переложить', get(`/saeckel/transfer?to=${ids['Транспорт']}`, 'anna'));
+  await add(
+    'Переложить to cover a debt',
+    get(`/saeckel/transfer?to=${ids['Транспорт']}&amount=760,00`, 'anna'),
+  );
   await add('a refused transfer', post('/saeckel/transfer', { from: '', to: '' }, 'anna'));
+  await add(
+    'a refused transfer of every field',
+    post(
+      '/saeckel/transfer',
+      { from: '', to: '', amount: '', date: 'x', note: 'a\u0001b' },
+      'anna',
+    ),
+  );
   const stored = await addOperation(ANNA, 'assign', 100, { to: 5 });
   await add('Летопись', get('/saeckel/history', 'anna'));
   await add('a record', get('/saeckel/operations/3', 'anna'));
@@ -170,6 +201,8 @@ async function drawnPages(): Promise<[string, number, string][]> {
   await pool.query("UPDATE pouches SET icon = 'dragon' WHERE id = $1", [unknown]);
   await addOperation(ANNA, 'assign', 100_000_000_000, { to: unknown });
   await add('Мешки, every sign, below zero', get('/saeckel/', 'anna'));
+  await add('Разложить, every sign, below zero', get('/saeckel/assign', 'anna'));
+  await add('Переложить, every sign', get('/saeckel/transfer', 'anna'));
   return pages;
 }
 
@@ -601,6 +634,183 @@ describe('the page of a pouch', () => {
     ).text();
     assert.equal((refused.match(/aria-invalid="true"/g) ?? []).length, 1);
     assert.match(refused, /value="lute"\s+checked/);
+  });
+});
+
+// The fields of a refused form that are drawn as wrong: each such field is red, the field itself
+// is invalid and described by its error, which stands right under it in the same field; no other
+// field of the page is invalid.
+function assertInvalid(page: string, fields: readonly string[], name: string) {
+  assert.equal((page.match(/aria-invalid="true"/g) ?? []).length, fields.length, name);
+  for (const field of fields) {
+    assert.match(
+      page,
+      new RegExp(
+        `<div class="field field-${field} err">\\s*<label for="${field}">[^<]*</label>[\\s\\S]*?` +
+          `\\sid="${field}"[^>]*aria-invalid="true" aria-describedby="${field}-error"[^>]*>[\\s\\S]*?` +
+          `<p id="${field}-error" class="err-text">[^<]+</p>\\s*</div>`,
+      ),
+      `${name}: ${field}`,
+    );
+  }
+}
+
+describe('Доход, Разложить, Переложить', () => {
+  test('Доход: each wrong field red with its error under it, what was typed kept, nothing written', async () => {
+    for (const [fields, wrong] of [
+      [{ amount: '0', date: '05.10.2026', note: 'зарплата' }, ['amount']],
+      [{ amount: '1', date: 'вчера', note: 'a\u0001b' }, ['date', 'note']],
+      [{ amount: 'x', date: '31.02.2026', note: 'a\u0001b' }, ['amount', 'date', 'note']],
+    ] as const) {
+      const res = await post('/saeckel/income', fields, 'anna');
+      assert.equal(res.status, 400);
+      const page = await res.text();
+      const name = JSON.stringify(fields);
+      assert.ok(page.includes('<form class="entry" method="post" action="/saeckel/income">'), name);
+      assertInvalid(page, wrong, name);
+      for (const value of Object.values(fields)) {
+        assert.ok(page.includes(`value="${value}"`), `${name}: ${value}`);
+      }
+    }
+    assert.deepEqual(await operations(), []);
+  });
+
+  test('Переложить: the errors of the lists under the lists, of the fields under the fields', async () => {
+    const food = await addPouch(ANNA, 'Продукты');
+    const empty = { amount: '760', date: '', note: '' };
+    for (const [fields, wrong] of [
+      [{ ...empty, from: '', to: '' }, ['from', 'to']],
+      [{ ...empty, from: String(food), to: String(food) }, ['to']],
+      [
+        { from: '', to: '', amount: 'x', date: 'x', note: 'a\u0001b' },
+        ['from', 'to', 'amount', 'date', 'note'],
+      ],
+    ] as const) {
+      const res = await post('/saeckel/transfer', fields, 'anna');
+      assert.equal(res.status, 400);
+      const page = await res.text();
+      assert.ok(page.includes('<span class="select">'));
+      assertInvalid(page, wrong, JSON.stringify(fields));
+    }
+    assert.deepEqual(await operations(), []);
+  });
+
+  test('Разложить: each row its sign and name, a field named after its pouch, an error under its field', async () => {
+    const ids = await prototypeBudget();
+    const before = await operations();
+    const cart = ids['Транспорт']!;
+    const res = await post(
+      '/saeckel/assign',
+      { [`amount_${ids['Продукты']}`]: '100', [`amount_${cart}`]: 'x' },
+      'anna',
+    );
+    assert.equal(res.status, 400);
+    const page = await res.text();
+    const body = /<tbody>([\s\S]*?)<\/tbody>/.exec(page)![1]!;
+    const rows = [...body.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(([, row]) => [
+      /<img src="([^"]*)"/.exec(row!)?.[1],
+      /<span class="assign-name">([^<]*)<\/span>/.exec(row!)?.[1],
+      /aria-label="([^"]*)"/.exec(row!)?.[1],
+      /<td class="(put[^"]*)">/.exec(row!)?.[1],
+      (row!.match(/aria-invalid="true"/g) ?? []).length,
+    ]);
+    const sign = (file: string) => `/saeckel/static/img/${file}.webp`;
+    assert.deepEqual(rows, [
+      [sign('icon-basket'), 'Продукты', 'Положить в мешок Продукты', 'put', 0],
+      [sign('icon-hearth'), 'Квартира', 'Положить в мешок Квартира', 'put', 0],
+      [sign('icon-cart'), 'Транспорт', 'Положить в мешок Транспорт', 'put err', 1],
+      [sign('icon-bag'), 'Отпуск', 'Положить в мешок Отпуск', 'put', 0],
+    ]);
+    // The error of «Транспорт» is in its cell, right under its field, and describes it.
+    assert.match(
+      fold(page),
+      new RegExp(
+        `<td class="put err"> <input class="input slim" name="amount_${cart}"[^>]*` +
+          `aria-invalid="true" aria-describedby="amount_${cart}-error" /> ` +
+          `<p id="amount_${cart}-error" class="err-text">[^<]+</p> </td>`,
+      ),
+    );
+    assert.deepEqual(
+      assignRows(page).map(([, , typed]) => typed),
+      ['100', '', 'x', ''],
+    );
+    assert.deepEqual(await operations(), before);
+  });
+
+  test('Разложить: the income in a note with the blue seal, on the phone its first sentence; a refusal with the red one', async () => {
+    const food = await addPouch(ANNA, 'Продукты');
+    const id = await addOperation(ANNA, 'income', 8_000_000);
+    const page = fold(await (await get(`/saeckel/assign?income=${id}`, 'anna')).text());
+    // The second sentence is hidden from the screen of a phone only; a screen reader reads both.
+    assert.match(
+      page,
+      /<p class="note"> Доход 80 000,00 ₽ лёг в казну\.<span class="visually-hidden-phone"> Разложите его по мешкам или оставьте в казне на потом\.<\/span ?> <\/p>/,
+    );
+    assert.ok(!page.includes('note-error'));
+    const refused = fold(
+      await (await post('/saeckel/assign', { [`amount_${food}`]: ' ' }, 'anna')).text(),
+    );
+    assert.ok(
+      refused.includes(
+        '<p id="refusal" class="note note-error">Впишите сумму хотя бы для одного мешка.</p>',
+      ),
+    );
+    assert.ok(!refused.includes('<p class="note">'));
+  });
+
+  test('Разложить: the treasury as the column shows it, red below zero; no pouch — the way to a new one', async () => {
+    const food = await addPouch(ANNA, 'Продукты');
+    await addOperation(ANNA, 'assign', 50_000, { to: food });
+    const page = await (await get('/saeckel/assign', 'anna')).text();
+    assert.match(
+      fold(mainPart(page)),
+      /В казне: <span class="money neg"\s?>−500,00 ₽<\/span\s?>\. Пустые поля пропускаются\./,
+    );
+    assert.equal(treasurySum(page), '−500,00 ₽');
+    await pool.query('UPDATE pouches SET is_archived = true');
+    const none = fold(mainPart(await (await get('/saeckel/assign', 'anna')).text()));
+    assert.ok(none.includes('<h2 class="title t-3">Мешков пока нет</h2>'));
+    assert.ok(none.includes('<a class="link" href="/saeckel/pouches/new">+ Новый мешок</a>'));
+    assert.ok(!none.includes('<form') && !none.includes('<table'));
+  });
+
+  test('a name is escaped in the rows, in the names of their fields and in the lists', async () => {
+    await addPouch(ANNA, '<b>Пир</b> & "Co"');
+    const escaped = '&lt;b&gt;Пир&lt;/b&gt; &amp; &quot;Co&quot;';
+    const assign = await (await get('/saeckel/assign', 'anna')).text();
+    assert.ok(assign.includes(`aria-label="Положить в мешок ${escaped}"`));
+    assert.ok(assign.includes(`<span class="assign-name">${escaped}</span>`));
+    const transfer = fold(await (await get('/saeckel/transfer', 'anna')).text());
+    assert.equal(transfer.split(`${escaped} — 0,00 ₽`).length, 3, 'once in each list');
+    for (const page of [assign, transfer]) assert.ok(!page.includes('<b>'));
+  });
+
+  test('the pouches and the treasury are read once a request, also by a refusal', async (t: TestContext) => {
+    const food = await addPouch(ANNA, 'Продукты');
+    await addPouch(ANNA, 'Старый', true);
+    const income = await addOperation(ANNA, 'income', 10_000);
+    const query = t.mock.method(pool, 'query');
+    const requests: [string, () => Response | Promise<Response>, number, number][] = [
+      ['Доход', () => get('/saeckel/income', 'anna'), 200, 3],
+      ['a refused income', () => post('/saeckel/income', { amount: '0' }, 'anna'), 400, 3],
+      ['Разложить', () => get('/saeckel/assign', 'anna'), 200, 3],
+      ['Разложить after an income', () => get(`/saeckel/assign?income=${income}`, 'anna'), 200, 4],
+      ['a refused row', () => post('/saeckel/assign', { [`amount_${food}`]: 'x' }, 'anna'), 400, 3],
+      ['Переложить', () => get(`/saeckel/transfer?to=${food}&amount=5`, 'anna'), 200, 3],
+      ['a refused transfer', () => post('/saeckel/transfer', { from: '' }, 'anna'), 400, 3],
+    ];
+    for (const [name, request, status, count] of requests) {
+      query.mock.resetCalls();
+      assert.equal((await request()).status, status, name);
+      const statements = query.mock.calls.map((call) => String(call.arguments[0]));
+      assert.equal(statements.length, count, `${name}: ${statements.join('\n')}`);
+      assert.equal(statements.filter((sql) => sql.includes('LATERAL')).length, 1, name);
+      assert.equal(
+        statements.filter((sql) => sql.includes("kind IN ('income', 'assign')")).length,
+        1,
+        name,
+      );
+    }
   });
 });
 

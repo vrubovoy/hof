@@ -822,7 +822,7 @@ describe('Säckel in the court', () => {
     const res = await post('/saeckel/assign', { [`amount_${hers}`]: '1' }, owner.cookie);
     assert.equal(res.status, 400);
     const page = await res.text();
-    assert.ok(page.includes('<p id="refusal">Мешок не найден.</p>'));
+    assert.ok(page.includes('<p id="refusal" class="note note-error">Мешок не найден.</p>'));
     assert.ok(!page.includes('Анины деньги'));
     // Her income in his address names nothing.
     const his = await get(assignPath, owner.cookie);
@@ -830,7 +830,8 @@ describe('Säckel in the court', () => {
     const hisPage = (await his.text()).replace(/\s+/g, ' ');
     assert.ok(!hisPage.includes('лёг в казну'));
     assert.ok(!hisPage.includes('7 777'));
-    assert.ok(hisPage.includes('В казне: 0,00 ₽.'));
+    // The amount is a span of its own: the sentence is read without the tags.
+    assert.ok(hisPage.replace(/<[^>]*>/g, '').includes('В казне: 0,00 ₽.'));
     const { rows } = await saeckelPool.query("SELECT 1 FROM operations WHERE kind = 'assign'");
     assert.equal(rows.length, 0);
   });
@@ -909,7 +910,10 @@ describe('Säckel in the court', () => {
       );
       assert.equal(res.status, 400);
       const page = await res.text();
-      assert.ok(page.includes(`<p id="${field}-error">Мешок не найден.</p>`), field);
+      assert.ok(
+        page.includes(`<p id="${field}-error" class="err-text">Мешок не найден.</p>`),
+        field,
+      );
       assert.ok(!page.includes('Анины деньги'));
     }
     // Her pouch in his address chooses nothing and names nothing; the page keeps the headers.
