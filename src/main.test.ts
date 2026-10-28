@@ -258,7 +258,7 @@ describe('404 page', () => {
       const page = await res.text();
       assert.ok(page.includes(NOT_FOUND_H1));
       assert.ok(page.includes('Возможно, ссылка устарела или в адресе опечатка.'));
-      assert.ok(page.includes('<a class="btn btn-blue" href="/">Во двор</a>'));
+      assert.ok(page.includes('<a class="btn btn-blue" href="/" data-fx="right">Во двор</a>'));
     }
   });
 });
@@ -305,7 +305,7 @@ describe('500 page and the unexpected_error line', () => {
       SERVER_ERROR_H1,
       'Мы уже прибираемся. Попробуйте ещё раз через минуту — записанное раньше на месте.',
       '<a class="btn btn-blue" href="">Попробовать ещё раз</a>',
-      '<a class="link" href="/">Во двор</a>',
+      '<a class="link" href="/" data-fx="right">Во двор</a>',
     ]) {
       assert.ok(page.includes(text), text);
     }
@@ -347,7 +347,7 @@ describe('500 page and the unexpected_error line', () => {
     assert.ok(page.includes(SERVER_ERROR_H1));
     assert.ok(!page.includes('Попробовать ещё раз'));
     assert.ok(!page.includes('href=""'));
-    assert.ok(page.includes('<a class="btn btn-blue" href="/">Во двор</a>'));
+    assert.ok(page.includes('<a class="btn btn-blue" href="/" data-fx="right">Во двор</a>'));
     assert.equal(lines.length, 1);
     assert.match(lines[0] ?? '', /^error unexpected_error method=POST path=\/x error=boom stack=/);
     for (const secret of secrets) assert.ok(!lines[0]!.includes(secret), `log contains ${secret}`);
@@ -525,7 +525,7 @@ describe('Säckel in the court', () => {
     const page = await (await get('/', cookie)).text();
     assert.match(
       page,
-      /<a class="nav" href="\/saeckel\/">\s*<img src="\/saeckel\/static\/img\/emblem-saeckel-small.webp" alt="" \/>Säckel\s*<\/a>/,
+      /<a class="nav" href="\/saeckel\/" data-fx="left">\s*<img src="\/saeckel\/static\/img\/emblem-saeckel-small.webp" alt="" \/>Säckel\s*<\/a>/,
     );
     assert.match(
       page,

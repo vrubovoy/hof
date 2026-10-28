@@ -47,6 +47,27 @@ export interface Service {
 // The place of Hof a page belongs to, marked as the current one in the banner and the top bar.
 type Place = 'courtyard' | 'users' | 'account';
 
+// The order of the banner (§6): Двор, the services, Приближённые, Мои покои. With «Анимации» a
+// link to a place further down slides the page away to the left, one back up — to the right
+// (data-fx, read by fx.js); data-keep — the banner stays, for both pages have it. A link to the
+// place of the page itself is an ordinary link. A key and its card are a page of the book turned
+// (flip-fwd, flip-back), with the banner staying as well.
+const ORDER = { courtyard: 0, service: 1, users: 2, account: 3 } as const;
+
+function slide(here: Place, to: keyof typeof ORDER, keep = to !== 'service') {
+  if (to === here) return '';
+  const fx = ORDER[to] > ORDER[here] ? 'left' : 'right';
+  return keep ? html`data-fx="${fx}" data-keep` : html`data-fx="${fx}"`;
+}
+
+// The door of «Покинуть двор»: the open frame lies over the closed one and shows only while the
+// form goes (fx.js); without the script the door stays closed.
+const DOOR = html`<span class="frames"
+  ><img src="/static/img/emblem-door-closed-small.webp" alt="" /><img
+    src="/static/img/emblem-door-small.webp"
+    alt=""
+/></span>`;
+
 type CoreEnv = { Variables: { user: CurrentUser } };
 
 // Core paths that need a signed-in user, for every method. /login and /logout are public and
@@ -194,7 +215,7 @@ export function errorPage(status: keyof typeof ERRORS, retry = false) {
         />
       </div>
       <div class="error-paper">
-        <a class="logo" href="/">
+        <a class="logo" href="/" data-fx="right">
           <img src="/static/img/hof-mark.svg" width="40" height="40" alt="" />
           <span><b>Hof</b><small>Ваш личный двор</small></span>
         </a>
@@ -205,8 +226,8 @@ export function errorPage(status: keyof typeof ERRORS, retry = false) {
           ${
             retry
               ? html`<a class="btn btn-blue" href="">Попробовать ещё раз</a>
-                  <a class="link" href="/">Во двор</a>`
-              : html`<a class="btn btn-blue" href="/">Во двор</a>`
+                  <a class="link" href="/" data-fx="right">Во двор</a>`
+              : html`<a class="btn btn-blue" href="/" data-fx="right">Во двор</a>`
           }
         </div>
       </div>
@@ -229,7 +250,8 @@ const FORBIDDEN_PAGE = errorPage(403);
 // blue banner the whole height of the window — Двор, the services, Приближённые of the
 // administrator, Мои покои and the way out; on the phone the bar at the top — the mark to the
 // courtyard, the candle to Мои покои. CSS shows one of the two, so the hidden one takes no focus.
-// «Покинуть двор» is a form: sign-out is POST only (§4.2).
+// «Покинуть двор» is a form: sign-out is POST only (§4.2); data-fx names the act for fx.js.
+// The mark at the top of the banner is an ordinary link, as in the prototypes.
 function shell(
   user: CurrentUser,
   services: readonly Service[],
@@ -246,7 +268,7 @@ function shell(
           <img src="/static/img/hof-mark-white.svg" width="44" height="44" alt="" />
           <span><b>Hof</b><small>Ваш личный двор</small></span>
         </a>
-        <a class="nav" href="/" ${current('courtyard')}>
+        <a class="nav" href="/" ${current('courtyard')} ${slide(here, 'courtyard')}>
           <img src="/static/img/emblem-fountain-small.webp" alt="" />Двор
         </a>
         ${
@@ -255,7 +277,7 @@ function shell(
             : html`<div class="nav-label">Службы двора</div>
                 ${services.map(
                   (service) =>
-                    html`<a class="nav" href="${service.path}">
+                    html`<a class="nav" href="${service.path}" ${slide(here, 'service')}>
                       <img src="${service.emblem}" alt="" />${service.name}
                     </a>`,
                 )}`
@@ -263,13 +285,13 @@ function shell(
         ${
           user.isAdmin
             ? html`<div class="nav-label">Хозяйство</div>
-                <a class="nav" href="/admin/users" ${current('users')}>
+                <a class="nav" href="/admin/users" ${current('users')} ${slide(here, 'users')}>
                   <img src="/static/img/emblem-keys-small.webp" alt="" />Приближённые
                 </a>`
             : ''
         }
         <div class="banner-foot">
-          <a class="nav" href="/account" ${current('account')}>
+          <a class="nav" href="/account" ${current('account')} ${slide(here, 'account')}>
             <img src="/static/img/emblem-candle-small.webp" alt="" />
             <span class="nav-who">
               <span>Мои покои</span>
@@ -278,18 +300,22 @@ function shell(
               >
             </span>
           </a>
-          <form method="post" action="/logout">
-            <button type="submit" class="nav">
-              <img src="/static/img/emblem-door-closed-small.webp" alt="" />Покинуть двор
-            </button>
+          <form method="post" action="/logout" data-fx="logout">
+            <button type="submit" class="nav">${DOOR}Покинуть двор</button>
           </form>
         </div>
       </nav>
       <header class="m-top">
-        <a class="logo" href="/">
+        <a class="logo" href="/" ${slide(here, 'courtyard', false)}>
           <img src="/static/img/hof-mark.svg" width="32" height="32" alt="" /><b>Hof</b>
         </a>
-        <a class="m-chambers" href="/account" aria-label="Мои покои" ${current('account')}>
+        <a
+          class="m-chambers"
+          href="/account"
+          aria-label="Мои покои"
+          ${current('account')}
+          ${slide(here, 'account', false)}
+        >
           <img src="/static/img/emblem-candle-small.webp" width="34" height="34" alt="" />
         </a>
       </header>
@@ -568,7 +594,7 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
                 <p class="small muted">
                   Примите приближённых: у каждого будет свой ключ и свои мешки.
                 </p>
-                <a class="btn" href="/admin/users">Принять ко двору</a>
+                <a class="btn" href="/admin/users" data-fx="left" data-keep>Принять ко двору</a>
               </aside>`
             : ''
         }
@@ -737,9 +763,9 @@ function accountPage(user: CurrentUser, services: readonly Service[], form: Acco
           <button type="submit" class="btn btn-blue">Сменить пароль</button>
         </form>
         ${FX_SETTINGS}
-        <form class="chambers-out" method="post" action="/logout">
+        <form class="chambers-out" method="post" action="/logout" data-fx="logout">
           <button type="submit" class="btn" aria-describedby="logout-hint">
-            <img src="/static/img/emblem-door-closed-small.webp" alt="" />Покинуть двор
+            ${DOOR}Покинуть двор
           </button>
           <p id="logout-hint" class="small muted text-full">
             на этом устройстве; всё во дворе останется на месте
@@ -850,7 +876,11 @@ function usersPage(
                       ${
                         person.is_admin
                           ? ''
-                          : html`<a class="link-plain small" href="/admin/users/${person.id}"
+                          : html`<a
+                              class="link-plain small"
+                              href="/admin/users/${person.id}"
+                              data-fx="flip-fwd"
+                              data-keep
                               >Открыть ›</a
                             >`
                       }
@@ -947,7 +977,9 @@ function memberPage(
 
   return shell(user, services, 'users', `Hof — ${member.username}`, {
     class: 'card',
-    body: html`<a class="back" href="/admin/users"><span>Приближённые</span></a>
+    body: html`<a class="back" href="/admin/users" data-fx="flip-back" data-keep
+        ><span>Приближённые</span></a
+      >
       ${
         form.done
           ? html`<p class="note">
