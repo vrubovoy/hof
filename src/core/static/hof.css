@@ -665,6 +665,152 @@ a {
 .court-below p {
   margin: 0;
 }
+/* живой Двор (M10.3): слои стоят там, где их кадры вырезаны из карты 1536×1024 — в долях этой
+   карты, поэтому первый кадр ложится на свой рисунок. Слои не ловят нажатий и не видны чтению с
+   экрана; кадры у них есть только с «Анимациями» (ниже, в эффектах), без них слоёв не видно */
+.fx {
+  position: absolute;
+  pointer-events: none;
+}
+.fx-fountain {
+  left: calc(100% * 610 / 1536);
+  top: calc(100% * 570 / 1024);
+  width: calc(100% * 340 / 1536);
+  height: calc(100% * 200 / 1024);
+}
+.fx-gate-l {
+  left: calc(100% * 50 / 1536);
+  top: calc(100% * 384 / 1024);
+  width: calc(100% * 72 / 1536);
+  height: calc(100% * 134 / 1024);
+}
+.fx-gate-r {
+  left: calc(100% * 308 / 1536);
+  top: calc(100% * 384 / 1024);
+  width: calc(100% * 68 / 1536);
+  height: calc(100% * 131 / 1024);
+}
+.fx-tower {
+  left: calc(100% * 1442 / 1536);
+  top: calc(100% * 308 / 1024);
+  width: calc(100% * 88 / 1536);
+  height: calc(100% * 202 / 1024);
+}
+/* дым из трубы казначейской: три клуба по очереди */
+.fx-smoke {
+  left: calc(100% * 712 / 1536);
+  top: calc(100% * 100 / 1024);
+  width: calc(100% * 32 / 1536);
+  height: calc(100% * 80 / 1024);
+}
+.fx-smoke i {
+  position: absolute;
+  left: 20%;
+  bottom: 0;
+  width: 60%;
+  aspect-ratio: 28 / 16;
+  opacity: 0;
+}
+.fx-olive {
+  left: 0;
+  top: calc(100% * 620 / 1024);
+  width: calc(100% * 570 / 1536);
+  height: calc(100% * 270 / 1024);
+}
+.fx-bush-l {
+  left: calc(100% * 540 / 1536);
+  top: calc(100% * 592 / 1024);
+  width: calc(100% * 160 / 1536);
+  height: calc(100% * 140 / 1024);
+}
+.fx-bush-r {
+  left: calc(100% * 880 / 1536);
+  top: calc(100% * 598 / 1024);
+  width: calc(100% * 182 / 1536);
+  height: calc(100% * 144 / 1024);
+}
+.fx-tree {
+  left: calc(100% * 400 / 1536);
+  top: calc(100% * 226 / 1024);
+  width: calc(100% * 166 / 1536);
+  height: calc(100% * 204 / 1024);
+}
+/* стайка из трёх птиц над крышами; видна только в полёте */
+.fx-birds {
+  left: 0;
+  top: 7%;
+  width: 100%;
+  height: 12%;
+  opacity: 0;
+}
+.fx-birds i {
+  position: absolute;
+  aspect-ratio: 48 / 28;
+}
+.fx-birds i:nth-child(1) {
+  left: 4%;
+  top: 30%;
+  width: 2.6%;
+}
+.fx-birds i:nth-child(2) {
+  left: 8.5%;
+  top: 6%;
+  width: 2.2%;
+}
+.fx-birds i:nth-child(3) {
+  left: 0.5%;
+  top: 62%;
+  width: 2%;
+}
+/* место на карте компьютера — одна ссылка: вывеска и дверь (окно сторожки). Ссылка во всю карту
+   не ловит нажатий, ловят вывеска и дверь. Кадр открытой двери вырезан из той же карты с
+   открытыми дверями; он появляется сразу, без наплыва (fx.js, .open) — при плавной смене обе
+   двери полупрозрачны и дверь мутнеет. На телефоне вывески под картой, двери на ней — картинки */
+.place {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  text-decoration: none;
+}
+.place > * {
+  pointer-events: auto;
+}
+.place:focus-visible {
+  outline: none;
+}
+.place:focus-visible .sign {
+  filter: brightness(0.82);
+}
+.court-doors {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.door {
+  position: absolute;
+  opacity: 0;
+}
+.door.open {
+  opacity: 1;
+}
+.door-gatehouse {
+  left: calc(100% * 449 / 1536);
+  top: calc(100% * 476 / 1024);
+  width: calc(100% * 48 / 1536);
+  height: calc(100% * 63 / 1024);
+}
+.door-treasury {
+  left: calc(100% * 579 / 1536);
+  top: calc(100% * 429 / 1024);
+  width: calc(100% * 72 / 1536);
+  height: calc(100% * 145 / 1024);
+}
+.door-tower {
+  left: calc(100% * 1334 / 1536);
+  top: calc(100% * 459 / 1024);
+  width: calc(100% * 84 / 1536);
+  height: calc(100% * 227 / 1024);
+}
 
 @media (min-width: 1024px) {
   .court {
@@ -719,7 +865,8 @@ a {
     left: 86.59%;
     top: 31.05%;
   }
-  .court-places {
+  .court-places,
+  .court-doors {
     display: none;
   }
   /* под картой: подсказка слева, плашка Хозяина справа (590 px, на узком окне уже) */
@@ -808,9 +955,7 @@ a {
     font-size: 25px;
     line-height: 28px;
   }
-  .at-gatehouse,
-  .at-treasury,
-  .at-tower,
+  .place,
   .court-note {
     display: none;
   }
@@ -1980,6 +2125,95 @@ a {
     transition: opacity 0.75s ease-in-out;
   }
 
+  /* живой Двор: кадры одной полосы сменяют друг друга по кругу — вода в фонтане (6 кадров),
+     знамёна ворот и башни (8 кадров ткани, у каждого свой круг) */
+  .fx-on .fx-fountain {
+    background: url(img/fx-fountain.webp) 0 0 / 600% 100% no-repeat;
+    animation: fx-frames 0.9s steps(6, jump-none) infinite;
+  }
+  .fx-on .fx-banner {
+    background: 0 0 / 800% 100% no-repeat;
+    animation: fx-frames 2.6s steps(8, jump-none) infinite;
+  }
+  .fx-on .fx-gate-l {
+    background-image: url(img/fx-banner-gate-l.webp);
+  }
+  .fx-on .fx-gate-r {
+    background-image: url(img/fx-banner-gate-r.webp);
+    animation-duration: 3.1s;
+  }
+  .fx-on .fx-tower {
+    background-image: url(img/fx-banner-tower.webp);
+    animation-duration: 3.5s;
+  }
+  /* дым: клуб поднимается, растёт и тает за 7,5 с, следующий — через треть круга */
+  .fx-on .fx-smoke i {
+    background: url(img/fx-smoke.svg) 0 0 / 100% 100% no-repeat;
+    transform-origin: 50% 100%;
+    animation: fx-smoke 7.5s linear infinite;
+  }
+  .fx-on .fx-smoke i:nth-child(2) {
+    animation-delay: 2.5s;
+  }
+  .fx-on .fx-smoke i:nth-child(3) {
+    animation-delay: 5s;
+  }
+  /* порыв ветра в кроне (fx.js): кадры листвы fx.js будит после первой отрисовки (.wake) — тогда
+     они и грузятся; порыв (.gust) — 8 кадров за 2 с, в покое слой скрыт */
+  .fx-on .fx-leaves.wake {
+    background: 0 0 / 800% 100% no-repeat;
+  }
+  .fx-on .fx-olive.wake {
+    background-image: url(img/fx-leaves-olive.webp);
+  }
+  .fx-on .fx-bush-l.wake {
+    background-image: url(img/fx-leaves-bush-l.webp);
+  }
+  .fx-on .fx-bush-r.wake {
+    background-image: url(img/fx-leaves-bush-r.webp);
+  }
+  .fx-on .fx-tree.wake {
+    background-image: url(img/fx-leaves-tree.webp);
+  }
+  .fx-on .fx-leaves.gust {
+    animation: fx-gust 2s;
+  }
+  /* стайка (fx.js, .fly) за 15 с набирает высоту и уходит за верхний край до башни; крылья
+     машут каждое в своём темпе */
+  .fx-on .fx-birds.fly {
+    opacity: 1;
+    animation: fx-fly 15s linear forwards;
+  }
+  .fx-on .fx-birds.fly i {
+    background: url(img/fx-birds.svg) 0 0 / 400% 100% no-repeat;
+    animation: fx-flap 0.66s steps(4, end) infinite;
+  }
+  .fx-on .fx-birds.fly i:nth-child(2) {
+    animation-duration: 0.72s;
+    animation-delay: -0.3s;
+  }
+  .fx-on .fx-birds.fly i:nth-child(3) {
+    animation-duration: 0.7s;
+    animation-delay: -0.5s;
+  }
+  /* вывеска на карте качается на цепях при наведении и фокусе */
+  .fx-on .place:is(:hover, :focus-visible) .sign {
+    transform-origin: 50% 0;
+    animation: swing 1.4s ease-out;
+  }
+  .fx-on .door {
+    background: 0 0 / 100% 100% no-repeat;
+  }
+  .fx-on .door-gatehouse {
+    background-image: url(img/map-gatehouse-window.webp);
+  }
+  .fx-on .door-treasury {
+    background-image: url(img/map-treasury-door.webp);
+  }
+  .fx-on .door-tower {
+    background-image: url(img/map-tower-door.webp);
+  }
+
   /* сдвиг: сцена уезжает на 32 % и темнеет до 0,85 (.go-left, .go-right — 0,5 с), новая выезжает
      навстречу и светлеет (.from-right, .from-left — 0,6 с). Так же, в ту же сторону, листается
      книга. Знамя стоит поверх завесы, если оно есть на обеих страницах (.keep-banner). Завеса
@@ -1989,7 +2223,8 @@ a {
   html:is(.go-left, .go-right, .from-left, .from-right) body {
     overflow-x: clip;
   }
-  html:is(.go-left, .go-right, .from-left, .from-right) body::after {
+  html:is(.go-left, .go-right, .from-left, .from-right, .go-door, .go-dark, .from-door)
+    body::after {
     content: '';
     position: fixed;
     inset: 0;
@@ -2007,6 +2242,22 @@ a {
   }
   .keep-banner .banner {
     z-index: 51;
+  }
+  /* в дверь (M10.3, fx.js): дверь уже открыта; с 0,55 с карта за 1,1 с приближается к проёму
+     (точку ставит fx.js), с 1,15 с всё за 0,5 с уходит в темноту, в 1,7 с — следующая страница.
+     Дверь не видна — только темнота, 0,5 с. Новая страница проявляется из темноты за 0,7 с */
+  .go-door .court-inner {
+    animation: zoom-in 1.1s cubic-bezier(0.45, 0, 0.75, 0.55) 0.55s forwards;
+  }
+  .go-door body::after {
+    animation: veil-in 0.5s ease-in 1.15s forwards;
+  }
+  .go-dark body::after {
+    animation: veil-in 0.5s ease-in forwards;
+  }
+  .from-door body::after {
+    opacity: 1;
+    animation: veil-out 0.7s ease-out forwards;
   }
   /* виньетки и кляксы печатаются на бумагу страницы (multiply), а сдвигаемая часть — свой слой:
      на время перехода у неё та же бумага, узор с того же места (часть стоит в 288, 0 у знамени
@@ -2060,6 +2311,56 @@ a {
       0 -60px;
   }
 }
+@keyframes fx-frames {
+  to {
+    background-position: 100% 0;
+  }
+}
+@keyframes fx-smoke {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.45);
+  }
+  15% {
+    opacity: 0.95;
+  }
+  65% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(40%, -420%) scale(1.5) rotate(6deg);
+  }
+}
+@keyframes fx-gust {
+  from {
+    opacity: 1;
+    animation-timing-function: steps(8, jump-none);
+  }
+  to {
+    opacity: 1;
+    background-position: 100% 0;
+  }
+}
+@keyframes fx-fly {
+  from {
+    transform: translate(-16%, 40%);
+  }
+  35% {
+    transform: translate(18%, 0);
+  }
+  70% {
+    transform: translate(42%, -70%);
+  }
+  to {
+    transform: translate(62%, -200%);
+  }
+}
+@keyframes fx-flap {
+  to {
+    background-position: 133.33% 0;
+  }
+}
 @keyframes stamp {
   from {
     transform: scale(1.7) rotate(-20deg);
@@ -2067,6 +2368,33 @@ a {
   }
   to {
     transform: scale(1) rotate(-9deg);
+    opacity: 1;
+  }
+}
+@keyframes swing {
+  0% {
+    transform: translateX(-50%) rotate(0);
+  }
+  18% {
+    transform: translateX(-50%) rotate(-3.5deg);
+  }
+  42% {
+    transform: translateX(-50%) rotate(2.2deg);
+  }
+  68% {
+    transform: translateX(-50%) rotate(-1deg);
+  }
+  100% {
+    transform: translateX(-50%) rotate(0);
+  }
+}
+@keyframes zoom-in {
+  to {
+    transform: scale(2.2);
+  }
+}
+@keyframes veil-in {
+  to {
     opacity: 1;
   }
 }

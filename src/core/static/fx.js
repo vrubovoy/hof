@@ -7,15 +7,17 @@
 // start() at the bottom joins them to the page; it runs only in a browser. A module runs once a
 // page, so nothing here is set up twice.
 //
-// Kept in the browser, nothing else: `hof.fx` in localStorage — the settings of this device;
-// in sessionStorage `hof.music` — the piece of music and the place in it, and the two flags of a
-// way to the next page, `hof.arrive` (a link) and `hof.after` (a form), which fx-head.js of that
-// page reads once.
+// Kept in the browser, nothing else: in localStorage `hof.fx` — the settings of this device, and
+// `hof.fountain` — which loop of the fountain the next visit of the courtyard plays; in
+// sessionStorage `hof.music` — the piece of music and the place in it, and the two flags of a way
+// to the next page, `hof.arrive` (a link) and `hof.after` (a form), which fx-head.js of that page
+// reads once.
 
 export const SETTINGS_KEY = 'hof.fx';
 export const MUSIC_KEY = 'hof.music';
 export const ARRIVE_KEY = 'hof.arrive';
 export const AFTER_KEY = 'hof.after';
+export const FOUNTAIN_KEY = 'hof.fountain';
 
 /** @typedef {{ anim: boolean, sound: boolean, soundVol: number, music: boolean, musicVol: number }} Settings */
 /** @typedef {{ piece: number, time: number, at: number }} MusicPlace */
@@ -30,7 +32,10 @@ export const DEFAULTS = Object.freeze({
 });
 
 /** The sets of sounds and how many variants each has. @type {Readonly<Record<string, number>>} */
-export const SOUNDS = Object.freeze({ coins: 2, door: 6, page: 2 });
+export const SOUNDS = Object.freeze({ coins: 2, door: 6, page: 2, wind: 6 });
+
+/** The loops of the fountain on the courtyard. */
+export const FOUNTAINS = 3;
 
 /** The pieces of music, played in this order from 1. */
 export const PIECES = 20;
@@ -41,6 +46,11 @@ export const DUCK = 10 ** (-4 / 20);
 /** @param {string} name @param {number} variant */
 export function soundAddress(name, variant) {
   return `/static/sounds/${name}-${variant}.m4a`;
+}
+
+/** @param {number} loop */
+export function fountainAddress(loop) {
+  return `/static/sounds/fountain-${loop}.m4a`;
 }
 
 /** @param {number} piece */
@@ -54,6 +64,7 @@ export function soundFiles() {
   for (const [name, count] of Object.entries(SOUNDS)) {
     for (let variant = 1; variant <= count; variant += 1) files.push(soundAddress(name, variant));
   }
+  for (let loop = 1; loop <= FOUNTAINS; loop += 1) files.push(fountainAddress(loop));
   for (let piece = 1; piece <= PIECES; piece += 1) files.push(pieceAddress(piece));
   return files;
 }
@@ -183,9 +194,87 @@ export function tryNextPiece(failures, pieces = PIECES) {
 }
 
 /**
+ * The loop of the fountain for this visit of the courtyard: the loops go round from 1, the next
+ * visit plays the next one. Nothing kept or something broken starts with the first; without
+ * storage every visit plays the first.
+ * @param {Pick<Storage, 'getItem' | 'setItem'> | null} storage
+ */
+export function nextFountain(storage) {
+  /** @type {unknown} */
+  let kept = 0;
+  try {
+    kept = JSON.parse(storage?.getItem(FOUNTAIN_KEY) ?? '0');
+  } catch {
+    kept = 0;
+  }
+  const loop = Number.isInteger(kept) && Number(kept) >= 0 ? (Number(kept) % FOUNTAINS) + 1 : 1;
+  try {
+    storage?.setItem(FOUNTAIN_KEY, JSON.stringify(loop % FOUNTAINS));
+  } catch {
+    // No storage: the next visit plays the first again.
+  }
+  return loop;
+}
+
+/**
+ * The rare events of the courtyard, in ms: a gust of wind in one of the crowns (2 s, with its
+ * sound) and a flock of birds over the roofs (15 s) — the first after `first`, then one every
+ * `every`, each time at random within the bounds.
+ * @typedef {{ first: readonly [number, number], every: readonly [number, number] }} Times
+ */
+/** @type {Readonly<Times>} */
+export const GUST = Object.freeze({ first: [14_000, 40_000], every: [14_000, 40_000] });
+/** @type {Readonly<Times>} */
+export const FLOCK = Object.freeze({ first: [4_000, 10_000], every: [20_000, 70_000] });
+
+/**
+ * @param {readonly [number, number]} bounds
+ * @param {() => number} random a number from 0 up to 1, not 1
+ */
+export function between([min, max], random = Math.random) {
+  return min + random() * (max - min);
+}
+
+/**
+ * A chain of rare events on one timer at most. It runs only while resumed — the page resumes it
+ * while the tab is seen and the event has anything to show or sound: pause() keeps the time left,
+ * resume() goes on from there. A second resume() or pause() changes nothing.
+ * @param {() => void} fire
+ * @param {Times} times
+ * @param {{ set: (go: () => void, ms: number) => unknown, clear: (timer: unknown) => void, now: () => number }} clock
+ * @param {() => number} random
+ */
+export function createChain(fire, times, clock, random = Math.random) {
+  let left = between(times.first, random);
+  /** @type {unknown} */
+  let timer = null;
+  let due = 0;
+  const resume = () => {
+    if (timer !== null) return;
+    due = clock.now() + left;
+    timer = clock.set(() => {
+      timer = null;
+      left = between(times.every, random);
+      resume();
+      fire();
+    }, left);
+  };
+  return {
+    resume,
+    pause() {
+      if (timer === null) return;
+      clock.clear(timer);
+      timer = null;
+      left = Math.max(0, due - clock.now());
+    },
+  };
+}
+
+/**
  * The effects of a link (data-fx, M10.2): a slide to the left or the right (the order of the
  * banner), a page of the book turned forward or back, one turned forward on the phone only, and
  * the sound of a page alone. A page turned slides the same way and rustles on the next page.
+ * M10.3: the door of a place on the courtyard map (data-door names it).
  */
 export const LINK_FX = Object.freeze([
   'left',
@@ -194,10 +283,39 @@ export const LINK_FX = Object.freeze([
   'flip-back',
   'flip-fwd-phone',
   'page',
+  'door',
 ]);
 
 /** A page waits this long for its slide away before it follows the link. */
 export const SLIDE_MS = 500;
+
+/**
+ * Through a door: the door opens at once, from 0,55 s the scene zooms into it and from 1,15 s it
+ * goes dark; the page follows the link at 1,7 s by its timer. A door not seen goes dark at once,
+ * 0,5 s: there is nothing to look at.
+ */
+export const DOOR_MS = 1700;
+export const DARK_MS = 500;
+
+/**
+ * How a page leaves through a door: into it while the middle of the door is seen — in the window
+ * and in the map (the map of the phone shows only its top part) — otherwise into the dark.
+ * @typedef {{ left: number, top: number, right: number, bottom: number }} Box
+ * @param {Box | null} door
+ * @param {Box | null} map
+ * @param {{ width: number, height: number }} view
+ * @returns {{ away: 'go-door' | 'go-dark', ms: number }}
+ */
+export function doorWay(door, map, view) {
+  if (door !== null && map !== null && door.right > door.left && door.bottom > door.top) {
+    const x = (door.left + door.right) / 2;
+    const y = (door.top + door.bottom) / 2;
+    const across = x >= Math.max(0, map.left) && x <= Math.min(view.width, map.right);
+    const down = y >= Math.max(0, map.top) && y <= Math.min(view.height, map.bottom);
+    if (across && down) return { away: 'go-door', ms: DOOR_MS };
+  }
+  return { away: 'go-dark', ms: DARK_MS };
+}
 
 /**
  * A press that opens a link the ordinary way: the main button, no key held, no other window and
@@ -220,11 +338,11 @@ export function plainPress(event, link) {
 /**
  * What a plain press on a link with data-fx does, or null: the browser follows the link as always.
  * `fx` is what the next page reads from hof.arrive; `away` the class of this page while it slides
- * away — only a slide waits, and only with «Анимации». Without them a page turned or rustled still
- * has its sound on the next page.
+ * away or goes through a door — only these wait, and only with «Анимации». Without them a page
+ * turned or rustled and a door still have their sound on the next page.
  * @param {string | undefined} fx data-fx of the link
  * @param {{ move: boolean, sound: boolean, phone: boolean }} now
- * @returns {{ fx: string, away: 'go-left' | 'go-right' | null } | null}
+ * @returns {{ fx: string, away: 'go-left' | 'go-right' | 'go-door' | null } | null}
  */
 export function leaving(fx, { move, sound, phone }) {
   if (fx === undefined || !LINK_FX.includes(fx)) return null;
@@ -235,6 +353,7 @@ export function leaving(fx, { move, sound, phone }) {
   const slides = fx === 'left' || fx === 'right';
   if (!move && !(sound && !slides)) return null;
   if (!move || fx === 'page') return { fx, away: null };
+  if (fx === 'door') return { fx, away: 'go-door' };
   return { fx, away: fx === 'left' || fx === 'flip-fwd' ? 'go-left' : 'go-right' };
 }
 
@@ -555,11 +674,12 @@ function start() {
     });
   }
 
-  // ---- the way to the next page (M10.2). A link with data-fx: a slide away waits SLIDE_MS and
-  // then follows the link; a press on a link meanwhile goes at once.
+  // ---- the way to the next page (M10.2). A link with data-fx: a slide away waits SLIDE_MS, a
+  // door DOOR_MS or DARK_MS (M10.3), and then follows the link; a press on a link meanwhile goes
+  // at once.
   const phone = matchMedia('(max-width: 1023.98px)');
-  const LEAVING = ['go-left', 'go-right', 'keep-banner'];
-  /** The timer of the slide away now on. @type {ReturnType<typeof setTimeout> | undefined} */
+  const LEAVING = ['go-left', 'go-right', 'keep-banner', 'go-door', 'go-dark'];
+  /** The timer of the slide away or the door now on. @type {ReturnType<typeof setTimeout> | undefined} */
   let sliding;
   const stopSliding = () => {
     clearTimeout(sliding);
@@ -589,12 +709,38 @@ function start() {
     });
     if (effect.away === null || second) return;
     event.preventDefault();
-    root.classList.add(effect.away);
+    let away = effect.away;
+    let ms = SLIDE_MS;
+    if (away === 'go-door') {
+      // The door of the place on the map — the one drawn now: in the link on a computer, on the
+      // map of the phone for a sign under it. The creak comes in the same frame.
+      const door = [...document.getElementsByClassName(`door-${link.dataset.door}`)].find(
+        (element) => element.getClientRects().length > 0,
+      );
+      const inner = door?.closest('.court-inner');
+      const map = door?.closest('.court-map');
+      ({ away, ms } = doorWay(
+        door?.getBoundingClientRect() ?? null,
+        map?.getBoundingClientRect() ?? null,
+        { width: innerWidth, height: innerHeight },
+      ));
+      if (away === 'go-door' && door !== undefined && inner instanceof HTMLElement) {
+        // The zoom goes into the middle of the door, in per cent of the map.
+        const d = door.getBoundingClientRect();
+        const r = inner.getBoundingClientRect();
+        const x = ((d.left + d.width / 2 - r.left) / r.width) * 100;
+        const y = ((d.top + d.height / 2 - r.top) / r.height) * 100;
+        inner.style.transformOrigin = `${x}% ${y}%`;
+        door.classList.add('open');
+      }
+      setTimeout(() => playSound('door'), 0);
+    }
+    root.classList.add(away);
     if (keep) root.classList.add('keep-banner');
     sliding = setTimeout(() => {
       sliding = undefined;
       location.assign(link.href);
-    }, SLIDE_MS);
+    }, ms);
   });
 
   // A page put away while it slides (Back pressed at once) does not follow the link when it
@@ -634,13 +780,19 @@ function start() {
   addEventListener('pageshow', (event) => {
     if (!event.persisted) return;
     guard.reset();
-    // As before it left: light, in its place, the door closed.
+    // As before it left: light, in its place, the doors closed.
     stopSliding();
-    root.classList.remove(...LEAVING, 'from-left', 'from-right');
-    for (const frames of document.querySelectorAll('.frames.open')) frames.classList.remove('open');
+    root.classList.remove(...LEAVING, 'from-left', 'from-right', 'from-door');
+    for (const open of document.querySelectorAll('.frames.open, .door.open')) {
+      open.classList.remove('open');
+    }
+    for (const inner of document.querySelectorAll('.court-inner')) {
+      if (inner instanceof HTMLElement) inner.style.removeProperty('transform-origin');
+    }
     settings = readSettings(local);
     showMotion();
     showSettings();
+    courtBack();
     // A piece put away while fading out ends now: the place to go on from is decided below.
     if (fading !== null) {
       clearTimeout(fading.timer);
@@ -661,9 +813,155 @@ function start() {
 
   // The page arrived by a page of the book turned or by «Назад» and «Следующие 50» of Летопись:
   // the sound of a page, the music a little quieter under it (fx-head.js has checked the flag).
+  // Through a door without «Анимации» the creak comes here; with them it came at the press.
   const arrived = root.dataset.arrived;
   delete root.dataset.arrived;
   if (arrived === 'flip-fwd' || arrived === 'flip-back' || arrived === 'page') playSound('page');
+  if (arrived === 'door' && !canMove(settings, reduced.matches)) playSound('door');
+
+  // ---- the living courtyard (M10.3): the fountain, the wind in the crowns, the birds. The
+  // frames turning round (water, banners, smoke) are the CSS alone.
+  const fountain = document.querySelector('.fx-fountain');
+  const leaves = [...document.querySelectorAll('.fx-leaves')];
+  const flock = document.querySelector('.fx-birds');
+
+  // The fountain: a quiet loop while «Звуки» are on, the next of the loops on each visit, 2 s to
+  // come up. It waits for an action of the person as music does.
+  /** @type {{ audio: HTMLAudioElement, gain: AudioParam | null, release: () => void } | null} */
+  let water = null;
+  /** @param {NonNullable<typeof water>} w */
+  function flow(w) {
+    if (water !== w) return;
+    const resumed = context?.resume();
+    w.audio.play().then(
+      async () => {
+        if (water !== w) return;
+        if (!audible() && resumed) await Promise.race([resumed, sleep(500)]).catch(() => {});
+        if (water !== w) return;
+        if (!audible()) {
+          w.audio.pause();
+          waiting.add(() => flow(w));
+          return;
+        }
+        setGain(w, level(settings.soundVol), 2);
+      },
+      () => {
+        if (water === w) waiting.add(() => flow(w));
+      },
+    );
+  }
+  // Before the first action of the person on this page no sound may start, and a context made
+  // then only makes Chrome warn: the fountain waits for the action, a gust is silent.
+  const allowed = () => navigator.userActivation?.hasBeenActive !== false;
+  function startFountain() {
+    if (fountain === null || !settings.sound || water !== null) return;
+    if (!allowed()) {
+      waiting.add(startFountain);
+      return;
+    }
+    const audio = new Audio(fountainAddress(nextFountain(local)));
+    audio.loop = true;
+    // Not there or not playable: silence, nothing tries again.
+    audio.addEventListener('error', () => {
+      if (water?.audio === audio) stopFountain();
+    });
+    water = { audio, ...output(audio, 0) };
+    flow(water);
+  }
+  function stopFountain() {
+    if (water === null) return;
+    const w = water;
+    water = null;
+    w.audio.pause();
+    w.audio.removeAttribute('src');
+    w.audio.load();
+    w.release();
+  }
+
+  // The leaves: their frames are large and wait until the page has loaded; a crown gusts only
+  // with its frames loaded. The address is the one the CSS gives the crown once it is awake.
+  /** @type {Set<Element>} */
+  const ready = new Set();
+  function wake() {
+    if (!canMove(settings, reduced.matches)) return;
+    for (const layer of leaves) {
+      if (layer.classList.contains('wake')) continue;
+      layer.classList.add('wake');
+      const address = /url\("?([^")]+)"?\)/.exec(getComputedStyle(layer).backgroundImage)?.[1];
+      if (address === undefined) continue;
+      const image = new Image();
+      image.src = address;
+      image.decode().then(
+        () => ready.add(layer),
+        () => {},
+      );
+    }
+  }
+  function gust() {
+    if (canMove(settings, reduced.matches)) {
+      wake();
+      const crowns = [...ready];
+      const crown = crowns[Math.floor(Math.random() * crowns.length)];
+      if (crown !== undefined) {
+        crown.classList.remove('gust');
+        void (/** @type {HTMLElement} */ (crown).offsetWidth);
+        crown.classList.add('gust');
+      }
+    }
+    if (allowed()) playSound('wind');
+  }
+  function fly() {
+    if (flock === null || !canMove(settings, reduced.matches)) return;
+    flock.classList.remove('fly');
+    void (/** @type {HTMLElement} */ (flock).offsetWidth);
+    flock.classList.add('fly');
+  }
+  for (const layer of [...leaves, flock]) {
+    layer?.addEventListener('animationend', (event) => {
+      if (event.target === layer) layer.classList.remove('gust', 'fly');
+    });
+  }
+
+  // One chain of timers for the wind and one for the birds, and only while the tab is seen and
+  // the chain has anything to show or sound: the wind while «Анимации» or «Звуки» are on, the
+  // birds with «Анимации».
+  const clock = {
+    set: (/** @type {() => void} */ go, /** @type {number} */ ms) => setTimeout(go, ms),
+    clear: (/** @type {unknown} */ timer) =>
+      clearTimeout(/** @type {ReturnType<typeof setTimeout>} */ (timer)),
+    now: () => Date.now(),
+  };
+  const wind = leaves.length > 0 ? createChain(gust, GUST, clock) : null;
+  const birds = flock !== null ? createChain(fly, FLOCK, clock) : null;
+  function live() {
+    const seen = !document.hidden;
+    const move = canMove(settings, reduced.matches);
+    if (seen && (move || settings.sound)) wind?.resume();
+    else wind?.pause();
+    if (seen && move) birds?.resume();
+    else birds?.pause();
+  }
+  document.addEventListener('visibilitychange', live);
+  reduced.addEventListener('change', live);
+  addEventListener('pagehide', () => {
+    wind?.pause();
+    birds?.pause();
+  });
+  live();
+  startFountain();
+  if (document.readyState === 'complete') wake();
+  else addEventListener('load', wake, { once: true });
+
+  /** Back from the back/forward cache: the settings may have changed meanwhile. */
+  function courtBack() {
+    live();
+    if (!settings.sound) stopFountain();
+    else if (water === null) startFountain();
+    else {
+      setGain(water, 0, 0);
+      flow(water);
+    }
+  }
 }
 
 if (typeof document !== 'undefined') start();

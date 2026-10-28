@@ -3,15 +3,17 @@
 
 В Hof идут только записи под CC0 (ARCHITECTURE.md §6). Каждый файл этой папки сведён скриптом
 design/sounds/mix.py из одной исходной записи, указанной ниже: громкость, полосы частот, мягкие
-вход и выход; у music-20 срезаны первые 47 с. Других исходников у файлов нет.
+вход и выход; у music-20 срезаны первые 47 с; ветер — кусок записи в 2,4 с, фонтан — кусок в 12 с,
+замкнутый в петлю. Других исходников у файлов нет.
 
 Лицензия каждого исходника — CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/),
-так её указывает страница источника. Страницы проверены 2026-10-22.
+так её указывает страница источника. Страницы проверены 2026-10-22, ветра и фонтана — 2026-10-28.
 
 Сверка исходника: «размер» — исходный файл совпадает по размеру в байтах с файлом на странице;
 «длительность» — исходный файл не сохранён, длительность сведённого файла совпадает с
 длительностью файла на странице; «набор» — исходник лежит в design/sounds/kenney-rpg-audio вместе
-с License.txt набора.
+с License.txt набора; «имя» — исходник не сохранён, а файл короче его: в mix.py исходник назван
+именем, которое freesound даёт скачанной записи, — номер, автор и название совпадают со страницей.
 
 
 Монеты
@@ -84,6 +86,68 @@ page-2.m4a
   Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
             «License (Creative Commons Zero, CC0)»
   Сверка:   набор
+
+
+Ветер в листве
+--------------
+
+wind-1.m4a
+  Исходник: freesound 146932 — «Wind Gust», crashoverride6;
+            в mix.py — 146932__crashoverride6__wind-gust
+  Страница: https://freesound.org/people/crashoverride6/sounds/146932/ — Creative Commons 0
+  Сверка:   имя
+
+wind-2.m4a
+  Исходник: freesound 457318 — «Autumn wind and dry leaves.wav», Stek59;
+            в mix.py — 457318__stek59__autumn-wind-and-dry-leaves
+  Страница: https://freesound.org/people/Stek59/sounds/457318/ — Creative Commons 0
+  Сверка:   имя
+
+wind-3.m4a
+  Исходник: freesound 457318 — «Autumn wind and dry leaves.wav», Stek59;
+            в mix.py — 457318__stek59__autumn-wind-and-dry-leaves
+  Страница: https://freesound.org/people/Stek59/sounds/457318/ — Creative Commons 0
+  Сверка:   имя
+
+wind-4.m4a
+  Исходник: freesound 347557 — «Rustling leaves», Kinoton;
+            в mix.py — 347557__kinoton__rustling-leaves
+  Страница: https://freesound.org/people/Kinoton/sounds/347557/ — Creative Commons 0
+  Сверка:   имя
+
+wind-5.m4a
+  Исходник: freesound 443065 — «Leaves_Rustling_Edited.wav», AmberdeMeillon;
+            в mix.py — 443065__amberdemeillon__leaves_rustling_edited
+  Страница: https://freesound.org/people/AmberdeMeillon/sounds/443065/ — Creative Commons 0
+  Сверка:   имя
+
+wind-6.m4a
+  Исходник: freesound 178615 — «The Rustle of a Bush», Montacue;
+            в mix.py — 178615__montacue__the-rustle-of-a-bush
+  Страница: https://freesound.org/people/Montacue/sounds/178615/ — Creative Commons 0
+  Сверка:   имя
+
+
+Фонтан
+------
+
+fountain-1.m4a
+  Исходник: freesound 415027 — «small fountain», roman_cgr;
+            в mix.py — 415027__roman_cgr__small-fountain
+  Страница: https://freesound.org/people/roman_cgr/sounds/415027/ — Creative Commons 0
+  Сверка:   имя
+
+fountain-2.m4a
+  Исходник: freesound 169250 — «Fountain_1.wav», skyko;
+            в mix.py — 169250__skyko__fountain_1
+  Страница: https://freesound.org/people/skyko/sounds/169250/ — Creative Commons 0
+  Сверка:   имя
+
+fountain-3.m4a
+  Исходник: freesound 193784 — «Water fountain», jhumbucker;
+            в mix.py — 193784__jhumbucker__water-fountain
+  Страница: https://freesound.org/people/jhumbucker/sounds/193784/ — Creative Commons 0
+  Сверка:   имя
 
 
 Музыка

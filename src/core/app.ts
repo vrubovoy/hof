@@ -542,10 +542,24 @@ function loginPage(form: LoginForm) {
 // at the gatehouse (the administrator only), Мои покои at the tower. On the phone the same places
 // are signs in a list under the map. «Добрый день!» is the one h1 of both. The note «Пока во
 // дворе только вы» is for the administrator while nobody else belongs to the court.
+//
+// M10.3: the court lives (fx.js and the CSS, only with «Анимации» or «Звуки») — layers on the map
+// without a name, a link or a stop of Tab. The door of a place opens when its sign is pressed: on
+// a computer the sign and the door are one link, on the phone the sign under the map opens the
+// door on it, and that door is a picture only.
 function courtyardPage(user: CurrentUser, services: readonly Service[], alone: boolean) {
   const treasury = services[0];
-  const users = (sign: string) =>
-    user.isAdmin ? html`<a class="${sign}" href="/admin/users"><span>Приближённые</span></a>` : '';
+  // The places with a door, in the order of the map: the gatehouse, the treasury, the tower.
+  const places = [
+    user.isAdmin ? { href: '/admin/users', name: 'Приближённые', at: 'gatehouse' } : null,
+    treasury === undefined ? null : { href: treasury.path, name: treasury.name, at: 'treasury' },
+    { href: '/account', name: 'Мои покои', at: 'tower' },
+  ].filter((place) => place !== null);
+  const door = (name: string) => html`<span class="door door-${name}" aria-hidden="true"></span>`;
+  const sign = (href: string, name: string, at: string) =>
+    html`<a class="sign sign-sm" href="${href}" data-fx="door" data-door="${at}"
+      ><span>${name}</span></a
+    >`;
   return shell(user, services, 'courtyard', 'Hof — двор', {
     class: 'court',
     body: html`<h1 class="ribbon court-title"><span>Добрый день!</span></h1>
@@ -560,24 +574,34 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
             sizes="(max-width: 1023.98px) 100vw, calc(100vw - 288px)"
             alt="Двор замка: ворота со сторожкой, казначейская, башня с покоями, фонтан посередине"
           />
-          ${users('sign at-gatehouse')}
-          ${
-            treasury === undefined
-              ? ''
-              : html`<a class="sign at-treasury" href="${treasury.path}"
-                  ><span>${treasury.name}</span></a
-                >`
-          }
-          <a class="sign at-tower" href="/account"><span>Мои покои</span></a>
+          <span class="fx fx-fountain" aria-hidden="true"></span>
+          <span class="fx fx-banner fx-gate-l" aria-hidden="true"></span>
+          <span class="fx fx-banner fx-gate-r" aria-hidden="true"></span>
+          <span class="fx fx-banner fx-tower" aria-hidden="true"></span>
+          <span class="fx fx-smoke" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="fx fx-leaves fx-olive" aria-hidden="true"></span>
+          <span class="fx fx-leaves fx-bush-l" aria-hidden="true"></span>
+          <span class="fx fx-leaves fx-bush-r" aria-hidden="true"></span>
+          <span class="fx fx-leaves fx-tree" aria-hidden="true"></span>
+          <span class="fx fx-birds" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="court-doors" aria-hidden="true">${places.map(({ at }) => door(at))}</span>
+          ${places.map(
+            ({ href, name, at }) =>
+              html`<a class="place" href="${href}" data-fx="door" data-door="${at}"
+                ><span class="sign at-${at}"><span>${name}</span></span
+                >${door(at)}</a
+              >`,
+          )}
         </div>
       </div>
       <nav class="court-places" aria-label="Места двора">
-        ${services.map(
-          (service) =>
-            html`<a class="sign sign-sm" href="${service.path}"><span>${service.name}</span></a>`,
+        ${services.map((service, i) =>
+          i === 0
+            ? sign(service.path, service.name, 'treasury')
+            : html`<a class="sign sign-sm" href="${service.path}"><span>${service.name}</span></a>`,
         )}
-        ${users('sign sign-sm')}
-        <a class="sign sign-sm" href="/account"><span>Мои покои</span></a>
+        ${user.isAdmin ? sign('/admin/users', 'Приближённые', 'gatehouse') : ''}
+        ${sign('/account', 'Мои покои', 'tower')}
       </nav>
       <div class="court-below">
         <div class="court-note">
