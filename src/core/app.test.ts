@@ -16,7 +16,7 @@ import { migrate } from '../migrate.ts';
 import { startFirstRun } from './gate-key.ts';
 import { hashPassword, verifyPassword } from './password.ts';
 import { createSession, hashSessionToken, newSessionToken, sessionCookie } from './sessions.ts';
-import { soundFiles } from './static/fx.js';
+import { LINK_FX, soundFiles } from './static/fx.js';
 
 const password = process.env.HOF_CORE_DB_PASSWORD;
 assert.ok(password, 'HOF_CORE_DB_PASSWORD is not set: create .env from .env.example');
@@ -509,7 +509,10 @@ describe('after founding', () => {
       assert.equal(res.headers.get('cache-control'), 'no-store', name);
       const page = await res.text();
       assert.ok(page.includes('<h1 class="title t-1">Такой тропы во дворе нет</h1>'), name);
-      assert.ok(page.includes('<a class="btn btn-blue" href="/">Во двор</a>'), name);
+      assert.ok(
+        page.includes('<a class="btn btn-blue" href="/" data-fx="right">Во двор</a>'),
+        name,
+      );
     }
   });
 });
@@ -823,7 +826,7 @@ describe('sign-out', () => {
   test('the courtyard has the way out', async (t) => {
     const { app, cookie } = await found(t);
     const page = await (await get(app, '/', { cookie })).text();
-    assert.ok(page.includes('<form method="post" action="/logout">'));
+    assert.ok(page.includes('<form method="post" action="/logout" data-fx="logout">'));
     assert.ok(page.includes('Покинуть двор'));
   });
 
@@ -898,7 +901,7 @@ describe('my chambers', () => {
       'name="password2"',
       'Не короче 15 символов. На других устройствах вы выйдете со двора.',
       '<button type="submit" class="btn btn-blue">Сменить пароль</button>',
-      '<form class="chambers-out" method="post" action="/logout">',
+      '<form class="chambers-out" method="post" action="/logout" data-fx="logout">',
       '<button type="submit" class="btn" aria-describedby="logout-hint">',
       'на этом устройстве; всё во дворе останется на месте',
     ]) {
@@ -1306,7 +1309,7 @@ describe('the pages of the administrator: who gets in', () => {
       '<title>Сюда только хозяину</title>',
       FORBIDDEN_H1,
       '<p class="muted">Это место двора открыто только хозяину. Если нужно, попросите его.</p>',
-      '<a class="btn btn-blue" href="/">Во двор</a>',
+      '<a class="btn btn-blue" href="/" data-fx="right">Во двор</a>',
     ]) {
       assert.ok(page.includes(text), text);
     }
@@ -1416,7 +1419,9 @@ describe('Приближённые', () => {
       'key-tag | zoe С ключом Открыть › | /admin/users/2',
     ]);
     assert.ok(
-      squeeze(page).includes('<a class="link-plain small" href="/admin/users/3">Открыть ›</a>'),
+      squeeze(page).includes(
+        '<a class="link-plain small" href="/admin/users/3" data-fx="flip-fwd" data-keep>Открыть ›</a>',
+      ),
     );
     assert.ok(!page.includes('href="/admin/users/1"'));
     assert.ok(!page.includes('Пока у двора только хозяин'));
@@ -1722,7 +1727,6 @@ describe('the card of a person', () => {
     for (const text of [
       '<title>Hof — anna</title>',
       '<nav class="banner" aria-label="Hof">',
-      '<a class="back" href="/admin/users"><span>Приближённые</span></a>',
       '<img src="/static/img/key-tag.webp" alt="" />',
       '<h1 class="title t-1">anna</h1>',
       '<span class="badge">С ключом</span>',
@@ -1733,6 +1737,11 @@ describe('the card of a person', () => {
     ]) {
       assert.ok(page.includes(text), text);
     }
+    assert.ok(
+      squeeze(page).includes(
+        '<a class="back" href="/admin/users" data-fx="flip-back" data-keep><span>Приближённые</span></a>',
+      ),
+    );
     assert.ok(
       plain(page).includes(
         'anna выйдет со двора на всех устройствах. Передайте новый пароль лично.',
@@ -2337,7 +2346,7 @@ describe('the card: the key of the court', () => {
     assert.match(res.headers.get('content-security-policy') ?? '', /^default-src 'none'/);
     const page = squeeze(await res.text());
     for (const text of [
-      '<a class="back" href="/admin/users"><span>Приближённые</span></a>',
+      '<a class="back" href="/admin/users" data-fx="flip-back" data-keep><span>Приближённые</span></a>',
       '<span class="badge">С ключом</span>',
       'action="/admin/users/2/password"',
       // The frame is the form: its heading, its text and one button, nothing else to send.
@@ -2619,7 +2628,7 @@ describe('the shell and the courtyard', () => {
       assert.deepEqual(places(page).bar, ['/ Hof', '/account Мои покои'], path);
       assert.match(
         part(page, '<nav class="banner"', '</nav>'),
-        /<form method="post" action="\/logout">\s*<button type="submit" class="nav">\s*<img src="\/static\/img\/emblem-door-closed-small.webp" alt="" \/>Покинуть двор\s*<\/button>\s*<\/form>/,
+        /<form method="post" action="\/logout" data-fx="logout">\s*<button type="submit" class="nav"><span class="frames"\s*><img src="\/static\/img\/emblem-door-closed-small.webp" alt="" \/><img\s+src="\/static\/img\/emblem-door-small.webp"\s+alt=""\s*\/><\/span>Покинуть двор<\/button>\s*<\/form>/,
         path,
       );
       assert.equal((page.match(/<h1[\s>]/g) ?? []).length, 1, path);
@@ -2631,7 +2640,7 @@ describe('the shell and the courtyard', () => {
     const page = await (await get(app, '/', { cookie })).text();
     assert.match(
       part(page, '<nav class="banner"', '</nav>'),
-      /<a class="nav" href="\/saeckel\/">\s*<img src="\/saeckel\/static\/img\/emblem-saeckel-small.webp" alt="" \/>Säckel\s*<\/a>/,
+      /<a class="nav" href="\/saeckel\/" data-fx="left">\s*<img src="\/saeckel\/static\/img\/emblem-saeckel-small.webp" alt="" \/>Säckel\s*<\/a>/,
     );
     const emblem = await get(app, '/saeckel/static/img/emblem-saeckel-small.webp');
     assert.equal(emblem.status, 200);
@@ -2642,7 +2651,11 @@ describe('the shell and the courtyard', () => {
     const { app, cookie } = await found(t);
     const alone = await (await get(app, '/', { cookie })).text();
     assert.ok(alone.includes(`<h2 class="title t-3">${NOTE}</h2>`));
-    assert.ok(alone.includes('<a class="btn" href="/admin/users">Принять ко двору</a>'));
+    assert.ok(
+      alone.includes(
+        '<a class="btn" href="/admin/users" data-fx="left" data-keep>Принять ко двору</a>',
+      ),
+    );
 
     // A person without the key still belongs to the court.
     const boris = await addUser('boris', PASSWORD_HASH, true);
@@ -2717,7 +2730,7 @@ describe('the error pages', () => {
       assert.ok(page!.includes(`<title>${title}</title>`), title);
       assert.match(page!, new RegExp(`src="/static/img/${scene}\\.webp"[^>]*alt="${alt}"`), title);
       assert.ok(page!.includes(`/static/img/${scene}@2x.webp 3072w`), title);
-      assert.ok(page!.includes('<a class="logo" href="/">'), title);
+      assert.ok(page!.includes('<a class="logo" href="/" data-fx="right">'), title);
       assert.ok(page!.includes(`<h1 class="title t-1">${title}</h1>`), title);
       assert.equal((page!.match(/<h1[\s>]/g) ?? []).length, 1, title);
       assert.ok(page!.includes(`<p class="muted">${text}</p>`), title);
@@ -2734,13 +2747,13 @@ describe('the error pages', () => {
     const [forbidden, notFound, afterGet, afterPost] = await errorPages(t);
     assert.ok(
       squeeze(afterGet!).includes(
-        '<div class="error-actions"><a class="btn btn-blue" href="">Попробовать ещё раз</a><a class="link" href="/">Во двор</a></div>',
+        '<div class="error-actions"><a class="btn btn-blue" href="">Попробовать ещё раз</a><a class="link" href="/" data-fx="right">Во двор</a></div>',
       ),
     );
     for (const page of [forbidden, notFound, afterPost]) {
       assert.ok(
         squeeze(page!).includes(
-          '<div class="error-actions"><a class="btn btn-blue" href="/">Во двор</a></div>',
+          '<div class="error-actions"><a class="btn btn-blue" href="/" data-fx="right">Во двор</a></div>',
         ),
       );
       assert.ok(!page!.includes('Попробовать ещё раз'));
@@ -2958,6 +2971,135 @@ describe('the look of Hof: pages, CSS and static files', () => {
       assert.equal((await get(app, `/static/${file}`)).status, 200, file);
       if (file === 'fonts/OFL.txt' || file === 'sounds/LICENSE.txt') continue;
       assert.ok(named.has(`/static/${file}`), `nothing names ${file}`);
+    }
+  });
+
+  // M10.2: links stay <a href>, forms <form method="post">; data-fx and data-keep only tell fx.js
+  // how the page goes to the next one. Each way of a piece of a page as "tag address fx[ keep]".
+  function ways(piece: string): string[] {
+    return [...piece.matchAll(/<(a|form)\s([^>]*)>/g)].flatMap(([, tag, attributes]) => {
+      const fx = /data-fx="([^"]*)"/.exec(attributes!)?.[1];
+      if (fx === undefined) return [];
+      const address = /(?:href|action)="([^"]*)"/.exec(attributes!)?.[1];
+      return [
+        `${tag} ${address} ${fx}${/\sdata-keep(?=\s|$)/.test(` ${attributes}`) ? ' keep' : ''}`,
+      ];
+    });
+  }
+
+  test('M10.2: every data-fx is one fx.js knows; none on the current page; data-keep only between pages with the banner', async (t) => {
+    const { pages } = await drawnPages(t);
+    // The pages of the shell: the courtyard, Приближённые and a card, Мои покои.
+    const withBanner = /^\/(admin\/users(\/\d+)?|account)?$/;
+    let links = 0;
+    for (const [name, page] of pages) {
+      for (const [tag, attributes] of [...page.matchAll(/<(a|form)\s([^>]*)>/g)].map((m) => [
+        m[1]!,
+        m[2]!,
+      ])) {
+        const fx = /data-fx="([^"]*)"/.exec(attributes!)?.[1];
+        const keep = /\sdata-keep(?=\s|$)/.test(` ${attributes}`);
+        const address = /(?:href|action)="([^"]*)"/.exec(attributes!)?.[1];
+        if (tag === 'form') {
+          // The one act of a form so far: «Покинуть двор», on every form that signs out.
+          assert.equal(fx, address === '/logout' ? 'logout' : undefined, `${name}: ${address}`);
+          assert.equal(keep, false, name);
+          continue;
+        }
+        if (fx === undefined) continue;
+        links += 1;
+        assert.ok(LINK_FX.includes(fx), `${name}: ${address} ${fx}`);
+        assert.doesNotMatch(attributes!, /aria-current/, `${name}: ${address}`);
+        if (keep) {
+          assert.ok(page.includes('<nav class="banner"'), `${name}: ${address}`);
+          assert.match(address!, withBanner, `${name}: ${address}`);
+          assert.match(fx, /^(left|right|flip-fwd|flip-back)$/, `${name}: ${address}`);
+        }
+      }
+    }
+    assert.ok(links > 50, String(links));
+  });
+
+  test('M10.2: the banner and the bar slide by the order of the banner, for each place and each role', async (t) => {
+    const { pages } = await drawnPages(t);
+    const of = (name: string) => pages.find(([page]) => page === name)![1];
+    const banner = (page: string) =>
+      ways(part(page, '<nav class="banner" aria-label="Hof">', '</nav>'));
+    const bar = (page: string) => ways(part(page, '<header class="m-top">', '</header>'));
+    const out = 'form /logout logout';
+    for (const [name, inBanner, inBar] of [
+      [
+        'courtyard',
+        ['a /saeckel/ left', 'a /admin/users left keep', 'a /account left keep', out],
+        ['a /account left'],
+      ],
+      [
+        'Приближённые',
+        ['a / right keep', 'a /saeckel/ right', 'a /account left keep', out],
+        ['a / right', 'a /account left'],
+      ],
+      [
+        'the card of anna',
+        ['a / right keep', 'a /saeckel/ right', 'a /account left keep', out],
+        ['a / right', 'a /account left'],
+      ],
+      [
+        'my chambers',
+        ['a / right keep', 'a /saeckel/ right', 'a /admin/users right keep', out],
+        ['a / right'],
+      ],
+      ['courtyard of anna', ['a /saeckel/ left', 'a /account left keep', out], ['a /account left']],
+      ['chambers of anna', ['a / right keep', 'a /saeckel/ right', out], ['a / right']],
+    ] as const) {
+      assert.deepEqual(banner(of(name)), inBanner, name);
+      assert.deepEqual(bar(of(name)), inBar, name);
+    }
+  });
+
+  test('M10.2: «Принять ко двору», «Открыть ›», the hand, the error pages; the names stay', async (t) => {
+    const { pages } = await drawnPages(t);
+    const of = (name: string) => pages.find(([page]) => page === name)![1];
+    const main = (page: string) => ways(part(page, '<main', '</main>'));
+    assert.deepEqual(main(of('courtyard, alone')), ['a /admin/users left keep']);
+    assert.deepEqual(main(of('courtyard')), []);
+    const keys = main(of('Приближённые'));
+    assert.equal(keys.length, (of('Приближённые').match(/>Открыть ›</g) ?? []).length);
+    for (const key of keys) assert.match(key, /^a \/admin\/users\/\d+ flip-fwd keep$/);
+    assert.deepEqual(main(of('the card of anna')), ['a /admin/users flip-back keep']);
+    assert.ok(linksIn(of('the card of anna')).includes('/admin/users Приближённые'));
+    for (const name of ['403', '404', '500 after POST']) {
+      assert.deepEqual(main(of(name)), ['a / right', 'a / right'], name);
+      assert.deepEqual(
+        linksIn(part(of(name), '<div class="error-paper">', '</main>')),
+        ['/ Hof Ваш личный двор', '/ Во двор'],
+        name,
+      );
+    }
+    // «Попробовать ещё раз» opens the same address again: an ordinary link.
+    assert.deepEqual(main(of('500 after GET')), ['a / right', 'a / right']);
+  });
+
+  test('M10.2: the door of «Покинуть двор» is two pictures without a name; the button keeps its name', async (t) => {
+    const { pages } = await drawnPages(t);
+    const DOOR =
+      '<span class="frames"><img src="/static/img/emblem-door-closed-small.webp" alt="" /><img src="/static/img/emblem-door-small.webp" alt="" /></span>Покинуть двор';
+    for (const name of ['courtyard', 'my chambers', 'chambers of anna']) {
+      const page = pages.find(([page]) => page === name)![1];
+      const forms = [...page.matchAll(/<form [^>]*action="\/logout"[^>]*>[\s\S]*?<\/form>/g)].map(
+        ([form]) => form,
+      );
+      assert.equal(forms.length, name.includes('chambers') ? 2 : 1, name);
+      for (const form of forms) {
+        assert.ok(squeeze(form).includes(DOOR), name);
+        assert.equal(
+          /<button[^>]*>([\s\S]*?)<\/button>/
+            .exec(form)![1]!
+            .replace(/<[^>]*>/g, '')
+            .trim(),
+          'Покинуть двор',
+          name,
+        );
+      }
     }
   });
 });

@@ -335,8 +335,15 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
 // «Двор», the ribbon and the tabs, on a page below them only the way back on the band, and the
 // column only on Мешки. CSS shows one of the two, so the hidden parts take no focus. The ribbon is
 // the h1 of the tabs themselves; any other page has its own.
+//
+// With «Анимации» the book turns a page (data-fx, read by fx.js of Hof, §6): forward to Летопись
+// and, on the phone, deeper into Мешки; back to Мешки, to Двор and on «назад». A link marked
+// flip-fwd-phone turns the page on the phone only: on a computer the column stays where it is.
 function saeckelPage(place: Place, body: HtmlEscapedString | Promise<HtmlEscapedString> | '') {
-  const here = (tab: Tab) => (tab === place.tab ? html`aria-current="page"` : '');
+  const here = (tab: Tab) =>
+    tab === place.tab
+      ? html`aria-current="page"`
+      : html`data-fx="${tab === 'history' ? 'flip-fwd' : 'flip-back'}"`;
   const below = place.back !== undefined;
   const ribbon = below
     ? html`<p class="ribbon ribbon-md"><span>Säckel</span></p>`
@@ -370,12 +377,12 @@ function saeckelPage(place: Place, body: HtmlEscapedString | Promise<HtmlEscaped
           sizes="100vw"
           alt="Казначейская: стол с весами, монетами, книгой, мешками и сундуком"
         />
-        <a class="sk-gate sk-court" href="/"
+        <a class="sk-gate sk-court" href="/" data-fx="flip-back"
           ><img src="/saeckel/static/img/hof-mark.svg" width="22" height="22" alt="" />Двор</a
         >
         ${
           below
-            ? html`<a class="sk-gate sk-back" href="${place.back!.href}"
+            ? html`<a class="sk-gate sk-back" href="${place.back!.href}" data-fx="flip-back"
                 ><span>${place.back!.text}</span></a
               >`
             : ''
@@ -475,8 +482,8 @@ function treasuryFrame(treasury: number, money: MoneyFormat, buttons: boolean) {
     ${
       buttons
         ? html`<p class="treasury-actions">
-            <a class="btn btn-ochre" href="/saeckel/assign">Разложить</a>
-            <a class="btn" href="/saeckel/income">+ Доход</a>
+            <a class="btn btn-ochre" href="/saeckel/assign" data-fx="flip-fwd-phone">Разложить</a>
+            <a class="btn" href="/saeckel/income" data-fx="flip-fwd-phone">+ Доход</a>
           </p>`
         : ''
     }
@@ -492,7 +499,7 @@ function pouchRow(pouch: ListedPouch, money: MoneyFormat, place: ColumnPlace) {
     <a
       class="${pouch.id === place.open ? 'pouch open' : 'pouch'}"
       href="/saeckel/pouches/${pouch.id}"
-      ${pouch.id === place.current ? html`aria-current="page"` : ''}
+      ${pouch.id === place.current ? html`aria-current="page"` : html`data-fx="flip-fwd-phone"`}
     >
       ${signPicture(pouch.icon)}
       <span class="pouch-text">
@@ -981,7 +988,8 @@ function historyRow(operation: Operation, money: MoneyFormat) {
 // pouch with «Показать» — without a script the list does not send the form itself — 50 records a
 // page, «Назад» and «Следующие 50». With no record at all, the empty page: the closed book, on the
 // phone above the text, as in SaeckelEmptyMobile. A pouch without records and a page past the
-// last one say so under the filter (no picture of their own).
+// last one say so under the filter (no picture of their own). «Назад» and «Следующие 50» do not
+// turn the page: with «Звуки» the next one only rustles (data-fx="page").
 function historyPage(view: HistoryView, money: MoneyFormat) {
   if (view.operations.length === 0 && view.page === 1 && view.pouch === null) {
     return saeckelPage(
@@ -1053,10 +1061,22 @@ function historyPage(view: HistoryView, money: MoneyFormat) {
       ${
         back || view.hasNext
           ? html`<nav class="pages" aria-label="Страницы летописи">
-              ${back ? html`<a class="btn" href="${historyHref(view.pouch, view.page - 1)}">Назад</a>` : ''}
+              ${
+                back
+                  ? html`<a
+                      class="btn"
+                      href="${historyHref(view.pouch, view.page - 1)}"
+                      data-fx="page"
+                      >Назад</a
+                    >`
+                  : ''
+              }
               ${
                 view.hasNext
-                  ? html`<a class="btn" href="${historyHref(view.pouch, view.page + 1)}"
+                  ? html`<a
+                      class="btn"
+                      href="${historyHref(view.pouch, view.page + 1)}"
+                      data-fx="page"
                       >Следующие 50</a
                     >`
                   : ''
@@ -1184,7 +1204,9 @@ function pouchPane(pouch: Pouch, view: PouchView, money: MoneyFormat, heading: 1
           ? ''
           : html`<p class="pouch-links">
               <a class="link" href="/saeckel/transfer?from=${pouch.id}">Переложить</a>
-              <a class="link" href="/saeckel/pouches/${pouch.id}/edit">Изменить</a>
+              <a class="link" href="/saeckel/pouches/${pouch.id}/edit" data-fx="flip-fwd-phone"
+                >Изменить</a
+              >
             </p>`
       }
     </div>

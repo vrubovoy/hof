@@ -132,9 +132,10 @@ export function treasurySum(page: string): string | undefined {
 
 // The way back on the band of a page below a tab, as «address text»; none on the tabs themselves.
 export function wayBack(page: string): string | undefined {
-  const back = /<a class="sk-gate sk-back" href="([^"]*)"\s*><span>([^<]*)<\/span><\/a\s*>/.exec(
-    page,
-  );
+  const back =
+    /<a class="sk-gate sk-back" href="([^"]*)" data-fx="flip-back"\s*><span>([^<]*)<\/span><\/a\s*>/.exec(
+      page,
+    );
   return back === null ? undefined : `${back[1]} ${back[2]}`;
 }
 

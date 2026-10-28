@@ -402,6 +402,108 @@ describe('the shell', () => {
   });
 });
 
+// M10.2: with «Анимации» the book of Säckel turns a page (data-fx, read by fx.js of Hof). Links
+// stay <a href>, forms <form method="post">; Säckel has no banner, so nothing keeps it.
+describe('the ways between pages', () => {
+  // The effects of a link fx.js of Hof knows that Säckel uses (LINK_FX in src/core/static/fx.js;
+  // Säckel does not import Core, §2).
+  const LINK_FX = ['flip-fwd', 'flip-back', 'flip-fwd-phone', 'page'];
+  // Each way of a piece of a page as "address fx", the links only: a form of Säckel has no act.
+  function ways(piece: string): string[] {
+    return [...piece.matchAll(/<a\s([^>]*)>/g)].flatMap(([, attributes]) => {
+      const fx = /data-fx="([^"]*)"/.exec(attributes!)?.[1];
+      return fx === undefined ? [] : [`${/href="([^"]*)"/.exec(attributes!)?.[1]} ${fx}`];
+    });
+  }
+  const head = (page: string) => ways(/<header class="sk-head">[\s\S]*?<\/header>/.exec(page)![0]);
+  const tabs = (page: string) => ways(/<nav class="tabs"[\s\S]*?<\/nav>/.exec(page)![0]);
+  // Everything under the ribbon and the tabs: the column and the page.
+  const below = (page: string) => ways(page.slice(page.indexOf('class="caps sk-motto"')));
+
+  async function bookPages() {
+    const ids = await prototypeBudget();
+    await addIncomes(60);
+    const food = ids['Продукты']!;
+    const paths = [
+      '/saeckel/',
+      `/saeckel/pouches/${food}`,
+      '/saeckel/pouches/new',
+      `/saeckel/pouches/${food}/edit`,
+      '/saeckel/income',
+      '/saeckel/assign',
+      '/saeckel/transfer',
+      '/saeckel/history',
+      '/saeckel/history?page=2',
+      '/saeckel/operations/2',
+    ];
+    const pages = new Map<string, string>();
+    for (const path of paths) pages.set(path, await (await get(path, 'anna')).text());
+    return { ids, pages };
+  }
+
+  test('every data-fx is one fx.js knows; none on the current tab or pouch; no data-keep, no act of a form', async () => {
+    const { pages } = await bookPages();
+    for (const [path, page] of pages) {
+      for (const [, tag, attributes] of page.matchAll(/<(a|form)\s([^>]*)>/g)) {
+        const fx = /data-fx="([^"]*)"/.exec(attributes!)?.[1];
+        assert.doesNotMatch(attributes!, /data-keep/, path);
+        if (tag === 'form') assert.equal(fx, undefined, path);
+        else if (/aria-current/.test(attributes!)) assert.equal(fx, undefined, path);
+        else if (fx !== undefined) assert.ok(LINK_FX.includes(fx), `${path}: ${fx}`);
+      }
+    }
+  });
+
+  test('Двор and «назад» turn back; a tab by the order of the tabs; deeper into Мешки forward on the phone; Летопись rustles', async () => {
+    const { ids, pages } = await bookPages();
+    const food = ids['Продукты']!;
+    const pouches = Object.values(ids).map((id) => `/saeckel/pouches/${id} flip-fwd-phone`);
+    const actions = ['/saeckel/assign flip-fwd-phone', '/saeckel/income flip-fwd-phone'];
+    const of = (path: string) => pages.get(path)!;
+
+    assert.deepEqual(head(of('/saeckel/')), ['/ flip-back']);
+    assert.deepEqual(tabs(of('/saeckel/')), ['/saeckel/history flip-fwd']);
+    // The column, then the first pouch open on the right of a computer: «Изменить» there too.
+    assert.deepEqual(below(of('/saeckel/')), [
+      ...actions,
+      ...pouches,
+      `/saeckel/pouches/${food}/edit flip-fwd-phone`,
+    ]);
+
+    const pouch = of(`/saeckel/pouches/${food}`);
+    assert.deepEqual(head(pouch), ['/ flip-back', '/saeckel/ flip-back']);
+    assert.deepEqual(tabs(pouch), ['/saeckel/history flip-fwd']);
+    // The pouch itself is the current one in the column: an ordinary link.
+    assert.ok(!ways(pouch).includes(`/saeckel/pouches/${food} flip-fwd-phone`));
+    assert.ok(ways(pouch).includes(`/saeckel/pouches/${food}/edit flip-fwd-phone`));
+    assert.deepEqual(head(of(`/saeckel/pouches/${food}/edit`)), [
+      '/ flip-back',
+      `/saeckel/pouches/${food} flip-back`,
+    ]);
+    for (const path of [
+      '/saeckel/pouches/new',
+      '/saeckel/income',
+      '/saeckel/assign',
+      '/saeckel/transfer',
+    ]) {
+      assert.deepEqual(head(of(path)), ['/ flip-back', '/saeckel/ flip-back'], path);
+      assert.deepEqual(tabs(of(path)), ['/saeckel/history flip-fwd'], path);
+    }
+
+    for (const path of ['/saeckel/history', '/saeckel/history?page=2']) {
+      assert.deepEqual(head(of(path)), ['/ flip-back'], path);
+      assert.deepEqual(tabs(of(path)), ['/saeckel/ flip-back'], path);
+    }
+    assert.deepEqual(below(of('/saeckel/history')), ['/saeckel/history?page=2 page']);
+    assert.deepEqual(below(of('/saeckel/history?page=2')), ['/saeckel/history?page=1 page']);
+    assert.deepEqual(head(of('/saeckel/operations/2')), [
+      '/ flip-back',
+      '/saeckel/history flip-back',
+    ]);
+    assert.deepEqual(tabs(of('/saeckel/operations/2')), ['/saeckel/ flip-back']);
+  });
+});
+
 describe('the column of pouches', () => {
   // The pages of «Мешки» with the column, for one person, after a few writes of that person.
   async function columnPages(who: 'anna' | 'boris', own: number) {
@@ -932,9 +1034,9 @@ describe('Летопись and a record', () => {
       const page = await (await get(`/saeckel/history?page=${number}`, 'anna')).text();
       assert.equal(historyTable(page).rows.length, count, String(number));
       assert.deepEqual(
-        [...pager(page).matchAll(/<a class="btn" href="[^"]*" ?>([^<]*)<\/a ?>/g)].map(
-          ([, text]) => text,
-        ),
+        [
+          ...pager(page).matchAll(/<a class="btn" href="[^"]*" data-fx="page" ?>([^<]*)<\/a ?>/g),
+        ].map(([, text]) => text),
         links,
         String(number),
       );

@@ -1906,3 +1906,102 @@ mark.move {
     opacity: 0.7;
   }
 }
+
+/* Эффекты переходов — как у Hof (§6, копия значений): классы на <html> ставят скрипты Hof, и
+   только с «Анимациями»; системное «уменьшить движение» выключает их и здесь. Конечный кадр
+   каждого перехода — страница как без него */
+
+@media (prefers-reduced-motion: no-preference) {
+  /* печать ставится на записку, когда страница появляется */
+  .fx-on .note::before {
+    animation: stamp 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+  }
+
+  /* сдвиг (из знамени Hof и лист книги — в ту же сторону): страница уезжает на 32 % и темнеет
+     до 0,85 за 0,5 с, новая выезжает навстречу за 0,6 с. Завеса ссылок не закрывает. Сдвиг не
+     даёт прокрутки вбок: <html> отдаёт свой overflow окну (там clip — это hidden, и сдвинутое всё
+     ещё прокручивается скриптом), поэтому обрезает и <body> */
+  html:is(.go-left, .go-right, .from-left, .from-right),
+  html:is(.go-left, .go-right, .from-left, .from-right) body {
+    overflow-x: clip;
+  }
+  html:is(.go-left, .go-right, .from-left, .from-right) body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    pointer-events: none;
+    background: #0e1a2e;
+    opacity: 0;
+  }
+  html:is(.go-left, .go-right) body::after {
+    animation: veil-dim 0.5s ease-in forwards;
+  }
+  html:is(.from-left, .from-right) body::after {
+    opacity: 0.85;
+    animation: veil-out 0.6s ease-out forwards;
+  }
+  /* виньетки и кляксы печатаются на бумагу страницы (multiply), а сдвигаемая страница — свой
+     слой: на время перехода у неё та же бумага, иначе вокруг рисунков видна белая бумага
+     картинки */
+  html:is(.go-left, .go-right, .from-left, .from-right) body > * {
+    background:
+      url(img/paper-clouds.webp) 0 0 / 1500px 1500px,
+      url(img/paper-tile.webp) 0 0 / 1124px 1124px,
+      var(--paper);
+    background-blend-mode: multiply, normal;
+    will-change: transform;
+  }
+  .go-left body > * {
+    animation: out-left 0.5s ease-in forwards;
+  }
+  .go-right body > * {
+    animation: out-right 0.5s ease-in forwards;
+  }
+  .from-right body > * {
+    animation: in-right 0.6s ease-out both;
+  }
+  .from-left body > * {
+    animation: in-left 0.6s ease-out both;
+  }
+}
+@keyframes stamp {
+  from {
+    transform: scale(1.7) rotate(-20deg);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) rotate(-9deg);
+    opacity: 1;
+  }
+}
+@keyframes veil-dim {
+  to {
+    opacity: 0.85;
+  }
+}
+@keyframes veil-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes out-left {
+  to {
+    transform: translateX(-32%);
+  }
+}
+@keyframes out-right {
+  to {
+    transform: translateX(32%);
+  }
+}
+@keyframes in-right {
+  from {
+    transform: translateX(32%);
+  }
+}
+@keyframes in-left {
+  from {
+    transform: translateX(-32%);
+  }
+}

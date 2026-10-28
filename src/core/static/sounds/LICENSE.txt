@@ -30,6 +30,62 @@ coins-2.m4a
   Сверка:   набор
 
 
+Дверь
+-----
+
+door-1.m4a
+  Исходник: doorOpen_1.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+door-2.m4a
+  Исходник: doorOpen_2.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+door-3.m4a
+  Исходник: doorClose_1.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+door-4.m4a
+  Исходник: doorClose_2.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+door-5.m4a
+  Исходник: doorClose_3.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+door-6.m4a
+  Исходник: doorClose_4.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+
+Лист
+----
+
+page-1.m4a
+  Исходник: bookFlip1.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+page-2.m4a
+  Исходник: bookFlip2.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+
 Музыка
 ------
 

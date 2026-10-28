@@ -1,16 +1,21 @@
 // Hof — effects (ARCHITECTURE.md §6): the settings «Звуки и движение» of this device, sounds,
-// music, and the guard against a form sent twice (§4.8). Without this file everything works the
-// same: links and forms are ordinary, the court is still and silent.
+// music, the guard against a form sent twice (§4.8) and the way a page leaves for the next one.
+// Without this file everything works the same: links and forms are ordinary, the court is still
+// and silent.
 //
 // The top of the file decides: small functions without the page, tested by src/core/fx.test.ts.
 // start() at the bottom joins them to the page; it runs only in a browser. A module runs once a
 // page, so nothing here is set up twice.
 //
 // Kept in the browser, nothing else: `hof.fx` in localStorage — the settings of this device;
-// `hof.music` in sessionStorage — the piece of music and the place in it.
+// in sessionStorage `hof.music` — the piece of music and the place in it, and the two flags of a
+// way to the next page, `hof.arrive` (a link) and `hof.after` (a form), which fx-head.js of that
+// page reads once.
 
 export const SETTINGS_KEY = 'hof.fx';
 export const MUSIC_KEY = 'hof.music';
+export const ARRIVE_KEY = 'hof.arrive';
+export const AFTER_KEY = 'hof.after';
 
 /** @typedef {{ anim: boolean, sound: boolean, soundVol: number, music: boolean, musicVol: number }} Settings */
 /** @typedef {{ piece: number, time: number, at: number }} MusicPlace */
@@ -25,7 +30,7 @@ export const DEFAULTS = Object.freeze({
 });
 
 /** The sets of sounds and how many variants each has. @type {Readonly<Record<string, number>>} */
-export const SOUNDS = Object.freeze({ coins: 2 });
+export const SOUNDS = Object.freeze({ coins: 2, door: 6, page: 2 });
 
 /** The pieces of music, played in this order from 1. */
 export const PIECES = 20;
@@ -175,6 +180,77 @@ export function firstPiece(random = Math.random, pieces = PIECES) {
  */
 export function tryNextPiece(failures, pieces = PIECES) {
   return failures < pieces;
+}
+
+/**
+ * The effects of a link (data-fx, M10.2): a slide to the left or the right (the order of the
+ * banner), a page of the book turned forward or back, one turned forward on the phone only, and
+ * the sound of a page alone. A page turned slides the same way and rustles on the next page.
+ */
+export const LINK_FX = Object.freeze([
+  'left',
+  'right',
+  'flip-fwd',
+  'flip-back',
+  'flip-fwd-phone',
+  'page',
+]);
+
+/** A page waits this long for its slide away before it follows the link. */
+export const SLIDE_MS = 500;
+
+/**
+ * A press that opens a link the ordinary way: the main button, no key held, no other window and
+ * no download. Any other press is the browser's own, without effects.
+ * @param {{ button: number, metaKey: boolean, ctrlKey: boolean, shiftKey: boolean, altKey: boolean }} event
+ * @param {{ target: string, hasAttribute: (name: string) => boolean }} link
+ */
+export function plainPress(event, link) {
+  return (
+    event.button === 0 &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey &&
+    (link.target === '' || link.target === '_self') &&
+    !link.hasAttribute('download')
+  );
+}
+
+/**
+ * What a plain press on a link with data-fx does, or null: the browser follows the link as always.
+ * `fx` is what the next page reads from hof.arrive; `away` the class of this page while it slides
+ * away — only a slide waits, and only with «Анимации». Without them a page turned or rustled still
+ * has its sound on the next page.
+ * @param {string | undefined} fx data-fx of the link
+ * @param {{ move: boolean, sound: boolean, phone: boolean }} now
+ * @returns {{ fx: string, away: 'go-left' | 'go-right' | null } | null}
+ */
+export function leaving(fx, { move, sound, phone }) {
+  if (fx === undefined || !LINK_FX.includes(fx)) return null;
+  if (fx === 'flip-fwd-phone') {
+    if (!phone) return null;
+    fx = 'flip-fwd';
+  }
+  const slides = fx === 'left' || fx === 'right';
+  if (!move && !(sound && !slides)) return null;
+  if (!move || fx === 'page') return { fx, away: null };
+  return { fx, away: fx === 'left' || fx === 'flip-fwd' ? 'go-left' : 'go-right' };
+}
+
+/**
+ * Leaves a flag for the next page, or takes it away (null).
+ * @param {Pick<Storage, 'setItem' | 'removeItem'> | null} storage
+ * @param {string} key
+ * @param {object | null} value
+ */
+export function writeFlag(storage, key, value) {
+  try {
+    if (value === null) storage?.removeItem(key);
+    else storage?.setItem(key, JSON.stringify(value));
+  } catch {
+    // No storage: the next page comes without an effect.
+  }
 }
 
 /**
@@ -479,17 +555,89 @@ function start() {
     });
   }
 
-  // ---- a form goes once (§4.8). The first sending is not held or changed in any way.
+  // ---- the way to the next page (M10.2). A link with data-fx: a slide away waits SLIDE_MS and
+  // then follows the link; a press on a link meanwhile goes at once.
+  const phone = matchMedia('(max-width: 1023.98px)');
+  const LEAVING = ['go-left', 'go-right', 'keep-banner'];
+  /** The timer of the slide away now on. @type {ReturnType<typeof setTimeout> | undefined} */
+  let sliding;
+  const stopSliding = () => {
+    clearTimeout(sliding);
+    sliding = undefined;
+  };
+
+  document.addEventListener('click', (event) => {
+    if (event.defaultPrevented || !(event.target instanceof Element)) return;
+    const link = event.target.closest('a[href]');
+    if (!(link instanceof HTMLAnchorElement) || !plainPress(event, link)) return;
+    // A second press while the page slides away: the browser follows the link pressed now.
+    const second = sliding !== undefined;
+    stopSliding();
+    const move = canMove(settings, reduced.matches);
+    const effect = leaving(link.dataset.fx, {
+      move,
+      sound: settings.sound,
+      phone: phone.matches,
+    });
+    if (effect === null) return;
+    const keep = link.dataset.keep !== undefined;
+    writeFlag(session, ARRIVE_KEY, {
+      fx: effect.fx,
+      to: link.origin + link.pathname + link.search,
+      at: Date.now(),
+      keep,
+    });
+    if (effect.away === null || second) return;
+    event.preventDefault();
+    root.classList.add(effect.away);
+    if (keep) root.classList.add('keep-banner');
+    sliding = setTimeout(() => {
+      sliding = undefined;
+      location.assign(link.href);
+    }, SLIDE_MS);
+  });
+
+  // A page put away while it slides (Back pressed at once) does not follow the link when it
+  // comes back, and the next page does not come as if it had.
+  addEventListener('pagehide', () => {
+    if (sliding !== undefined) writeFlag(session, ARRIVE_KEY, null);
+    stopSliding();
+  });
+
+  // ---- a form goes once (§4.8). The first sending is not held or changed in any way: what comes
+  // with it — the flag of its act for the next page, the door — is beside it, never before it.
   const guard = createGuard();
   document.addEventListener('submit', (event) => {
     if (event.defaultPrevented || !(event.target instanceof HTMLFormElement)) return;
-    if (!guard.allow(event.target)) event.preventDefault();
+    const form = event.target;
+    if (!guard.allow(form)) return event.preventDefault();
+    stopSliding();
+    const move = canMove(settings, reduced.matches);
+    // Any other form takes the flag of the last one away.
+    const act = form.dataset.fx;
+    writeFlag(
+      session,
+      AFTER_KEY,
+      act !== undefined && (move || settings.sound)
+        ? { act, action: new URL(form.action).pathname, at: Date.now() }
+        : null,
+    );
+    if (act === 'logout') {
+      // The open door lies over the closed one (0,75 s in the CSS) while the form goes. The creak
+      // comes after the sending has begun: the first sound of a page may take the browser a while.
+      if (move) form.querySelector('.frames')?.classList.add('open');
+      setTimeout(() => playSound('door'), 0);
+    }
   });
 
   // ---- back from the back/forward cache: the page is as it was left, the world may not be.
   addEventListener('pageshow', (event) => {
     if (!event.persisted) return;
     guard.reset();
+    // As before it left: light, in its place, the door closed.
+    stopSliding();
+    root.classList.remove(...LEAVING, 'from-left', 'from-right');
+    for (const frames of document.querySelectorAll('.frames.open')) frames.classList.remove('open');
     settings = readSettings(local);
     showMotion();
     showSettings();
@@ -510,6 +658,12 @@ function start() {
   });
 
   startMusic();
+
+  // The page arrived by a page of the book turned or by «Назад» and «Следующие 50» of Летопись:
+  // the sound of a page, the music a little quieter under it (fx-head.js has checked the flag).
+  const arrived = root.dataset.arrived;
+  delete root.dataset.arrived;
+  if (arrived === 'flip-fwd' || arrived === 'flip-back' || arrived === 'page') playSound('page');
 }
 
 if (typeof document !== 'undefined') start();
