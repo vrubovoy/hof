@@ -48,12 +48,15 @@ function history(query = '', who = 'anna') {
 // The amounts of the rows, in hundredths written as «0,51 ₽» and so on: which incomes are shown.
 const amounts = (page: string) => rows(page).map((row) => row[4]);
 
-// The links of the pages: «Назад» and «Следующие 50», with their addresses as written.
+// The links of the pages: «Назад» and «Следующие 50», with their addresses as written; with
+// «Звуки» each only rustles (data-fx="page"), the page is not turned.
 function pageLinks(page: string): Record<string, string> {
   return Object.fromEntries(
-    [...page.matchAll(/<a class="btn" href="([^"]*)"\s*>(Назад|Следующие 50)<\/a\s*>/g)].map(
-      (m) => [m[2]!, m[1]!],
-    ),
+    [
+      ...page.matchAll(
+        /<a\s+class="btn"\s+href="([^"]*)"\s+data-fx="page"\s*>(Назад|Следующие 50)<\/a\s*>/g,
+      ),
+    ].map((m) => [m[2]!, m[1]!]),
   );
 }
 
@@ -77,7 +80,7 @@ describe('Летопись: pages', () => {
       '<title>Säckel — летопись</title>',
       '<h1 class="ribbon ribbon-md"><span>Säckel</span></h1>',
       '<a class="tab" href="/saeckel/history" aria-current="page">Летопись</a>',
-      '<a class="tab" href="/saeckel/" >Мешки</a>',
+      '<a class="tab" href="/saeckel/" data-fx="flip-back">Мешки</a>',
       '<h2 class="title">Летопись пока пуста</h2>',
       `<p class="muted"> ${EMPTY_TEXT} </p>`,
       '<a class="btn btn-ochre" href="/saeckel/income">Записать доход</a>',

@@ -70,8 +70,14 @@ describe('Казна on Мешки', () => {
   test('a new person: 0,00 ₽, «Разложить» and «+ Доход», above the empty state', async () => {
     const page = fold(await (await get('/saeckel/', 'anna')).text());
     assert.equal(treasury(page), '0,00 ₽');
-    assert.ok(page.includes('<a class="btn btn-ochre" href="/saeckel/assign">Разложить</a>'));
-    assert.ok(page.includes('<a class="btn" href="/saeckel/income">+ Доход</a>'));
+    assert.ok(
+      page.includes(
+        '<a class="btn btn-ochre" href="/saeckel/assign" data-fx="flip-fwd-phone">Разложить</a>',
+      ),
+    );
+    assert.ok(
+      page.includes('<a class="btn" href="/saeckel/income" data-fx="flip-fwd-phone">+ Доход</a>'),
+    );
     assert.ok(
       page.indexOf('<h2 class="title t-3">Казна</h2>') <
         page.indexOf('<h2 class="title">Мешков пока нет</h2>'),
@@ -135,7 +141,11 @@ describe('Доход', () => {
     assert.equal(wayBack(page), '/saeckel/ Мешки');
     // The column beside the form: the treasury with both of its buttons.
     assert.equal(treasury(page), '0,00 ₽');
-    assert.ok(page.includes('<a class="btn btn-ochre" href="/saeckel/assign">Разложить</a>'));
+    assert.ok(
+      page.includes(
+        '<a class="btn btn-ochre" href="/saeckel/assign" data-fx="flip-fwd-phone">Разложить</a>',
+      ),
+    );
   });
 
   test('written for the one signed in: 303 to «Разложить» with its id; other fields ignored', async () => {
@@ -247,8 +257,9 @@ describe('the page «Разложить»', () => {
     assert.ok(!page.includes('лёг в казну'));
     // The column beside it: the same treasury, no buttons — they lead here (SaeckelAssign).
     assert.equal(treasury(page), '1 000,00 ₽');
-    assert.ok(!page.includes('href="/saeckel/assign">Разложить</a>'));
-    assert.ok(!page.includes('href="/saeckel/income">+ Доход</a>'));
+    assert.ok(!page.includes('href="/saeckel/assign" data-fx="flip-fwd-phone">Разложить</a>'));
+    assert.ok(!page.includes('href="/saeckel/income" data-fx="flip-fwd-phone">+ Доход</a>'));
+    assert.ok(!page.includes('class="treasury-actions"'));
   });
 
   test('no active pouch: «Мешков пока нет» and «+ Новый мешок» instead of the rows', async () => {

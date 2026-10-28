@@ -135,7 +135,10 @@ describe('Мешки', () => {
     ]) {
       assert.ok(page.includes(text), text);
     }
-    assert.match(page, /<a class="sk-gate sk-court" href="\/" ?><img [^>]*\/>Двор<\/a ?>/);
+    assert.match(
+      page,
+      /<a class="sk-gate sk-court" href="\/" data-fx="flip-back"\s*><img [^>]*\/>Двор<\/a\s*>/,
+    );
     assert.equal(wayBack(page), undefined);
     assert.ok(
       page.includes('<p class="hint text-full">Знак мешка можно выбрать потом, в «Изменить».</p>'),
@@ -459,7 +462,12 @@ describe('Изменить мешок', () => {
     const active = await addPouch(1, 'Продукты');
     const stored = await addPouch(1, 'Старый', true);
     const page = await (await get(`/saeckel/pouches/${active}`, 'anna')).text();
-    assert.ok(page.includes(`<a class="link" href="/saeckel/pouches/${active}/edit">Изменить</a>`));
+    assert.match(
+      page,
+      new RegExp(
+        `<a class="link" href="/saeckel/pouches/${active}/edit" data-fx="flip-fwd-phone"\\s*>Изменить</a\\s*>`,
+      ),
+    );
     const old = await (await get(`/saeckel/pouches/${stored}`, 'anna')).text();
     assert.ok(!old.includes('Изменить'));
   });
