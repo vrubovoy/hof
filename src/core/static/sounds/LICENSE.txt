@@ -1,0 +1,139 @@
+Звуки и музыка Hof — источники и лицензии
+==========================================
+
+В Hof идут только записи под CC0 (ARCHITECTURE.md §6). Каждый файл этой папки сведён скриптом
+design/sounds/mix.py из одной исходной записи, указанной ниже: громкость, полосы частот, мягкие
+вход и выход; у music-20 срезаны первые 47 с. Других исходников у файлов нет.
+
+Лицензия каждого исходника — CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/),
+так её указывает страница источника. Страницы проверены 2026-10-22.
+
+Сверка исходника: «размер» — исходный файл совпадает по размеру в байтах с файлом на странице;
+«длительность» — исходный файл не сохранён, длительность сведённого файла совпадает с
+длительностью файла на странице; «набор» — исходник лежит в design/sounds/kenney-rpg-audio вместе
+с License.txt набора.
+
+
+Монеты
+------
+
+coins-1.m4a
+  Исходник: handleCoins.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+coins-2.m4a
+  Исходник: handleCoins2.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+
+Музыка
+------
+
+music/music-1.m4a
+  Исходник: Loop_The_Bards_Tale.wav — «Medieval: The Bard's Tale», RandomMind
+  Страница: https://opengameart.org/content/medieval-the-bards-tale — CC0
+  Сверка:   длительность, 57,7 с
+
+music/music-2.m4a
+  Исходник: Loop_Kings_Feast_0.wav — «Medieval: King's Feast», RandomMind
+  Страница: https://opengameart.org/content/medieval-kings-feast — CC0
+  Сверка:   длительность, 80,7 с
+
+music/music-3.m4a
+  Исходник: freesound 769807 — «Shakespeare "Lover and His Lass" Lute and Wood Flute»,
+            soundsandrebounds
+  Страница: https://freesound.org/people/soundsandrebounds/sounds/769807/ — Creative Commons 0
+  Сверка:   длительность, 95,9 с
+
+music/music-4.m4a
+  Исходник: Market_Day.mp3 — «Medieval: Market Day», RandomMind
+  Страница: https://opengameart.org/content/medieval-market-day — CC0
+  Сверка:   размер, 5 582 958 байт
+
+music/music-5.m4a
+  Исходник: harvestseason.wav — «Medieval: Harvest Season», RandomMind
+  Страница: https://opengameart.org/content/medieval-harvest-season — CC0
+  Сверка:   длительность, 214,2 с
+
+music/music-6.m4a
+  Исходник: Loop_Minstrel_Dance_0.wav — «Medieval: Minstrel Dance», RandomMind
+  Страница: https://opengameart.org/content/medieval-minstrel-dance — CC0
+  Сверка:   длительность, 56,3 с
+
+music/music-7.m4a
+  Исходник: freesound 574485 — «harfe impro.mp3», ChaliceWell
+  Страница: https://freesound.org/people/ChaliceWell/sounds/574485/ — Creative Commons 0
+  Сверка:   размер, 3 110 629 байт
+
+music/music-8.m4a
+  Исходник: Komiku_-_01_-_Fouler_lhorizon.mp3 — «Fouler l'horizon», Komiku
+            (выложил Loyalty Freak Music)
+  Страница: https://opengameart.org/content/fouler-lhorizon — CC0
+  Сверка:   размер, 4 471 023 байт
+
+music/music-9.m4a
+  Исходник: Exploration.mp3 — «Medieval: Exploration», RandomMind
+  Страница: https://opengameart.org/content/medieval-exploration — CC0
+  Сверка:   размер, 9 446 112 байт
+
+music/music-10.m4a
+  Исходник: Loop_Rejoicing.wav — «Medieval: Rejoicing», RandomMind
+  Страница: https://opengameart.org/content/medieval-rejoicing — CC0
+  Сверка:   длительность, 41,8 с
+
+music/music-11.m4a
+  Исходник: freesound 608915 — «Guardsman's Break.ogg», HenryOfSkalitz
+  Страница: https://freesound.org/people/HenryOfSkalitz/sounds/608915/ — Creative Commons 0
+  Сверка:   размер, 1 022 658 байт
+
+music/music-12.m4a
+  Исходник: «Of Far Different Nature x John Dowland - If my Complaints Could Passions Move_0.mp3» —
+            «Historic Renaissance music from 1597: If my complaints could passions move by John
+            Dowland», Of Far Different Nature
+  Страница: https://opengameart.org/node/107859 — CC0
+  Сверка:   размер, 6 460 674 байт
+
+music/music-13.m4a
+  Исходник: Loop_The_Old_Tower_Inn.wav — «Medieval: The Old Tower Inn», RandomMind
+  Страница: https://opengameart.org/content/medieval-the-old-tower-inn — CC0
+  Сверка:   длительность, 50,0 с
+
+music/music-14.m4a
+  Исходник: HarpsiChordFlurry_6.ogg — «Harpsichord Flurry», Spring Spring
+  Страница: https://opengameart.org/content/harpsichord-flurry — CC0
+  Сверка:   размер, 5 580 615 байт
+
+music/music-15.m4a
+  Исходник: freesound 676787 — «Blinking Forest [Acoustic]», NearTheAtmoshphere
+  Страница: https://freesound.org/people/NearTheAtmoshphere/sounds/676787/ — Creative Commons 0
+  Сверка:   размер, 1 696 320 байт
+
+music/music-16.m4a
+  Исходник: freesound 646460 — «Medieval March (mp3)», G-14
+  Страница: https://freesound.org/people/G-14/sounds/646460/ — Creative Commons 0
+  Сверка:   размер, 1 384 445 байт
+
+music/music-17.m4a
+  Исходник: Serenade_0.mp3 — «Serenade Guitar», Pro Sensory
+  Страница: https://opengameart.org/content/serenade-guitar — CC0
+  Сверка:   размер, 3 105 898 байт
+
+music/music-18.m4a
+  Исходник: peasantry.ogg — «Peasant Theme», nihilocrat
+  Страница: https://opengameart.org/content/peasant-theme — CC0
+  Сверка:   размер, 597 983 байт
+
+music/music-19.m4a
+  Исходник: Lament_for_a_Warriors_Soul_REUPLOAD.mp3 — «Fantasy: Lament for a Warrior's Soul»,
+            RandomMind
+  Страница: https://opengameart.org/content/fantasy-lament-for-a-warriors-soul — CC0
+  Сверка:   размер, 6 541 073 байт
+
+music/music-20.m4a
+  Исходник: freesound 362288 — «Medieval Music.wav», Kevzog
+  Страница: https://freesound.org/people/Kevzog/sounds/362288/ — Creative Commons 0
+  Сверка:   размер, 7 051 171 байт

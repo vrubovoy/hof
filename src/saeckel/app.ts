@@ -308,7 +308,8 @@ interface PouchView {
 }
 
 // Every page of Säckel: its own CSS and its own copy of the mark of Hof as the icon of the tab
-// (§4.1: Säckel names only files of its own static folder).
+// (§4.1: Säckel names only files of its own static folder), and the two scripts of the effects of
+// Hof — the only addresses of Core a page of Säckel names (§2).
 function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString>) {
   return html`<!doctype html>
     <html lang="ru">
@@ -318,6 +319,8 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
         <title>${title}</title>
         <link rel="stylesheet" href="/saeckel/static/saeckel.css" />
         <link rel="icon" href="/saeckel/static/img/hof-mark.svg" type="image/svg+xml" />
+        <script src="/static/fx-head.js"></script>
+        <script type="module" src="/static/fx.js"></script>
       </head>
       <body>
         ${body}

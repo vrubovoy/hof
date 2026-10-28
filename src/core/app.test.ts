@@ -16,6 +16,7 @@ import { migrate } from '../migrate.ts';
 import { startFirstRun } from './gate-key.ts';
 import { hashPassword, verifyPassword } from './password.ts';
 import { createSession, hashSessionToken, newSessionToken, sessionCookie } from './sessions.ts';
+import { soundFiles } from './static/fx.js';
 
 const password = process.env.HOF_CORE_DB_PASSWORD;
 assert.ok(password, 'HOF_CORE_DB_PASSWORD is not set: create .env from .env.example');
@@ -906,8 +907,10 @@ describe('my chambers', () => {
     assert.match(page, /name="current"\s+type="password"\s+autocomplete="current-password"/);
     assert.match(page, /name="password2?"\s+type="password"\s+autocomplete="new-password"/);
     assert.ok(!page.includes('Пароль сменён.'));
-    // «Звуки и движение» comes with the effects (M10).
-    assert.ok(!page.includes('Звуки и движение'));
+    // «Звуки и движение» between the password and the way out, hidden until fx.js shows it.
+    const settings = page.indexOf('<section id="fx-settings" class="framed fx-settings" hidden>');
+    assert.ok(settings > page.indexOf('action="/account/password"'));
+    assert.ok(settings < page.indexOf('action="/logout"', page.indexOf('chambers-password')));
   });
 
   test('anyone else: only the login', async (t) => {
@@ -1309,7 +1312,8 @@ describe('the pages of the administrator: who gets in', () => {
     }
     // The same page whatever the request carried: no login, no query, no address.
     assert.equal(await loaded.text(), page);
-    for (const absent of ['anna', 'script', 'created', '203.0.113.7', 'admin']) {
+    // The page names its own two scripts (§6); the one of the query never reaches it.
+    for (const absent of ['anna', 'alert', '<script>', 'created', '203.0.113.7', 'admin']) {
       assert.ok(!page.includes(absent), absent);
     }
   });
@@ -2753,6 +2757,23 @@ describe('the error pages', () => {
 describe('the look of Hof: pages, CSS and static files', () => {
   const STATIC = join(import.meta.dirname, 'static');
 
+  // §6: every page has the two scripts of the effects in <head> — the one before the first
+  // paint, then the module — and no other script, no inline code and no handler attribute.
+  function assertScripts(page: string, name: string) {
+    const scripts = [...page.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/g)].map((m) => m[0]);
+    assert.deepEqual(
+      scripts,
+      [
+        '<script src="/static/fx-head.js"></script>',
+        '<script type="module" src="/static/fx.js"></script>',
+      ],
+      name,
+    );
+    assert.equal((page.match(/<script/g) ?? []).length, 2, name);
+    assert.ok(page.indexOf('<script type="module"') < page.indexOf('</head>'), name);
+    assert.doesNotMatch(page, /\son[a-z]+=/i, name);
+  }
+
   // Every file of the static folder, by its address after /static/.
   function folderFiles(dir = STATIC, prefix = ''): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
@@ -2849,12 +2870,12 @@ describe('the look of Hof: pages, CSS and static files', () => {
     return { app, pages: texts };
   }
 
-  test('pages: one h1, no style attribute, script or other site; every named file is served', async (t) => {
+  test('pages: one h1, no style attribute, only the scripts of the effects, no other site; every named file is served', async (t) => {
     const { app, pages } = await drawnPages(t);
     for (const [name, page] of pages) {
       assert.equal((page.match(/<h1[\s>]/g) ?? []).length, 1, name);
       assert.doesNotMatch(page, /\sstyle=/, name);
-      assert.ok(!page.includes('<script'), name);
+      assertScripts(page, name);
       assert.doesNotMatch(page, /https?:\/\//, name);
       for (const address of pageFiles(page)) {
         assert.match(address, /^\/(saeckel\/)?static\//, `${name}: ${address}`);
@@ -2878,17 +2899,64 @@ describe('the look of Hof: pages, CSS and static files', () => {
     }
   });
 
-  test('every file of the static folder is served and named, the font licence aside', async (t) => {
+  // §6: «Звуки и движение» only in my chambers, hidden until fx.js shows it; the settings of the
+  // device are not a form and add no field to any form.
+  test('«Звуки и движение»: only in my chambers, hidden, not a form, every control named', async (t) => {
+    const { pages } = await drawnPages(t);
+    const chambers = ['my chambers', 'password changed', 'short new password', 'chambers of anna'];
+    for (const [name, page] of pages) {
+      const blocks = page.match(/<section id="fx-settings"[\s\S]*?<\/section>/g) ?? [];
+      if (!chambers.includes(name)) {
+        assert.equal(blocks.length, 0, name);
+        continue;
+      }
+      assert.equal(blocks.length, 1, name);
+      const [block = ''] = blocks;
+      assert.match(block, /^<section id="fx-settings" class="framed fx-settings" hidden>/, name);
+      assert.match(block, /<h2 class="title t-3">Звуки и движение<\/h2>/, name);
+      assert.doesNotMatch(block, /<form|<button|\sname=/, name);
+      // Not inside a form either: the block stands between the two forms of the page.
+      const before = page.slice(0, page.indexOf('<section id="fx-settings"'));
+      assert.equal(before.split('<form').length, before.split('</form>').length, name);
+      const boxes = [
+        ...block.matchAll(
+          /<label class="check"\s*><input type="checkbox" data-setting="(\w+)" \/>/g,
+        ),
+      ];
+      assert.deepEqual(
+        boxes.map((match) => match[1]),
+        ['anim', 'sound', 'music'],
+        name,
+      );
+      const sliders = [...block.matchAll(/<input\s[^>]*type="range"[^>]*>/g)].map((m) => m[0]);
+      assert.equal(sliders.length, 2, name);
+      assert.match(
+        sliders[0]!,
+        /data-setting="soundVol"[\s\S]*aria-label="Громкость звуков"/,
+        name,
+      );
+      assert.match(
+        sliders[1]!,
+        /data-setting="musicVol"[\s\S]*aria-label="Громкость музыки"/,
+        name,
+      );
+      assert.equal((block.match(/<input\s/g) ?? []).length, 5, name);
+    }
+  });
+
+  test('every file of the static folder is served and named, the licences aside', async (t) => {
     const { app, pages } = await drawnPages(t);
     const css = await (await get(app, '/static/hof.css')).text();
     const named = new Set([
       '/static/hof.css',
       ...cssReferences(css),
       ...pages.flatMap(([, page]) => pageFiles(page)),
+      // Sounds and music are asked for by fx.js, not by a page.
+      ...soundFiles(),
     ]);
     for (const file of folderFiles()) {
       assert.equal((await get(app, `/static/${file}`)).status, 200, file);
-      if (file === 'fonts/OFL.txt') continue;
+      if (file === 'fonts/OFL.txt' || file === 'sounds/LICENSE.txt') continue;
       assert.ok(named.has(`/static/${file}`), `nothing names ${file}`);
     }
   });

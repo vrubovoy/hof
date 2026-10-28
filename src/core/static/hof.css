@@ -941,6 +941,82 @@ a {
   height: 26px;
   object-fit: contain;
 }
+/* «Звуки и движение»: без скрипта блока нет — правило не перебивает атрибут hidden. Флажок и
+   ползунок нарисованы пером; фокус с клавиатуры — синяя рамка, как у полей */
+.fx-settings:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px 30px 18px;
+}
+.check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+.check input {
+  appearance: none;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: 1px 0 0;
+  background: url(img/pen-check.svg) 0 0 / 24px;
+  cursor: pointer;
+}
+.check input:checked {
+  background-image: url(img/pen-check-on.svg);
+}
+.check input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+.check b {
+  display: block;
+  font-weight: 600;
+}
+/* громкость: дорожка — линия пером, ручка — охристая печать */
+.volume {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 3.2em;
+  align-items: center;
+  gap: 12px;
+  padding-left: 34px;
+}
+.volume input {
+  appearance: none;
+  width: 100%;
+  height: 26px;
+  margin: 0;
+  background: url(img/pen-rule.svg) 0 50% / 100% 6px no-repeat;
+  cursor: pointer;
+}
+.volume input::-webkit-slider-thumb {
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  background: url(img/pen-knob.svg) 0 0 / 26px;
+}
+.volume input::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 0;
+  background: url(img/pen-knob.svg) 0 0 / 26px;
+}
+.volume input::-moz-range-track {
+  background: none;
+}
+.volume input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.volume output {
+  font-size: 15px;
+  color: var(--ink-2);
+  text-align: right;
+}
 
 @media (min-width: 1024px) {
   /* бумага не уже, чем в прототипе (552 px); картина — 600 px, на узком окне уже */
@@ -1021,6 +1097,12 @@ a {
   .chambers-password .btn,
   .chambers-out .btn {
     width: 100%;
+  }
+  .fx-settings:not([hidden]) {
+    padding: 20px 20px 18px;
+  }
+  .fx-settings .volume {
+    padding-left: 0;
   }
   .chambers-out {
     padding-left: 0;

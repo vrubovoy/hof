@@ -129,7 +129,8 @@ interface LoginUser {
   is_disabled: boolean;
 }
 
-// Every page of Core: the CSS of Hof (§6) and the mark of Hof as the icon of the tab.
+// Every page of Core: the CSS of Hof (§6), the mark of Hof as the icon of the tab and the two
+// scripts of the effects — without them every page works the same.
 function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString>) {
   return html`<!doctype html>
     <html lang="ru">
@@ -139,6 +140,8 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
         <title>${title}</title>
         <link rel="stylesheet" href="/static/hof.css" />
         <link rel="icon" href="/static/img/hof-mark.svg" type="image/svg+xml" />
+        <script src="/static/fx-head.js"></script>
+        <script type="module" src="/static/fx.js"></script>
       </head>
       <body>
         ${body}
@@ -593,11 +596,75 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
   });
 }
 
+// «Звуки и движение» (design/preview/Account.html, AccountMobile.html, §6): the settings of this
+// device, kept by the browser, not by Hof — so not a form, it sends nothing. Hidden: fx.js shows it
+// and sets the boxes and sliders; without the script there is nothing to set. The phone has the
+// shorter texts of AccountMobile.
+const FX_SETTINGS = html`<section id="fx-settings" class="framed fx-settings" hidden>
+  <h2 class="title t-3">Звуки и движение</h2>
+  <label class="check"
+    ><input type="checkbox" data-setting="anim" /><span
+      ><b>Анимации</b
+      ><span class="small muted"
+        >знамя, фонтан, ветер<span class="text-full"> в листве</span>, двери, переходы</span
+      ></span
+    ></label
+  >
+  <label class="check"
+    ><input type="checkbox" data-setting="sound" /><span
+      ><b>Звуки</b
+      ><span class="small muted"
+        >двери, сундук, монеты, кот, вода и ветер<span class="text-full"> во дворе</span></span
+      ></span
+    ></label
+  >
+  <div class="volume">
+    <span class="small muted">громкость</span>
+    <input
+      type="range"
+      min="0"
+      max="100"
+      step="5"
+      value="80"
+      data-setting="soundVol"
+      aria-label="Громкость звуков"
+    />
+    <output>80&nbsp;%</output>
+  </div>
+  <label class="check"
+    ><input type="checkbox" data-setting="music" /><span
+      ><b>Музыка</b
+      ><span class="small muted"
+        >лютня и старинные напевы<span class="text-full"
+          >, одна на всех экранах — играет дальше при переходах</span
+        ></span
+      ></span
+    ></label
+  >
+  <div class="volume">
+    <span class="small muted">громкость</span>
+    <input
+      type="range"
+      min="0"
+      max="100"
+      step="5"
+      value="50"
+      data-setting="musicVol"
+      aria-label="Громкость музыки"
+    />
+    <output>50&nbsp;%</output>
+  </div>
+  <p class="hint">
+    Сначала всё выключено. Настройка этого устройства. Если браузер остановил музыку при переходе,
+    она продолжится с первого нажатия на странице.
+  </p>
+</section>`;
+
 // Texts and the picture from design/preview/Account.html and AccountMobile.html: who is signed
-// in, the change of the password in a frame, the way out. The «Звуки и движение» block comes
-// with the effects (M10). On a computer the picture of the chambers stands to the right the whole
-// height of the window, on the phone it is a band at the top and the hint of the way out is not
-// drawn (text-full). No password is ever written back into the page.
+// in, the change of the password in a frame, «Звуки и движение», the way out. On a computer the
+// picture of the chambers stands to the right the whole height of the window, on the phone it is
+// a band at the top and the longer texts are not drawn (text-full). No password is ever written
+// back into the page.
 function accountPage(user: CurrentUser, services: readonly Service[], form: AccountForm) {
   const describedBy = (field: PasswordField, hint?: string) => {
     const ids = [hint, form.error?.field === field ? `${field}-error` : undefined].filter(Boolean);
@@ -669,6 +736,7 @@ function accountPage(user: CurrentUser, services: readonly Service[], form: Acco
           </p>
           <button type="submit" class="btn btn-blue">Сменить пароль</button>
         </form>
+        ${FX_SETTINGS}
         <form class="chambers-out" method="post" action="/logout">
           <button type="submit" class="btn" aria-describedby="logout-hint">
             <img src="/static/img/emblem-door-closed-small.webp" alt="" />Покинуть двор
