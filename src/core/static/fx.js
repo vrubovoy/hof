@@ -230,18 +230,27 @@ function start() {
   /**
    * @param {HTMLAudioElement} audio
    * @param {number} gain
-   * @returns {AudioParam | null}
+   * @returns {{ gain: AudioParam | null, release: () => void }}
    */
   function output(audio, gain) {
     try {
       context ??= new AudioContext();
       const node = context.createGain();
       node.gain.value = gain;
-      context.createMediaElementSource(audio).connect(node).connect(context.destination);
-      return node.gain;
+      const source = context.createMediaElementSource(audio);
+      source.connect(node).connect(context.destination);
+      // Connected nodes stay alive with the context: a sound done with lets them go.
+      let connected = true;
+      const release = () => {
+        if (!connected) return;
+        connected = false;
+        source.disconnect();
+        node.disconnect();
+      };
+      return { gain: node.gain, release };
     } catch {
       audio.volume = gain;
-      return null;
+      return { gain: null, release: () => {} };
     }
   }
   /**
@@ -288,16 +297,22 @@ function start() {
     const variant = pickVariant(count, lastVariant[name]);
     lastVariant[name] = variant;
     const audio = new Audio(soundAddress(name, variant));
-    output(audio, level(settings.soundVol));
+    const { release } = output(audio, level(settings.soundVol));
+    audio.addEventListener('ended', release, { once: true });
+    audio.addEventListener('error', release, { once: true });
     void context?.resume();
     // Not allowed or not loaded: silence, and nothing tries again.
-    audio.play().catch(() => {});
+    audio.play().catch(release);
     duck();
   }
 
   // ---- music: one player in this page; the piece and the place are kept for the next one.
-  /** @type {{ audio: HTMLAudioElement, gain: AudioParam | null, piece: number, from: number } | null} */
+  /** @typedef {{ audio: HTMLAudioElement, gain: AudioParam | null, release: () => void, piece: number, from: number }} Track */
+  /** @type {Track | null} */
   let track = null;
+  /** The player switched off a moment ago while it fades out, and the timer that stops it. */
+  /** @type {{ t: Track, timer: ReturnType<typeof setTimeout> } | null} */
+  let fading = null;
   let failures = 0;
   let savedAt = 0;
   let duckTimer = 0;
@@ -316,7 +331,7 @@ function start() {
   /** @param {number} piece @param {number} from seconds */
   function open(piece, from) {
     const audio = new Audio(pieceAddress(piece));
-    const t = { audio, gain: output(audio, 0), piece, from };
+    const t = { audio, ...output(audio, 0), piece, from };
     track = t;
     // A jump needs the server to answer ranges; where it cannot, the piece plays from its start.
     audio.addEventListener(
@@ -375,15 +390,27 @@ function start() {
   /** @param {NonNullable<typeof track>} t @param {number} seconds */
   function close(t, seconds) {
     if (track === t) track = null;
+    const stop = () => {
+      if (fading?.t === t) fading = null;
+      t.audio.pause();
+      t.audio.removeAttribute('src');
+      t.audio.load();
+      t.release();
+    };
+    if (seconds === 0) return stop();
+    // Still heard while it fades out: switched on again by then, this player comes back.
     setGain(t, 0, seconds);
-    setTimeout(
-      () => {
-        t.audio.pause();
-        t.audio.removeAttribute('src');
-        t.audio.load();
-      },
-      seconds * 1000 + 50,
-    );
+    fading = { t, timer: setTimeout(stop, seconds * 1000 + 50) };
+  }
+
+  /** «Музыка» on again while the piece switched off still fades out: the same player, no second one. */
+  function comeBack() {
+    if (fading === null || track !== null) return false;
+    clearTimeout(fading.timer);
+    track = fading.t;
+    fading = null;
+    begin(track);
+    return true;
   }
 
   function startMusic() {
@@ -434,8 +461,9 @@ function start() {
     showSettings();
     if (key === 'anim') showMotion();
     if (key === 'music') {
-      if (settings.music) startMusic();
-      else if (track !== null) close(track, 0.4);
+      if (settings.music) {
+        if (!comeBack()) startMusic();
+      } else if (track !== null) close(track, 0.4);
     }
     if (key === 'musicVol' && track !== null) setGain(track, musicGain(), 0.1);
   }
@@ -465,6 +493,11 @@ function start() {
     settings = readSettings(local);
     showMotion();
     showSettings();
+    // A piece put away while fading out ends now: the place to go on from is decided below.
+    if (fading !== null) {
+      clearTimeout(fading.timer);
+      close(fading.t, 0);
+    }
     if (!settings.music) {
       if (track !== null) close(track, 0);
       return;
