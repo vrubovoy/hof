@@ -41,6 +41,11 @@ const STATIC = join(import.meta.dirname, 'static');
 const files = new Hono();
 files.use('/saeckel/static/*', staticFiles('/saeckel/static/', STATIC));
 const served = async (address: string) => (await files.request(address)).status;
+// The scripts of the effects of Hof that every page names (§2, §6).
+const FX_SCRIPTS = [
+  '<script src="/static/fx-head.js"></script>',
+  '<script type="module" src="/static/fx.js"></script>',
+];
 
 // Every file of the static folder, by its address.
 function folderFiles(dir = STATIC, prefix = '/saeckel/static/'): string[] {
@@ -280,7 +285,13 @@ describe('the pages of Säckel', () => {
       assert.ok(status === 200 || status === 400, `${name}: ${status}`);
       assert.equal((page.match(/<h1[\s>]/g) ?? []).length, 1, name);
       assert.doesNotMatch(page, /\sstyle=/, name);
-      assert.ok(!page.includes('<script'), name);
+      // The two scripts of the effects of Hof in <head>, the only addresses of Core (§2, §6); no
+      // other script, no inline code, no handler attribute.
+      const scripts = [...page.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/g)].map((m) => m[0]);
+      assert.deepEqual(scripts, FX_SCRIPTS, name);
+      assert.equal((page.match(/<script/g) ?? []).length, 2, name);
+      assert.ok(page.indexOf('<script type="module"') < page.indexOf('</head>'), name);
+      assert.doesNotMatch(page, /\son[a-z]+=/i, name);
       assert.doesNotMatch(page, /https?:\/\//, name);
       // Every id once; every aria-describedby names one of them.
       const ids = [...page.matchAll(/\sid="([^"]*)"/g)].map((match) => match[1]!);
@@ -288,8 +299,9 @@ describe('the pages of Säckel', () => {
       for (const [, described] of page.matchAll(/aria-describedby="([^"]*)"/g)) {
         for (const id of described!.split(/\s+/)) assert.ok(ids.includes(id), `${name}: ${id}`);
       }
-      // Files only of the static folder of Säckel, never of Core's.
-      for (const address of pageFiles(page)) {
+      // Files only of the static folder of Säckel, never of Core's, but for the scripts above.
+      const own = FX_SCRIPTS.reduce((rest, script) => rest.replace(script, ''), page);
+      for (const address of pageFiles(own)) {
         assert.match(address, /^\/saeckel\/static\//, `${name}: ${address}`);
         assert.equal(await served(address), 200, `${name}: ${address}`);
       }
