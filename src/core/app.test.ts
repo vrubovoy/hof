@@ -3059,7 +3059,9 @@ describe('the look of Hof: pages, CSS and static files', () => {
   test('M10.2: «Принять ко двору», «Открыть ›», the hand, the error pages; the names stay', async (t) => {
     const { pages } = await drawnPages(t);
     const of = (name: string) => pages.find(([page]) => page === name)![1];
-    const main = (page: string) => ways(part(page, '<main', '</main>'));
+    // The doors of the courtyard aside (M10.3).
+    const main = (page: string) =>
+      ways(part(page, '<main', '</main>')).filter((way) => !way.endsWith(' door'));
     assert.deepEqual(main(of('courtyard, alone')), ['a /admin/users left keep']);
     assert.deepEqual(main(of('courtyard')), []);
     const keys = main(of('Приближённые'));
@@ -3101,5 +3103,90 @@ describe('the look of Hof: pages, CSS and static files', () => {
         );
       }
     }
+  });
+
+  // M10.3: the living courtyard. The layers of the map and the doors on it are pictures without a
+  // name, a link or a stop of Tab; the places keep their links and names, and the door of each is
+  // a piece of its link on a computer and a picture only on the phone.
+  test('M10.3: the layers and the doors of the courtyard; the places as before', async (t) => {
+    const { pages } = await drawnPages(t);
+    const DOORS: Record<string, string> = {
+      '/admin/users': 'gatehouse',
+      '/saeckel/': 'treasury',
+      '/account': 'tower',
+    };
+    const LAYERS = [
+      'fx-fountain',
+      'fx-banner fx-gate-l',
+      'fx-banner fx-gate-r',
+      'fx-banner fx-tower',
+      'fx-smoke',
+      'fx-leaves fx-olive',
+      'fx-leaves fx-bush-l',
+      'fx-leaves fx-bush-r',
+      'fx-leaves fx-tree',
+      'fx-birds',
+    ];
+    const courts = [];
+    for (const [name, page] of pages) {
+      if (!page.includes('<div class="court-map">')) {
+        assert.doesNotMatch(page, /class="(fx|door) |class="(place|court-doors)"/, name);
+        continue;
+      }
+      courts.push(name);
+      const map = part(page, '<div class="court-map">', '<nav class="court-places"');
+      assert.doesNotMatch(map, /\stabindex=|\sstyle=/, name);
+      const layers = [...map.matchAll(/<span class="fx ([^"]*)"([^>]*)>/g)];
+      assert.deepEqual(
+        layers.map(([, names, rest]) => `${names}${rest}`),
+        LAYERS.map((names) => `${names} aria-hidden="true"`),
+        name,
+      );
+      assert.equal(map.match(/<i><\/i>/g)?.length, 6, `${name}: three puffs, three birds`);
+      // The only links of the map are the places: the sign and the door in one link.
+      const places = [...map.matchAll(/<a\s([^>]*)>([\s\S]*?)<\/a\s*>/g)];
+      assert.equal(places.length, (map.match(/<a\s/g) ?? []).length, name);
+      const doors = places.map(([, attributes, body]) => {
+        const href = /href="([^"]*)"/.exec(attributes!)![1]!;
+        const door = DOORS[href]!;
+        assert.equal(
+          attributes!.trim(),
+          `class="place" href="${href}" data-fx="door" data-door="${door}"`,
+          `${name}: ${href}`,
+        );
+        assert.match(
+          body!,
+          new RegExp(
+            `^<span class="sign at-${door}"><span>[^<]+</span></span\\s*><span class="door door-${door}" aria-hidden="true"></span>$`,
+          ),
+          `${name}: ${href}`,
+        );
+        return door;
+      });
+      // On the phone the doors on the map are pictures; the signs under the map open them.
+      const phone = part(map, '<span class="court-doors" aria-hidden="true">', '</span></span>');
+      assert.doesNotMatch(phone, /<a\s/, name);
+      assert.deepEqual(
+        [...phone.matchAll(/<span class="door door-(\w+)" aria-hidden="true"><\/span>/g)].map(
+          (match) => match[1],
+        ),
+        doors,
+        name,
+      );
+      const list = part(page, '<nav class="court-places"', '</nav>');
+      for (const [, attributes] of list.matchAll(/<a\s([^>]*)>/g)) {
+        const href = /href="([^"]*)"/.exec(attributes!)![1]!;
+        assert.match(
+          attributes!.trim(),
+          new RegExp(
+            `^class="sign sign-sm" href="${href}" data-fx="door" data-door="${DOORS[href]}"$`,
+          ),
+          `${name}: ${href}`,
+        );
+      }
+      // The gatehouse is the way of the administrator only.
+      assert.equal(page.includes('gatehouse'), name !== 'courtyard of anna', name);
+    }
+    assert.deepEqual(courts, ['courtyard, alone', 'courtyard', 'courtyard of anna']);
   });
 });

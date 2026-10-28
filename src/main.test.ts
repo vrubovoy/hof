@@ -527,11 +527,15 @@ describe('Säckel in the court', () => {
       page,
       /<a class="nav" href="\/saeckel\/" data-fx="left">\s*<img src="\/saeckel\/static\/img\/emblem-saeckel-small.webp" alt="" \/>Säckel\s*<\/a>/,
     );
+    // On the map the sign and the door of the treasury are one link (M10.3).
     assert.match(
       page,
-      /<a class="sign at-treasury" href="\/saeckel\/"\s*><span>Säckel<\/span><\/a\s*>/,
+      /<a class="place" href="\/saeckel\/" data-fx="door" data-door="treasury"\s*><span class="sign at-treasury"><span>Säckel<\/span><\/span\s*><span class="door door-treasury" aria-hidden="true"><\/span><\/a\s*>/,
     );
-    assert.ok(page.includes('<a class="sign sign-sm" href="/saeckel/"><span>Säckel</span></a>'));
+    assert.match(
+      page,
+      /<a class="sign sign-sm" href="\/saeckel\/" data-fx="door" data-door="treasury"\s*><span>Säckel<\/span><\/a\s*>/,
+    );
     // Of the static folder of Säckel the courtyard names the emblem only, and it is served; every
     // other file of that folder is named by the pages of Säckel (src/saeckel/look.test.ts).
     const named = new Set([...page.matchAll(/="(\/saeckel\/static\/[^"]*)"/g)].map((m) => m[1]!));

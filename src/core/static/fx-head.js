@@ -17,6 +17,8 @@
 // What arrived is left for fx.js in `data-arrived` (the sound of a page is its own); the classes
 // of the arrival go when its animation ends.
 //
+// Through a door of the courtyard (M10.3) a page comes out of the dark (from-door).
+//
 // A page of the book (flip-fwd, flip-back) comes as a slide the same way, in every browser: with
 // View Transitions between documents Chrome turns a blank sheet instead of a page sent with
 // `Cache-Control: no-store` (§4.9), so Hof does not use them.
@@ -40,6 +42,7 @@
     'flip-fwd': 'from-right',
     'flip-back': 'from-left',
     page: null,
+    door: 'from-door',
   };
 
   let move = false;
@@ -105,7 +108,7 @@
     marker = row.marker;
   }
 
-  const end = () => root.classList.remove('from-left', 'from-right', 'keep-banner');
+  const end = () => root.classList.remove('from-left', 'from-right', 'from-door', 'keep-banner');
   if (arrived !== null) {
     root.dataset.arrived = arrived;
     const cls = move && fx !== null ? ARRIVE[fx] : null;
@@ -126,7 +129,8 @@
     document.addEventListener('readystatechange', check, { once: true });
     requestAnimationFrame(check);
   }
-  // The slide in ends with its veil (both CSS files name the animation so).
+  // The slide in and the way out of the dark end with their veil (both CSS files name the
+  // animation so).
   document.addEventListener('animationend', (event) => {
     if (event.animationName === 'veil-out') end();
   });

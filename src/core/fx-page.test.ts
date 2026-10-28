@@ -4,7 +4,8 @@
 // short sound lets go of its Web Audio nodes when it ends, fails or is refused. The way to the
 // next page (M10.2): a slide waits, a second press goes at once, presses of the browser's own are
 // left alone, a form is never held and leaves the flag of its act, the door opens with it; back
-// from the back/forward cache the page is as before it left.
+// from the back/forward cache the page is as before it left. The living courtyard (M10.3): the
+// door of a place, the chains of the wind and the birds, the fountain.
 
 import assert from 'node:assert/strict';
 import { describe, test, type TestContext } from 'node:test';
@@ -41,6 +42,7 @@ class FakeAudio {
   // Set by a test: play() is refused, as by the autoplay rules of a browser.
   static refuse = false;
   paused = true;
+  loop = false;
   currentTime = 0;
   duration = 100;
   readyState = 1;
@@ -174,6 +176,62 @@ class FakeInput {
 
 const ORIGIN = 'https://hof.test';
 
+// A box of the courtyard as fx.js measures it, in px of the window.
+type Box = { left: number; top: number; right: number; bottom: number };
+class FakeBox extends FakeElement {
+  box: Box;
+  // What closest() finds, by the selector.
+  outer: Record<string, FakeBox> = {};
+  style = {
+    transformOrigin: '',
+    removeProperty(name: string) {
+      if (name === 'transform-origin') this.transformOrigin = '';
+    },
+  };
+  offsetWidth = 0;
+  constructor(box: Box, ...names: string[]) {
+    super();
+    this.box = box;
+    this.classList.add(...names);
+  }
+  getBoundingClientRect() {
+    const { left, top, right, bottom } = this.box;
+    return { left, top, right, bottom, width: right - left, height: bottom - top };
+  }
+  getClientRects() {
+    return this.box.right > this.box.left ? [this.getBoundingClientRect()] : [];
+  }
+  closest(selector: string) {
+    return this.outer[selector] ?? null;
+  }
+  addEventListener() {}
+}
+
+// The courtyard of a computer 1440×900: the map right of the banner (1152 px wide, its top 34 px
+// cut off), the layers, and the door of the treasury twice — in its link and on the map of the
+// phone, not drawn here. `door` moves the drawn door.
+function courtyard(door: Box = { left: 722.25, top: 287.75, right: 776.25, bottom: 396.5 }) {
+  const map = new FakeBox({ left: 288, top: 0, right: 1440, bottom: 610 }, 'court-map');
+  const inner = new FakeBox({ left: 288, top: -34, right: 1440, bottom: 734 }, 'court-inner');
+  const doors = [
+    new FakeBox(door, 'door', 'door-treasury'),
+    new FakeBox({ left: 0, top: 0, right: 0, bottom: 0 }, 'door', 'door-treasury'),
+  ];
+  for (const d of doors) d.outer = { '.court-inner': inner, '.court-map': map };
+  const leaves = ['olive', 'bush-l', 'bush-r', 'tree'].map(
+    (name) => new FakeBox(map.box, 'fx', 'fx-leaves', `fx-${name}`),
+  );
+  return {
+    map,
+    inner,
+    doors,
+    leaves,
+    fountain: new FakeBox(map.box, 'fx', 'fx-fountain'),
+    flock: new FakeBox(map.box, 'fx', 'fx-birds'),
+  };
+}
+type Court = ReturnType<typeof courtyard>;
+
 function memory() {
   const values = new Map<string, string>();
   return {
@@ -188,13 +246,27 @@ type Settings = Partial<Record<'anim' | 'sound' | 'music', boolean>>;
 
 // A new page each time: its own storage, block and module instance of fx.js. `settings` are kept
 // on this device before the page opens; `phone` — the window is as narrow as a phone; `arrived` —
-// what fx-head.js left on <html>.
+// what fx-head.js left on <html>; `court` — the page is the courtyard; `reduced` — the system asks
+// for less motion; `active` — whether the person has acted on the page yet (unknown if left out);
+// `local` — the storage of this device, kept from an earlier page.
 let pages = 0;
 async function openChambers({
   settings = {},
   phone = false,
   arrived,
-}: { settings?: Settings; phone?: boolean; arrived?: string } = {}) {
+  court,
+  reduced = false,
+  active,
+  local = memory(),
+}: {
+  settings?: Settings;
+  phone?: boolean;
+  arrived?: string;
+  court?: Court;
+  reduced?: boolean;
+  active?: boolean;
+  local?: ReturnType<typeof memory>;
+} = {}) {
   FakeAudio.made = [];
   FakeAudio.refuse = false;
   FakeContext.last = null;
@@ -213,7 +285,6 @@ async function openChambers({
       blockListeners.set(type, [...(blockListeners.get(type) ?? []), listener]);
     },
   };
-  const local = memory();
   const session = memory();
   local.setItem('hof.fx', JSON.stringify(settings));
   const root = new FakeElement();
@@ -224,21 +295,50 @@ async function openChambers({
   const on = { document: new Map<string, Listener[]>(), window: new Map<string, Listener[]>() };
   const listen = (where: Map<string, Listener[]>) => (type: string, listener: Listener) =>
     void where.set(type, [...(where.get(type) ?? []), listener]);
+  const doc = {
+    hidden: false,
+    readyState: 'loading',
+    documentElement: root,
+    getElementById: (id: string) => (id === 'fx-settings' ? (court ? null : block) : null),
+    addEventListener: listen(on.document),
+    querySelector: (selector: string) =>
+      ({ '.fx-fountain': court?.fountain, '.fx-birds': court?.flock })[selector] ?? null,
+    querySelectorAll: (selector: string): unknown[] => {
+      if (selector === '.fx-leaves') return court?.leaves ?? [];
+      if (selector === '.court-inner') return court ? [court.inner] : [];
+      if (selector !== '.frames.open, .door.open') return [];
+      return [...forms.map((form) => form.frames), ...(court?.doors ?? [])].filter((element) =>
+        element.classList.contains('open'),
+      );
+    },
+    getElementsByClassName: (name: string) =>
+      (court?.doors ?? []).filter((door) => door.classList.contains(name)),
+  };
+  const activation = active === undefined ? undefined : { hasBeenActive: active };
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { userActivation: activation },
+    configurable: true,
+    writable: true,
+  });
   Object.assign(globalThis, {
     window: { localStorage: local, sessionStorage: session },
-    document: {
-      hidden: false,
-      documentElement: root,
-      getElementById: (id: string) => (id === 'fx-settings' ? block : null),
-      addEventListener: listen(on.document),
-      querySelectorAll: (selector: string) =>
-        selector === '.frames.open'
-          ? forms.map((form) => form.frames).filter((frames) => frames.classList.contains('open'))
-          : [],
+    document: doc,
+    innerWidth: 1440,
+    innerHeight: 900,
+    getComputedStyle: (element: FakeBox) => ({
+      backgroundImage: element.classList.contains('wake')
+        ? `url("${ORIGIN}/static/img/${[...element.classList.names].find((n) => n.startsWith('fx-') && n !== 'fx-leaves')}.webp")`
+        : 'none',
+    }),
+    Image: class {
+      src = '';
+      decode() {
+        return Promise.resolve();
+      }
     },
     location: { assign: (address: string) => void assigned.push(address) },
     matchMedia: (query: string) => ({
-      matches: query.includes('max-width') ? phone : false,
+      matches: query.includes('max-width') ? phone : query.includes('reduce') && reduced,
       addEventListener() {},
     }),
     addEventListener: listen(on.window),
@@ -246,6 +346,7 @@ async function openChambers({
     AudioContext: FakeContext,
     Element: FakeElement,
     HTMLAnchorElement: FakeLink,
+    HTMLElement: FakeBox,
     HTMLInputElement: FakeInput,
     HTMLFormElement: FakeForm,
     HTMLMediaElement: { HAVE_METADATA: 1 },
@@ -297,7 +398,31 @@ async function openChambers({
     }
     await settle();
   };
-  return { inputs, change, root, press, send, flag, assigned, backFromCache, hide };
+  // The tab hidden or seen again; the page loaded; an action of the person.
+  const seen = (on_: boolean) => {
+    doc.hidden = !on_;
+    fire(on.document, { type: 'visibilitychange' });
+  };
+  const loaded = () => fire(on.window, { type: 'load' });
+  const act = () => {
+    if (activation) activation.hasBeenActive = true;
+    fire(on.window, { type: 'pointerdown' });
+  };
+  return {
+    inputs,
+    change,
+    root,
+    press,
+    send,
+    flag,
+    assigned,
+    backFromCache,
+    hide,
+    seen,
+    loaded,
+    act,
+    local,
+  };
 }
 
 // Lets the promises of play() and resume() run.
@@ -598,5 +723,210 @@ describe('fx.js in a page: back from the back/forward cache and the arrival', ()
     }
     await openChambers({ arrived: 'flip-fwd' });
     assert.equal(sounds('page').length, 0, 'without «Звуки»');
+  });
+});
+
+describe('fx.js in a page: the living courtyard (M10.3)', () => {
+  const doorLink = (place = 'treasury', href = '/saeckel/') => {
+    const link = new FakeLink(href, 'door');
+    link.dataset.door = place;
+    return link;
+  };
+
+  test('a door: open at once with its creak, the zoom into its middle, the page at 1,7 s', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const court = courtyard();
+    const { press, root, flag, assigned } = await openChambers({
+      settings: { anim: true, sound: true },
+      court,
+    });
+    assert.equal(press(doorLink()).defaultPrevented, true);
+    assert.ok(root.classList.contains('go-door'));
+    assert.deepEqual(
+      court.doors.map((door) => door.classList.contains('open')),
+      [true, false],
+      'the door drawn, not the one of the phone',
+    );
+    // The middle of the door in per cent of the map: 615 and 501,5 px of 1536×1024.
+    const [x, y] = court.inner.style.transformOrigin.split(' ').map((v) => parseFloat(v));
+    assert.ok(Math.abs(x! - (615 / 1536) * 100) < 0.01, String(x));
+    assert.ok(Math.abs(y! - (501.5 / 1024) * 100) < 0.01, String(y));
+    assert.equal(flag('hof.arrive')?.fx, 'door');
+    t.mock.timers.tick(0);
+    assert.equal(sounds('door').length, 1, 'the creak in the frame of the press');
+    t.mock.timers.tick(1699);
+    assert.deepEqual(assigned, []);
+    t.mock.timers.tick(1);
+    assert.deepEqual(assigned, [`${ORIGIN}/saeckel/`]);
+  });
+
+  test('a door not seen: into the dark at once, 0,5 s, the door stays closed', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    // Below the part of the map that is drawn (as on a phone held across).
+    const court = courtyard({ left: 722, top: 640, right: 776, bottom: 750 });
+    const { press, root, assigned } = await openChambers({ settings: { anim: true }, court });
+    assert.equal(press(doorLink()).defaultPrevented, true);
+    assert.ok(root.classList.contains('go-dark'));
+    assert.ok(!root.classList.contains('go-door'));
+    assert.ok(court.doors.every((door) => !door.classList.contains('open')));
+    assert.equal(court.inner.style.transformOrigin, '');
+    t.mock.timers.tick(499);
+    assert.deepEqual(assigned, []);
+    t.mock.timers.tick(1);
+    assert.deepEqual(assigned, [`${ORIGIN}/saeckel/`]);
+  });
+
+  test('a second press on the door: the browser follows the link at once', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { press, assigned } = await openChambers({
+      settings: { anim: true },
+      court: courtyard(),
+    });
+    const link = doorLink();
+    press(link);
+    t.mock.timers.tick(300);
+    assert.equal(press(link).defaultPrevented, false);
+    t.mock.timers.tick(2000);
+    assert.deepEqual(assigned, [], 'nothing follows the link after the browser');
+  });
+
+  test('without «Анимации» the door goes at once; with «Звуки» it creaks on the next page', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    for (const reduced of [false, true]) {
+      const court = courtyard();
+      const page = await openChambers({
+        settings: { anim: reduced, sound: true },
+        court,
+        reduced,
+      });
+      assert.equal(page.press(doorLink()).defaultPrevented, false, `reduced ${reduced}`);
+      assert.deepEqual([...page.root.classList.names], [], `reduced ${reduced}`);
+      assert.ok(court.doors.every((door) => !door.classList.contains('open')));
+      assert.equal(page.flag('hof.arrive')?.fx, 'door');
+      t.mock.timers.tick(0);
+      assert.equal(sounds('door').length, 0, 'not here');
+    }
+    await openChambers({ settings: { sound: true }, arrived: 'door' });
+    assert.equal(sounds('door').length, 1, 'on the next page');
+    await openChambers({ settings: { anim: true, sound: true }, arrived: 'door' });
+    assert.equal(sounds('door').length, 0, 'with «Анимации» it creaked at the press');
+    const none = await openChambers({ court: courtyard() });
+    assert.equal(none.press(doorLink()).defaultPrevented, false);
+    assert.equal(none.flag('hof.arrive'), null);
+  });
+
+  test('back from the back/forward cache: the door closed, no zoom point, nothing followed', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const court = courtyard();
+    const { press, root, assigned, backFromCache } = await openChambers({
+      settings: { anim: true },
+      court,
+    });
+    press(doorLink());
+    backFromCache();
+    assert.deepEqual([...root.classList.names], ['fx-on']);
+    assert.ok(court.doors.every((door) => !door.classList.contains('open')));
+    assert.equal(court.inner.style.transformOrigin, '');
+    t.mock.timers.tick(5000);
+    assert.deepEqual(assigned, []);
+  });
+
+  test('the wind and the birds: one chain each, only while the tab is seen', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    // The shortest waits: the first flock at 4 s, a gust at 14 s, the next flock 20 s later.
+    t.mock.method(Math, 'random', () => 0);
+    const court = courtyard();
+    const { loaded, seen } = await openChambers({ settings: { anim: true, sound: true }, court });
+    assert.ok(
+      court.leaves.every((leaf) => !leaf.classList.contains('wake')),
+      'not before load',
+    );
+    loaded();
+    await settle();
+    assert.ok(court.leaves.every((leaf) => leaf.classList.contains('wake')));
+    t.mock.timers.tick(3999);
+    assert.ok(!court.flock.classList.contains('fly'));
+    t.mock.timers.tick(1);
+    assert.ok(court.flock.classList.contains('fly'));
+    court.flock.classList.remove('fly');
+    t.mock.timers.tick(10_000);
+    assert.equal(sounds('wind').length, 1);
+    assert.equal(court.leaves.filter((leaf) => leaf.classList.contains('gust')).length, 1);
+
+    seen(false);
+    t.mock.timers.tick(600_000);
+    assert.equal(sounds('wind').length, 1, 'nothing while hidden');
+    assert.ok(!court.flock.classList.contains('fly'));
+    seen(true);
+    t.mock.timers.tick(10_000);
+    assert.ok(court.flock.classList.contains('fly'), 'the flock 20 s after the last one');
+    t.mock.timers.tick(4_000);
+    assert.equal(sounds('wind').length, 2, 'the gust 14 s after the last one');
+  });
+
+  test('without «Анимации» or with less motion: no frames, no birds; the wind still sounds with «Звуки»', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    t.mock.method(Math, 'random', () => 0);
+    for (const reduced of [false, true]) {
+      const court = courtyard();
+      const { loaded, root, hide } = await openChambers({
+        settings: { anim: reduced, sound: true },
+        court,
+        reduced,
+      });
+      loaded();
+      await settle();
+      t.mock.timers.tick(14_000);
+      hide();
+      assert.ok(!root.classList.contains('fx-on'));
+      assert.ok(
+        court.leaves.every((leaf) => leaf.classList.names.size === 3),
+        'not woken',
+      );
+      assert.ok(!court.flock.classList.contains('fly'));
+      assert.equal(sounds('wind').length, 1, `reduced ${reduced}`);
+    }
+    const silent = await openChambers({ court: courtyard() });
+    silent.loaded();
+    t.mock.timers.tick(600_000);
+    assert.equal(sounds('wind').length, 0);
+  });
+
+  test('the fountain: the next loop on each visit, 2 s to come up, after an action of the person', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const local = memory();
+    const loops = [];
+    for (let visit = 0; visit < 4; visit += 1) {
+      await openChambers({ settings: { sound: true }, court: courtyard(), local });
+      const [water] = sounds('fountain');
+      assert.equal(water?.paused, false);
+      assert.equal(water?.loop, true);
+      assert.equal(wiresOf(water).gain.gain.value, 0.8);
+      loops.push(water.src);
+    }
+    assert.deepEqual(
+      loops,
+      [1, 2, 3, 1].map((n) => `/static/sounds/fountain-${n}.m4a`),
+    );
+
+    // Before the person has acted on the page: nothing yet, then the next loop.
+    const waiting = await openChambers({
+      settings: { sound: true },
+      court: courtyard(),
+      local,
+      active: false,
+    });
+    assert.equal(sounds('fountain').length, 0);
+    waiting.act();
+    await settle();
+    assert.deepEqual(
+      sounds('fountain').map((audio) => audio.src),
+      ['/static/sounds/fountain-2.m4a'],
+    );
+
+    await openChambers({ court: courtyard() });
+    assert.equal(sounds('fountain').length, 0, 'without «Звуки»');
+    await openChambers({ settings: { sound: true } });
+    assert.equal(sounds('fountain').length, 0, 'not on another page');
   });
 });

@@ -1,8 +1,9 @@
 // fx.js (ARCHITECTURE.md §6, §4.8): what the effects decide, without a page — the settings of the
 // device, motion, variants of a sound, the place of the music, the guard against a form sent
-// twice, what a press on a link does (M10.2) — and that every sound it may ask for is in static
-// and in the licence list. fx-head.js, a script of <head> without exports, runs here as it is
-// against a page made of only what it reads: how a page arrives after a link or a form.
+// twice, what a press on a link does (M10.2), the fountain, the rare events of the courtyard and
+// the way through a door (M10.3) — and that every sound it may ask for is in static and in the
+// licence list. fx-head.js, a script of <head> without exports, runs here as it is against a page
+// made of only what it reads: how a page arrives after a link or a form.
 
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -12,17 +13,27 @@ import { createContext, runInContext } from 'node:vm';
 import {
   AFTER_KEY,
   ARRIVE_KEY,
+  DARK_MS,
   DEFAULTS,
+  DOOR_MS,
+  FLOCK,
+  FOUNTAIN_KEY,
+  FOUNTAINS,
+  GUST,
   LINK_FX,
   MUSIC_KEY,
   PIECES,
   SETTINGS_KEY,
   SOUNDS,
+  between,
   canMove,
+  createChain,
   createGuard,
+  doorWay,
   firstPiece,
   leaving,
   level,
+  nextFountain,
   nextPiece,
   pickVariant,
   plainPress,
@@ -243,10 +254,28 @@ describe('fx: the sounds it may ask for', () => {
     }
   });
 
+  test('the wind and the fountain: every file in static, its record CC0 on freesound', () => {
+    assert.equal(SOUNDS.wind, 6);
+    assert.equal(FOUNTAINS, 3);
+    const files = [
+      ...Array.from({ length: 6 }, (_, i) => `wind-${i + 1}.m4a`),
+      ...Array.from({ length: 3 }, (_, i) => `fountain-${i + 1}.m4a`),
+    ];
+    for (const file of files) {
+      assert.ok(existsSync(join(STATIC, 'sounds', file)), file);
+      const entry = licence.split(/\n(?=\S)/).find((part) => part.startsWith(`${file}\n`));
+      assert.match(
+        entry ?? '',
+        /Страница: https:\/\/freesound\.org\/people\/[^/]+\/sounds\/\d+\/ — Creative Commons 0/,
+        file,
+      );
+    }
+  });
+
   test('every file fx.js may ask for is in static and in the licence list', () => {
     const files = soundFiles();
     const sets = Object.values(SOUNDS).reduce((sum, count) => sum + count, 0);
-    assert.equal(files.length, sets + PIECES);
+    assert.equal(files.length, sets + FOUNTAINS + PIECES);
     for (const address of files) {
       const name = address.replace('/static/sounds/', '');
       assert.ok(existsSync(join(STATIC, 'sounds', name)), address);
@@ -310,8 +339,12 @@ describe('fx: a press on a link (M10.2)', () => {
       ['flip-back', { move: false }, null],
       ['page', { move: false }, null],
       [undefined, {}, null],
-      ['door', {}, null],
       ['logout', {}, null],
+      // M10.3: through a door with «Анимации»; without them it creaks on the next page.
+      ['door', {}, { fx: 'door', away: 'go-door' }],
+      ['door', { phone: true }, { fx: 'door', away: 'go-door' }],
+      ['door', { move: false, sound: true }, { fx: 'door', away: null }],
+      ['door', { move: false }, null],
     ];
     for (const [fx, change, expected] of cases) {
       assert.deepEqual(
@@ -320,7 +353,15 @@ describe('fx: a press on a link (M10.2)', () => {
         `${fx} ${JSON.stringify(change)}`,
       );
     }
-    assert.deepEqual(LINK_FX, ['left', 'right', 'flip-fwd', 'flip-back', 'flip-fwd-phone', 'page']);
+    assert.deepEqual(LINK_FX, [
+      'left',
+      'right',
+      'flip-fwd',
+      'flip-back',
+      'flip-fwd-phone',
+      'page',
+      'door',
+    ]);
   });
 
   test('a flag is left as JSON, taken away by null; a storage that refuses does not throw', () => {
@@ -416,6 +457,155 @@ function visit({
     frame: () => frames.splice(0).forEach((frame) => frame()),
   };
 }
+
+describe('fx: the living courtyard (M10.3)', () => {
+  test('the fountain: the loops go round from 1, a visit after another', () => {
+    const storage = memory();
+    const loops = Array.from({ length: 7 }, () => nextFountain(storage));
+    assert.deepEqual(loops, [1, 2, 3, 1, 2, 3, 1]);
+    assert.equal(storage.values[FOUNTAIN_KEY], '1');
+  });
+
+  test('the fountain: nothing kept, something broken or no storage — the first', () => {
+    for (const kept of ['oops', '-1', '1.5', '"2"', 'null', '{}']) {
+      const storage = memory();
+      storage.values[FOUNTAIN_KEY] = kept;
+      assert.equal(nextFountain(storage), 1, kept);
+      assert.equal(nextFountain(storage), 2, kept);
+    }
+    const counted = memory();
+    counted.values[FOUNTAIN_KEY] = '7';
+    assert.equal(nextFountain(counted), 2, 'a count from before goes on round');
+    assert.equal(nextFountain(null), 1);
+    assert.equal(nextFountain(refusing), 1);
+  });
+
+  test('a gust every 14–40 s, a flock first in 4–10 s, then every 20–70 s', () => {
+    assert.deepEqual(GUST, { first: [14_000, 40_000], every: [14_000, 40_000] });
+    assert.deepEqual(FLOCK, { first: [4_000, 10_000], every: [20_000, 70_000] });
+    for (const bounds of [GUST.first, GUST.every, FLOCK.first, FLOCK.every]) {
+      for (const random of [0, 0.25, 0.5, 0.999_999]) {
+        const ms = between(bounds, () => random);
+        assert.ok(ms >= bounds[0] && ms < bounds[1], `${bounds.join('–')} ${random} → ${ms}`);
+      }
+    }
+  });
+
+  // A clock of the test: the timers pending, the time now.
+  function testClock() {
+    let now = 0;
+    let next = 1;
+    const timers = new Map<number, { at: number; go: () => void }>();
+    return {
+      timers,
+      set: (go: () => void, ms: number) => {
+        timers.set(next, { at: now + ms, go });
+        return next++;
+      },
+      clear: (timer: unknown) => void timers.delete(timer as number),
+      now: () => now,
+      // Time goes on by `ms`; due timers fire in their order.
+      run(ms: number) {
+        const end = now + ms;
+        for (;;) {
+          const [id, due] = [...timers].sort((a, b) => a[1].at - b[1].at)[0] ?? [];
+          if (due === undefined || due.at > end) break;
+          timers.delete(id!);
+          now = due.at;
+          due.go();
+        }
+        now = end;
+      },
+    };
+  }
+
+  test('a chain: the first after `first`, then every `every`, never more than one timer', () => {
+    const clock = testClock();
+    const fired: number[] = [];
+    let random = 0.5;
+    const chain = createChain(
+      () => fired.push(clock.now()),
+      FLOCK,
+      clock,
+      () => random,
+    );
+    assert.equal(clock.timers.size, 0, 'nothing before it is resumed');
+    chain.resume();
+    chain.resume();
+    assert.equal(clock.timers.size, 1);
+    clock.run(6_999);
+    assert.deepEqual(fired, []);
+    clock.run(1);
+    assert.deepEqual(fired, [7_000]);
+    random = 0;
+    clock.run(45_000 + 20_000);
+    assert.deepEqual(fired, [7_000, 52_000, 72_000]);
+    assert.equal(clock.timers.size, 1);
+  });
+
+  test('a chain paused keeps the time left; hidden for long, nothing fires and nothing piles up', () => {
+    const clock = testClock();
+    const fired: number[] = [];
+    const chain = createChain(
+      () => fired.push(clock.now()),
+      GUST,
+      clock,
+      () => 0,
+    );
+    chain.resume();
+    clock.run(10_000);
+    chain.pause();
+    chain.pause();
+    assert.equal(clock.timers.size, 0);
+    clock.run(3_600_000);
+    assert.deepEqual(fired, []);
+    for (let i = 0; i < 50; i += 1) {
+      chain.resume();
+      chain.pause();
+    }
+    assert.equal(clock.timers.size, 0);
+    chain.resume();
+    assert.equal(clock.timers.size, 1);
+    clock.run(3_999);
+    assert.deepEqual(fired, []);
+    clock.run(1);
+    assert.deepEqual(fired, [3_610_000 + 4_000]);
+  });
+
+  test('through a door in 1,7 s while its middle is seen; into the dark in 0,5 s otherwise', () => {
+    assert.equal(DOOR_MS, 1700);
+    assert.equal(DARK_MS, 500);
+    const view = { width: 1440, height: 900 };
+    const map = { left: 288, top: 0, right: 1440, bottom: 610 };
+    const door = { left: 722, top: 288, right: 776, bottom: 397 };
+    const through = { away: 'go-door', ms: 1700 };
+    const dark = { away: 'go-dark', ms: 500 };
+    assert.deepEqual(doorWay(door, map, view), through);
+    // The map scrolled half away: the middle of the door is still in the window.
+    const up = (box: typeof door, by: number) => ({
+      ...box,
+      top: box.top - by,
+      bottom: box.bottom - by,
+    });
+    assert.deepEqual(doorWay(up(door, 300), up(map, 300), view), through);
+    // Scrolled further: the middle above the window.
+    assert.deepEqual(doorWay(up(door, 360), up(map, 360), view), dark);
+    // The phone held across: the door lies below the part of the map drawn (60 % of 390 px).
+    const phone = { width: 844, height: 390 };
+    assert.deepEqual(
+      doorWay(
+        { left: 733, top: 252, right: 779, bottom: 377 },
+        { left: 0, top: 60, right: 844, bottom: 294 },
+        phone,
+      ),
+      dark,
+    );
+    // Not drawn, or no door at all.
+    assert.deepEqual(doorWay({ left: 0, top: 0, right: 0, bottom: 0 }, map, view), dark);
+    assert.deepEqual(doorWay(null, map, view), dark);
+    assert.deepEqual(doorWay(door, null, view), dark);
+  });
+});
 
 describe('fx-head.js: the page after a form (hof.after)', () => {
   const LOGOUT = { act: 'logout', action: '/logout', at: NOW - 1000 };
@@ -560,6 +750,23 @@ describe('fx-head.js: the page after a link (hof.arrive)', () => {
       assert.deepEqual(page.classes(), ['fx-on'], name);
       assert.equal(page.arrived(), undefined, name);
       assert.equal(page.session.size, 0, name);
+    }
+  });
+
+  test('through a door of the courtyard (M10.3): out of the dark; without «Анимации» only told', () => {
+    for (const [path, to] of [
+      ['/saeckel/', '/saeckel/'],
+      ['/admin/users', '/admin/users'],
+      ['/account', '/account'],
+    ]) {
+      const page = visit({ arrive: link('door', to!), path: path! });
+      assert.deepEqual(page.classes(), ['from-door', 'fx-on'], path);
+      assert.equal(page.arrived(), 'door', path);
+    }
+    for (const change of [{ anim: false }, { reduced: true }]) {
+      const page = visit({ arrive: link('door', '/saeckel/'), path: '/saeckel/', ...change });
+      assert.deepEqual(page.classes(), [], JSON.stringify(change));
+      assert.equal(page.arrived(), 'door', JSON.stringify(change));
     }
   });
 
