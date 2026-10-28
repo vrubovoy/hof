@@ -1925,7 +1925,7 @@ mark.move {
   html:is(.go-left, .go-right, .from-left, .from-right) body {
     overflow-x: clip;
   }
-  html:is(.go-left, .go-right, .from-left, .from-right) body::after {
+  html:is(.go-left, .go-right, .from-left, .from-right, .from-door) body::after {
     content: '';
     position: fixed;
     inset: 0;
@@ -1940,6 +1940,11 @@ mark.move {
   html:is(.from-left, .from-right) body::after {
     opacity: 0.85;
     animation: veil-out 0.6s ease-out forwards;
+  }
+  /* в дверь казначейской на карте Двора: страница проявляется из темноты за 0,7 с */
+  .from-door body::after {
+    opacity: 1;
+    animation: veil-out 0.7s ease-out forwards;
   }
   /* виньетки и кляксы печатаются на бумагу страницы (multiply), а сдвигаемая страница — свой
      слой: на время перехода у неё та же бумага, иначе вокруг рисунков видна белая бумага
