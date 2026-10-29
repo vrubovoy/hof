@@ -3271,4 +3271,16 @@ describe('the look of Hof: pages, CSS and static files', () => {
     const disable = /action="(\/admin\/users\/\d+\/disable)"/.exec(card)![1]!;
     assert.deepEqual(fields(card, disable), []);
   });
+
+  // M10.6: in a window of 1024–1350 px the picture of «Мои покои» is cut by cover and its cat lies
+  // in the part cut off; the frame of the cats clips as the picture does, so the page does not grow
+  // sideways (it did by 160 px at 1024).
+  test('M10.6: the frame of the cats clips them, as the picture does', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = await (await get(app, '/static/hof.css')).text();
+    const frame = /\n\.cat-frame \{([^}]*)\}/.exec(css)![1]!;
+    assert.match(frame, /\boverflow: clip;/);
+    assert.match(frame, /\bposition: absolute;/);
+    assert.match(frame, /\binset: 0;/);
+  });
 });
