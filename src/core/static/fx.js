@@ -751,12 +751,7 @@ function start() {
       sound: settings.sound,
       phone: phone.matches,
     });
-    // A link that is ordinary here sounds as it is pressed and goes at once: «Разложить» of the
-    // treasury on a computer (M10.5) rings with coins.
-    if (effect === null) {
-      if (link.dataset.sound !== undefined) playSound(link.dataset.sound);
-      return;
-    }
+    if (effect === null) return;
     const keep = link.dataset.keep !== undefined;
     writeFlag(session, ARRIVE_KEY, {
       fx: effect.fx,

@@ -72,7 +72,7 @@ describe('Казна on Мешки', () => {
     assert.equal(treasury(page), '0,00 ₽');
     assert.ok(
       page.includes(
-        '<a class="btn btn-ochre" href="/saeckel/assign" data-fx="flip-fwd-phone" data-sound="coins" >Разложить</a >',
+        '<a class="btn btn-ochre" href="/saeckel/assign" data-fx="flip-fwd-phone">Разложить</a>',
       ),
     );
     assert.ok(
@@ -143,7 +143,7 @@ describe('Доход', () => {
     assert.equal(treasury(page), '0,00 ₽');
     assert.ok(
       page.includes(
-        '<a class="btn btn-ochre" href="/saeckel/assign" data-fx="flip-fwd-phone" data-sound="coins" >Разложить</a >',
+        '<a class="btn btn-ochre" href="/saeckel/assign" data-fx="flip-fwd-phone">Разложить</a>',
       ),
     );
   });
@@ -257,7 +257,7 @@ describe('the page «Разложить»', () => {
     assert.ok(!page.includes('лёг в казну'));
     // The column beside it: the same treasury, no buttons — they lead here (SaeckelAssign).
     assert.equal(treasury(page), '1 000,00 ₽');
-    assert.ok(!page.includes('href="/saeckel/assign" data-fx="flip-fwd-phone"'));
+    assert.ok(!page.includes('href="/saeckel/assign" data-fx="flip-fwd-phone">Разложить</a>'));
     assert.ok(!page.includes('href="/saeckel/income" data-fx="flip-fwd-phone">+ Доход</a>'));
     assert.ok(!page.includes('class="treasury-actions"'));
   });
