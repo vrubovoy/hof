@@ -17,7 +17,9 @@
 // What arrived is left for fx.js in `data-arrived` (the sound of a page is its own); the classes
 // of the arrival go when its animation ends.
 //
-// Through a door of the courtyard (M10.3) a page comes out of the dark (from-door).
+// Through a door of the courtyard (M10.3) a page comes out of the dark (from-door). After the
+// sign-in and the founding (M10.4) the courtyard comes out of the dark and the banner unrolls
+// (unroll); after «Забрать ключ» the key fades into the empty hook (key-off).
 //
 // A page of the book (flip-fwd, flip-back) comes as a slide the same way, in every browser: with
 // View Transitions between documents Chrome turns a blank sheet instead of a page sent with
@@ -25,14 +27,37 @@
 (() => {
   const root = document.documentElement;
   const FRESH = 30_000;
-  // The acts of forms: the address of the form, where it leads, what that page shows, and the way
-  // the page arrives (as fx of a link). M10.4 and M10.5 add theirs.
+  // The acts of forms: the address of the form (a pattern), the addresses it leads to and what
+  // that page shows — both may depend on the address of the form — and the way the page arrives:
+  // as fx of a link (fx) or classes of its own (arrive). M10.5 adds its own.
+  /** @type {Record<string, { action: RegExp, leads: (path: string, match: RegExpExecArray) => boolean, marker: (match: RegExpExecArray) => string, fx?: string, arrive?: string }>} */
   const AFTER = {
     logout: {
-      action: '/logout',
-      results: ['/login'],
-      marker: 'form[action="/login"]',
+      action: /^\/logout$/,
+      leads: (path) => path === '/login',
+      marker: () => 'form[action="/login"]',
       fx: 'right',
+    },
+    // Signed in, or the court founded: the banner is drawn only for a person signed in, so a way
+    // on to a page without it (`next` of Säckel) comes without an effect.
+    login: {
+      action: /^\/login$/,
+      leads: (path) => path !== '/login' && path !== '/setup',
+      marker: () => '.banner',
+      arrive: 'from-door unroll',
+    },
+    setup: {
+      action: /^\/setup$/,
+      leads: (path) => path === '/',
+      marker: () => '.banner',
+      arrive: 'from-door unroll',
+    },
+    // «Забрать ключ»: the card of the same person, now with «Вернуть ключ».
+    key: {
+      action: /^\/admin\/users\/(\d+)\/disable$/,
+      leads: (path, [, id]) => path === `/admin/users/${id}`,
+      marker: ([, id]) => `form[action="/admin/users/${id}/enable"]`,
+      arrive: 'key-off',
     },
   };
   // fx of the last page → the class of the arrival; the rustle of a page has none.
@@ -80,6 +105,8 @@
   let arrived = null;
   /** @type {string | null} */
   let fx = null;
+  /** The classes of the arrival of a form. @type {string | null} */
+  let arrive = null;
   let keep = false;
   /** @type {string | null} */
   let marker = null;
@@ -93,26 +120,31 @@
     keep = link.keep === true;
   }
   const row = Object.hasOwn(AFTER, form?.act) ? AFTER[form.act] : null;
+  const match =
+    row !== null && typeof form.action === 'string' ? row.action.exec(form.action) : null;
   if (
     row !== null &&
+    match !== null &&
     navigated &&
     (entry?.redirectCount ?? 0) >= 1 &&
     fresh(form.at) &&
-    form.action === row.action &&
-    location.pathname !== row.action &&
-    row.results.includes(location.pathname)
+    location.pathname !== form.action &&
+    row.leads(location.pathname, match)
   ) {
     arrived = form.act;
-    fx = row.fx;
+    fx = row.fx ?? null;
+    arrive = row.arrive ?? null;
     keep = false;
-    marker = row.marker;
+    marker = row.marker(match);
   }
 
-  const end = () => root.classList.remove('from-left', 'from-right', 'from-door', 'keep-banner');
+  const ARRIVALS = ['from-left', 'from-right', 'from-door', 'keep-banner', 'unroll', 'key-off'];
+  /** @param {string[]} names */
+  const end = (names) => root.classList.remove(...names);
   if (arrived !== null) {
     root.dataset.arrived = arrived;
-    const cls = move && fx !== null ? ARRIVE[fx] : null;
-    if (cls !== null) root.classList.add(cls);
+    const cls = !move ? null : fx !== null ? ARRIVE[fx] : arrive;
+    if (cls !== null) root.classList.add(...cls.split(' '));
     if (cls !== null && keep) root.classList.add('keep-banner');
   }
   // What the act shows is checked when the page is parsed, or at its first frame if the browser
@@ -123,15 +155,21 @@
       if (checked) return;
       checked = true;
       if (document.querySelector(marker) !== null) return;
-      end();
+      end(ARRIVALS);
       delete root.dataset.arrived;
     };
     document.addEventListener('readystatechange', check, { once: true });
     requestAnimationFrame(check);
   }
   // The slide in and the way out of the dark end with their veil (both CSS files name the
-  // animation so).
+  // animation so); the banner unrolled ends with its last swing — on the phone, without the
+  // banner, with the veil; the key with its fading.
   document.addEventListener('animationend', (event) => {
-    if (event.animationName === 'veil-out') end();
+    if (event.animationName === 'veil-out') {
+      end(['from-left', 'from-right', 'from-door', 'keep-banner']);
+      if (!document.querySelector('.banner')?.getClientRects().length) end(['unroll']);
+    }
+    if (event.animationName === 'fx-settle') end(['unroll']);
+    if (event.animationName === 'key-off') end(['key-off']);
   });
 })();

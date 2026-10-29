@@ -1942,7 +1942,7 @@ mark.move {
     animation: veil-out 0.6s ease-out forwards;
   }
   /* в дверь казначейской на карте Двора: страница проявляется из темноты за 0,7 с */
-  .from-door body::after {
+  html.from-door body::after {
     opacity: 1;
     animation: veil-out 0.7s ease-out forwards;
   }

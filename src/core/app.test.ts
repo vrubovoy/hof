@@ -274,7 +274,7 @@ describe('before founding', () => {
     const page = await res.text();
     for (const text of [
       'Основание двора',
-      '<form method="post" action="/setup">',
+      '<form method="post" action="/setup" data-fx="setup">',
       'Ключ от ворот',
       'name="code"',
       'name="username"',
@@ -525,7 +525,7 @@ describe('sign-in page', () => {
     const page = await res.text();
     for (const text of [
       'С возвращением во двор!',
-      '<form method="post" action="/login">',
+      '<form method="post" action="/login" data-fx="login">',
       '<input type="hidden" name="next" value="/saeckel/history?page=2" />',
       'name="username"',
       'name="password"',
@@ -1727,7 +1727,7 @@ describe('the card of a person', () => {
     for (const text of [
       '<title>Hof — anna</title>',
       '<nav class="banner" aria-label="Hof">',
-      '<img src="/static/img/key-tag.webp" alt="" />',
+      '<span class="card-key"\n            ><img src="/static/img/key-tag.webp" alt=""',
       '<h1 class="title t-1">anna</h1>',
       '<span class="badge">С ключом</span>',
       '<h2 class="title t-3">Сбросить пароль</h2>',
@@ -1758,7 +1758,7 @@ describe('the card of a person', () => {
     await addUser('anna', PASSWORD_HASH, true);
     const page = await (await get(app, '/admin/users/2', { cookie })).text();
     assert.ok(page.includes('<span class="badge">Ключ взят</span>'));
-    assert.ok(page.includes('<img src="/static/img/hook-empty.webp" alt="" />'));
+    assert.ok(page.includes('<img src="/static/img/hook-empty.webp" alt=""'));
     assert.ok(!page.includes('С ключом'));
     assert.ok(!page.includes('key-tag'));
   });
@@ -2350,7 +2350,7 @@ describe('the card: the key of the court', () => {
       '<span class="badge">С ключом</span>',
       'action="/admin/users/2/password"',
       // The frame is the form: its heading, its text and one button, nothing else to send.
-      '<form class="framed card-frame" method="post" action="/admin/users/2/disable"><h2 class="title t-3">Ключ от двора</h2><p class="card-text">',
+      '<form class="framed card-frame" method="post" action="/admin/users/2/disable" data-fx="key"><h2 class="title t-3">Ключ от двора</h2><p class="card-text">',
       '</p><button type="submit" class="btn btn-danger">Забрать ключ</button></form>',
     ]) {
       assert.ok(page.includes(text), text);
@@ -3001,8 +3001,19 @@ describe('the look of Hof: pages, CSS and static files', () => {
         const keep = /\sdata-keep(?=\s|$)/.test(` ${attributes}`);
         const address = /(?:href|action)="([^"]*)"/.exec(attributes!)?.[1];
         if (tag === 'form') {
-          // The one act of a form so far: «Покинуть двор», on every form that signs out.
-          assert.equal(fx, address === '/logout' ? 'logout' : undefined, `${name}: ${address}`);
+          // The acts of forms: «Покинуть двор» on every form that signs out (M10.2), the sign-in,
+          // the founding and «Забрать ключ» (M10.4).
+          const act =
+            address === '/logout'
+              ? 'logout'
+              : address === '/login'
+                ? 'login'
+                : address === '/setup'
+                  ? 'setup'
+                  : /^\/admin\/users\/\d+\/disable$/.test(address!)
+                    ? 'key'
+                    : undefined;
+          assert.equal(fx, act, `${name}: ${address}`);
           assert.equal(keep, false, name);
           continue;
         }
@@ -3067,7 +3078,11 @@ describe('the look of Hof: pages, CSS and static files', () => {
     const keys = main(of('Приближённые'));
     assert.equal(keys.length, (of('Приближённые').match(/>Открыть ›</g) ?? []).length);
     for (const key of keys) assert.match(key, /^a \/admin\/users\/\d+ flip-fwd keep$/);
-    assert.deepEqual(main(of('the card of anna')), ['a /admin/users flip-back keep']);
+    // «Забрать ключ» there is the act of a form (M10.4).
+    assert.deepEqual(
+      main(of('the card of anna')).filter((way) => !way.startsWith('form ')),
+      ['a /admin/users flip-back keep'],
+    );
     assert.ok(linksIn(of('the card of anna')).includes('/admin/users Приближённые'));
     for (const name of ['403', '404', '500 after POST']) {
       assert.deepEqual(main(of(name)), ['a / right', 'a / right'], name);
@@ -3188,5 +3203,72 @@ describe('the look of Hof: pages, CSS and static files', () => {
       assert.equal(page.includes('gatehouse'), name !== 'courtyard of anna', name);
     }
     assert.deepEqual(courts, ['courtyard, alone', 'courtyard', 'courtyard of anna']);
+  });
+
+  // M10.4: a cat is decor for a mouse and a touch (Ж4): a span without a name, a role or a stop of
+  // Tab, outside links and forms, on the five pages that draw it; the forms keep their fields.
+  test('M10.4: the cats of five pages, outside links and forms; the forms as before', async (t) => {
+    const { pages } = await drawnPages(t);
+    const CATS: Record<string, string> = {
+      'GET /setup': 'setup meow',
+      'GET /login': 'login meow',
+      'refused sign-in': 'login meow',
+      courtyard: 'map meow',
+      'courtyard of anna': 'map meow',
+      'my chambers': 'chambers purr',
+      'chambers of anna': 'chambers purr',
+      '500 after GET': '500 meow',
+      '500 after POST': '500 meow',
+      403: '',
+      404: '',
+      Приближённые: '',
+      'the card of anna': '',
+    };
+    for (const [name, expected] of Object.entries(CATS)) {
+      const page = pages.find(([page]) => page === name)![1];
+      const cats = [...page.matchAll(/<span class="cat cat-(\w+)"([^>]*)><\/span>/g)];
+      assert.deepEqual(
+        cats.map(([, where, rest]) => `${where} ${/data-poke="(\w+)"/.exec(rest!)?.[1]}`),
+        expected === '' ? [] : [expected],
+        name,
+      );
+      for (const [tag, , rest] of cats) {
+        assert.equal(rest, ` aria-hidden="true" data-poke="${expected.split(' ')[1]}"`, name);
+        // Not inside a link or a form: every one opened before it is closed again.
+        const before = page.slice(0, page.indexOf(tag));
+        for (const [open, close] of [
+          [/<a[\s>]/g, /<\/a[\s>]/g],
+          [/<form[\s>]/g, /<\/form[\s>]/g],
+          [/<button[\s>]/g, /<\/button[\s>]/g],
+          [/<label[\s>]/g, /<\/label[\s>]/g],
+        ] as const) {
+          assert.equal(
+            (before.match(open) ?? []).length,
+            (before.match(close) ?? []).length,
+            `${name}: ${String(open)}`,
+          );
+        }
+      }
+      assert.doesNotMatch(page, /class="cat[^"]*"[^>]*tabindex/, name);
+    }
+    // The gate of the founding is a picture without a name; the forms keep their fields.
+    const setup = pages.find(([page]) => page === 'GET /setup')![1];
+    assert.match(setup, /<span class="gate-open" aria-hidden="true"><\/span>/);
+    const fields = (page: string, action: string) =>
+      [...part(page, `action="${action}"`, '</form>').matchAll(/\sname="(\w+)"/g)].map((m) => m[1]);
+    assert.deepEqual(fields(setup, '/setup'), ['code', 'username', 'password', 'password2']);
+    const login = pages.find(([page]) => page === 'GET /login')![1];
+    assert.deepEqual(fields(login, '/login'), ['next', 'username', 'password']);
+    const card = pages.find(([page]) => page === 'the card of anna')![1];
+    assert.match(
+      card,
+      /<form\s+class="framed card-frame"\s+method="post"\s+action="\/admin\/users\/\d+\/disable"\s+data-fx="key"\s*>/,
+    );
+    assert.match(
+      card,
+      /<span class="card-key"\s*><img src="\/static\/img\/key-tag.webp" alt=""\s*\/><\/span>/,
+    );
+    const disable = /action="(\/admin\/users\/\d+\/disable)"/.exec(card)![1]!;
+    assert.deepEqual(fields(card, disable), []);
   });
 });

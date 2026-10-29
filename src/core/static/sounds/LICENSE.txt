@@ -7,13 +7,16 @@ design/sounds/mix.py из одной исходной записи, указан
 замкнутый в петлю. Других исходников у файлов нет.
 
 Лицензия каждого исходника — CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/),
-так её указывает страница источника. Страницы проверены 2026-10-22, ветра и фонтана — 2026-10-28.
+так её указывает страница источника. Страницы проверены 2026-10-22, ветра и фонтана — 2026-10-28,
+кота — 2026-10-29.
 
 Сверка исходника: «размер» — исходный файл совпадает по размеру в байтах с файлом на странице;
 «длительность» — исходный файл не сохранён, длительность сведённого файла совпадает с
 длительностью файла на странице; «набор» — исходник лежит в design/sounds/kenney-rpg-audio вместе
 с License.txt набора; «имя» — исходник не сохранён, а файл короче его: в mix.py исходник назван
-именем, которое freesound даёт скачанной записи, — номер, автор и название совпадают со страницей.
+именем, которое freesound даёт скачанной записи, — номер, автор и название совпадают со страницей;
+«превью» — исходник сохранён как MP3-превью со страницы, его длительность совпадает с длительностью
+на странице с точностью до кадров MP3 (не больше 0,05 с).
 
 
 Монеты
@@ -148,6 +151,92 @@ fountain-3.m4a
             в mix.py — 193784__jhumbucker__water-fountain
   Страница: https://freesound.org/people/jhumbucker/sounds/193784/ — Creative Commons 0
   Сверка:   имя
+
+
+Знамя
+-----
+
+banner-1.m4a
+  Исходник: cloth1.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+banner-2.m4a
+  Исходник: cloth2.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+banner-3.m4a
+  Исходник: cloth3.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+banner-4.m4a
+  Исходник: cloth4.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+
+Кот
+---
+
+meow-1.m4a
+  Исходник: freesound 436541 — «Cat Meow», Mafon2
+  Страница: https://freesound.org/people/Mafon2/sounds/436541/ — Creative Commons 0
+  Сверка:   превью, 0,601 с (на странице 0,572 с)
+
+meow-2.m4a
+  Исходник: freesound 362652 — «Cat meow», TRNGLE
+  Страница: https://freesound.org/people/TRNGLE/sounds/362652/ — Creative Commons 0
+  Сверка:   превью, 1,200 с (на странице 1,166 с)
+
+meow-3.m4a
+  Исходник: freesound 163286 — «meow_sample.wav», amphibian_probe
+  Страница: https://freesound.org/people/amphibian_probe/sounds/163286/ — Creative Commons 0
+  Сверка:   превью, 0,470 с (на странице 0,423 с)
+
+meow-4.m4a
+  Исходник: freesound 333916 — «Cat Meowing», lextrack
+  Страница: https://freesound.org/people/lextrack/sounds/333916/ — Creative Commons 0
+  Сверка:   превью, 1,411 с (на странице 1,372 с)
+
+meow-5.m4a
+  Исходник: freesound 412017 — «cat meow short», skymary
+  Страница: https://freesound.org/people/skymary/sounds/412017/ — Creative Commons 0
+  Сверка:   превью, 1,776 с (на странице 1,750 с)
+
+meow-6.m4a
+  Исходник: freesound 110011 — «cat meow», tuberatanka
+  Страница: https://freesound.org/people/tuberatanka/sounds/110011/ — Creative Commons 0
+  Сверка:   превью, 1,593 с (на странице 1,544 с)
+
+meow-7.m4a
+  Исходник: freesound 120160 — «Cat Wants Food», Oneirophile
+  Страница: https://freesound.org/people/Oneirophile/sounds/120160/ — Creative Commons 0
+  Сверка:   превью, 9,864 с (на странице 9,818 с)
+
+meow-8.m4a
+  Исходник: freesound 120160 — «Cat Wants Food», Oneirophile
+  Страница: https://freesound.org/people/Oneirophile/sounds/120160/ — Creative Commons 0
+  Сверка:   превью, 9,864 с (на странице 9,818 с)
+
+meow-9.m4a
+  Исходник: freesound 196251 — «Kitten Meowing.wav», lolamadeus
+  Страница: https://freesound.org/people/lolamadeus/sounds/196251/ — Creative Commons 0
+  Сверка:   превью, 8,647 с (на странице 8,616 с)
+
+
+Мурчание
+--------
+
+purr-1.m4a
+  Исходник: freesound 260881 — «Cat purr.wav», Trautwein
+  Страница: https://freesound.org/people/Trautwein/sounds/260881/ — Creative Commons 0
+  Сверка:   превью, 60,144 с (на странице 60,103 с)
 
 
 Музыка

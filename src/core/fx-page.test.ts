@@ -5,7 +5,8 @@
 // next page (M10.2): a slide waits, a second press goes at once, presses of the browser's own are
 // left alone, a form is never held and leaves the flag of its act, the door opens with it; back
 // from the back/forward cache the page is as before it left. The living courtyard (M10.3): the
-// door of a place, the chains of the wind and the birds, the fountain.
+// door of a place, the chains of the wind and the birds, the fountain. The cats and the gate of
+// the founding (M10.4).
 
 import assert from 'node:assert/strict';
 import { describe, test, type TestContext } from 'node:test';
@@ -232,6 +233,31 @@ function courtyard(door: Box = { left: 722.25, top: 287.75, right: 776.25, botto
 }
 type Court = ReturnType<typeof courtyard>;
 
+// A thing with data-poke (a cat), or a control inside one: what closest() finds from it out.
+class FakeThing extends FakeElement {
+  style = {
+    values: new Map<string, string>(),
+    setProperty(name: string, value: string) {
+      this.values.set(name, value);
+    },
+  };
+  offsetWidth = 0;
+  control: boolean;
+  constructor(poke: string | null, control = false) {
+    super();
+    if (poke !== null) this.dataset.poke = poke;
+    this.control = control;
+  }
+  closest(selector: string) {
+    if (selector.includes('[data-poke]') && this.dataset.poke !== undefined) return this;
+    if (selector.includes('button') && this.control) return this;
+    return null;
+  }
+  getClientRects() {
+    return [{}];
+  }
+}
+
 function memory() {
   const values = new Map<string, string>();
   return {
@@ -258,6 +284,7 @@ async function openChambers({
   reduced = false,
   active,
   local = memory(),
+  elements = {},
 }: {
   settings?: Settings;
   phone?: boolean;
@@ -266,6 +293,8 @@ async function openChambers({
   reduced?: boolean;
   active?: boolean;
   local?: ReturnType<typeof memory>;
+  // Elements of the page by selector: the gate of the founding, the banner, the cats.
+  elements?: Record<string, FakeElement>;
 } = {}) {
   FakeAudio.made = [];
   FakeAudio.refuse = false;
@@ -302,19 +331,26 @@ async function openChambers({
     getElementById: (id: string) => (id === 'fx-settings' ? (court ? null : block) : null),
     addEventListener: listen(on.document),
     querySelector: (selector: string) =>
-      ({ '.fx-fountain': court?.fountain, '.fx-birds': court?.flock })[selector] ?? null,
+      elements[selector] ??
+      { '.fx-fountain': court?.fountain, '.fx-birds': court?.flock }[selector] ??
+      null,
     querySelectorAll: (selector: string): unknown[] => {
       if (selector === '.fx-leaves') return court?.leaves ?? [];
       if (selector === '.court-inner') return court ? [court.inner] : [];
-      if (selector !== '.frames.open, .door.open') return [];
-      return [...forms.map((form) => form.frames), ...(court?.doors ?? [])].filter((element) =>
-        element.classList.contains('open'),
+      const all = Object.values(elements);
+      if (selector === '.cat.meow') return all.filter((e) => e.classList.contains('meow'));
+      if (selector !== '.frames.open, .door.open, .gate-open.open') return [];
+      return [...forms.map((form) => form.frames), ...(court?.doors ?? []), ...all].filter(
+        (element) => element.classList.contains('open'),
       );
     },
     getElementsByClassName: (name: string) =>
       (court?.doors ?? []).filter((door) => door.classList.contains(name)),
   };
   const activation = active === undefined ? undefined : { hasBeenActive: active };
+  // The system setting «reduce motion», which the page can see change.
+  const motion = { reduced };
+  const media: Listener[] = [];
   Object.defineProperty(globalThis, 'navigator', {
     value: { userActivation: activation },
     configurable: true,
@@ -332,14 +368,19 @@ async function openChambers({
     }),
     Image: class {
       src = '';
+      constructor() {
+        images.made += 1;
+      }
       decode() {
         return Promise.resolve();
       }
     },
     location: { assign: (address: string) => void assigned.push(address) },
     matchMedia: (query: string) => ({
-      matches: query.includes('max-width') ? phone : query.includes('reduce') && reduced,
-      addEventListener() {},
+      get matches() {
+        return query.includes('max-width') ? phone : query.includes('reduce') && motion.reduced;
+      },
+      addEventListener: (type: string, listener: Listener) => void media.push(listener),
     }),
     addEventListener: listen(on.window),
     Audio: FakeAudio,
@@ -408,6 +449,25 @@ async function openChambers({
     if (activation) activation.hasBeenActive = true;
     fire(on.window, { type: 'pointerdown' });
   };
+  // A press of a pointer on a thing (a cat), as a click.
+  const poke = (thing: FakeThing) =>
+    fire(on.document, {
+      type: 'click',
+      target: thing,
+      button: 0,
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      defaultPrevented: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+    });
+  const reduce = (on_: boolean) => {
+    motion.reduced = on_;
+    for (const listener of media) listener({ type: 'change' });
+  };
   return {
     inputs,
     change,
@@ -421,9 +481,14 @@ async function openChambers({
     seen,
     loaded,
     act,
+    reduce,
+    poke,
     local,
   };
 }
+
+// The frames of the crowns asked for by fx.js (new Image()), counted over every page.
+const images = { made: 0 };
 
 // Lets the promises of play() and resume() run.
 async function settle() {
@@ -892,6 +957,48 @@ describe('fx.js in a page: the living courtyard (M10.3)', () => {
     assert.equal(sounds('wind').length, 0);
   });
 
+  test('«Анимации» switched on in my chambers, then Back: the crowns wake once, the chains stay one each', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    t.mock.method(Math, 'random', () => 0);
+    const court = courtyard();
+    const local = memory();
+    const page = await openChambers({ court, local });
+    page.loaded();
+    await settle();
+    assert.ok(court.leaves.every((leaf) => !leaf.classList.contains('wake')));
+    // In my chambers «Анимации» are switched on; Back brings the courtyard from the cache.
+    local.setItem('hof.fx', JSON.stringify({ anim: true }));
+    const before = images.made;
+    page.backFromCache();
+    await settle();
+    assert.ok(court.leaves.every((leaf) => leaf.classList.contains('wake')));
+    assert.equal(images.made - before, 4, 'each crown asked for once');
+    page.backFromCache();
+    await settle();
+    assert.equal(images.made - before, 4, 'not again');
+    // One flock at 4 s, one gust at 14 s: the chains are not doubled.
+    t.mock.timers.tick(14_000);
+    assert.equal(court.leaves.filter((leaf) => leaf.classList.contains('gust')).length, 1);
+    assert.ok(court.flock.classList.contains('fly'));
+  });
+
+  test('less motion asked for, then not: the crowns wake then', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const court = courtyard();
+    const page = await openChambers({ settings: { anim: true }, court, reduced: true });
+    page.loaded();
+    await settle();
+    assert.ok(court.leaves.every((leaf) => !leaf.classList.contains('wake')));
+    const before = images.made;
+    page.reduce(false);
+    await settle();
+    assert.ok(court.leaves.every((leaf) => leaf.classList.contains('wake')));
+    page.reduce(true);
+    page.reduce(false);
+    await settle();
+    assert.equal(images.made - before, 4);
+  });
+
   test('the fountain: the next loop on each visit, 2 s to come up, after an action of the person', async (t: TestContext) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const local = memory();
@@ -928,5 +1035,100 @@ describe('fx.js in a page: the living courtyard (M10.3)', () => {
     assert.equal(sounds('fountain').length, 0, 'without «Звуки»');
     await openChambers({ settings: { sound: true } });
     assert.equal(sounds('fountain').length, 0, 'not on another page');
+  });
+});
+
+describe('fx.js in a page: the cats and the gate (M10.4)', () => {
+  test('a cat: the meow and, with «Анимации», the other pose for as long as the sound', async () => {
+    const cat = new FakeThing('meow');
+    const page = await openChambers({ settings: { anim: true, sound: true }, elements: { cat } });
+    page.poke(cat);
+    assert.equal(sounds('meow').length, 1);
+    assert.ok(cat.classList.contains('meow'));
+    // The fake sound is 100 s long and its length is known at once.
+    assert.equal(cat.style.values.get('--pose'), '100s');
+
+    const purring = new FakeThing('purr');
+    const chambers = await openChambers({ settings: { anim: true }, elements: { purring } });
+    chambers.poke(purring);
+    assert.equal(sounds('purr').length, 0, 'without «Звуки» no sound');
+    assert.equal(purring.style.values.get('--pose'), '1.2s', 'and 1,2 s of the pose');
+
+    const still = new FakeThing('meow');
+    const quiet = await openChambers({ settings: { sound: true }, elements: { still } });
+    quiet.poke(still);
+    assert.equal(sounds('meow').length, 1, 'only the sound');
+    assert.ok(!still.classList.contains('meow'));
+  });
+
+  test('a press on a control inside the thing, or on a thing fx.js does not know: nothing', async () => {
+    const page = await openChambers({ settings: { anim: true, sound: true } });
+    const control = new FakeThing('meow', true);
+    page.poke(control);
+    const dragon = new FakeThing('dragon');
+    page.poke(dragon);
+    assert.equal(FakeAudio.made.length, 0);
+    assert.ok(!control.classList.contains('meow') && !dragon.classList.contains('meow'));
+  });
+
+  test('the gate of the founding opens as the form goes, which is not held; only with «Анимации»', async () => {
+    const gate = new FakeElement();
+    const page = await openChambers({ settings: { anim: true }, elements: { '.gate-open': gate } });
+    assert.equal(page.send(new FakeForm('/setup', 'setup')).defaultPrevented, false);
+    assert.ok(gate.classList.contains('open'));
+    assert.equal(page.flag('hof.after')?.act, 'setup');
+
+    const closed = new FakeElement();
+    const off = await openChambers({
+      settings: { sound: true },
+      elements: { '.gate-open': closed },
+    });
+    assert.equal(off.send(new FakeForm('/setup', 'setup')).defaultPrevented, false);
+    assert.ok(!closed.classList.contains('open'));
+    // The sign-in leaves its flag and opens nothing.
+    const login = await openChambers({ settings: { anim: true } });
+    assert.equal(login.send(new FakeForm('/login', 'login')).defaultPrevented, false);
+    assert.equal(login.flag('hof.after')?.act, 'login');
+  });
+
+  test('signed in or founded: two rustles of cloth, at 0 and 0,6 s, where the banner is drawn', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    for (const arrived of ['login', 'setup']) {
+      await openChambers({
+        settings: { sound: true },
+        arrived,
+        elements: { '.banner': new FakeThing(null) },
+      });
+      assert.equal(sounds('banner').length, 1, arrived);
+      t.mock.timers.tick(599);
+      assert.equal(sounds('banner').length, 1, arrived);
+      t.mock.timers.tick(1);
+      assert.equal(sounds('banner').length, 2, arrived);
+    }
+    // The phone: no banner, no rustle; after «Забрать ключ» none either.
+    await openChambers({ settings: { sound: true }, arrived: 'login' });
+    await openChambers({
+      settings: { sound: true },
+      arrived: 'key',
+      elements: { '.banner': new FakeThing(null) },
+    });
+    t.mock.timers.tick(1000);
+    assert.equal(sounds('banner').length, 0);
+  });
+
+  test('back from the back/forward cache: the gate closed, the cat in its pose no more', async () => {
+    const gate = new FakeElement();
+    const cat = new FakeThing('meow');
+    const page = await openChambers({
+      settings: { anim: true },
+      elements: { '.gate-open': gate, cat },
+    });
+    page.send(new FakeForm('/setup', 'setup'));
+    page.poke(cat);
+    page.root.classList.add('unroll', 'key-off');
+    page.backFromCache();
+    assert.ok(!gate.classList.contains('open'));
+    assert.ok(!cat.classList.contains('meow'));
+    assert.deepEqual([...page.root.classList.names], ['fx-on']);
   });
 });

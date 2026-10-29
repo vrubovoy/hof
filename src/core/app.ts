@@ -213,6 +213,7 @@ export function errorPage(status: keyof typeof ERRORS, retry = false) {
           sizes="(max-width: 1023.98px) 164vw, 100vw"
           alt="${error.alt}"
         />
+        ${status === 500 ? html`<span class="cat-frame">${cat('500')}</span>` : ''}
       </div>
       <div class="error-paper">
         <a class="logo" href="/" data-fx="right">
@@ -359,7 +360,7 @@ function setupPage(form: SetupForm) {
               присматриваете за Hof.
             </p>
           </div>
-          <form method="post" action="/setup">
+          <form method="post" action="/setup" data-fx="setup">
             <div class="${fieldClass('code')}">
               <label for="code">Ключ от ворот</label>
               <input
@@ -436,6 +437,9 @@ function setupPage(form: SetupForm) {
           sizes="(max-width: 1023.98px) 195vw, 100vw"
           alt="Ворота замка закрыты, в замке ключ, кот ждёт у ворот"
         />
+        <span class="cat-frame"
+          ><span class="gate-open" aria-hidden="true"></span>${cat('setup')}</span
+        >
       </div>
       <img
         class="blot blot-setup-medium"
@@ -446,6 +450,15 @@ function setupPage(form: SetupForm) {
       <img class="blot blot-setup-ring" src="/static/img/ink-ring.webp" alt="" loading="lazy" />
     </main>`,
   );
+}
+
+// The cat of a picture (M10.4, design/preview/Main.html and the others): a transparent area over
+// the cat drawn there — decor for a mouse and a touch only (§6, Ж4): no name, no role, no stop of
+// Tab, outside links and forms. A press on it is a meow (in my chambers a purr) and, with
+// «Анимации», another pose; fx.js does it by data-poke. Where it stands is in the CSS.
+function cat(where: 'login' | 'setup' | 'map' | 'chambers' | '500') {
+  const poke = where === 'chambers' ? 'purr' : 'meow';
+  return html`<span class="cat cat-${where}" aria-hidden="true" data-poke="${poke}"></span>`;
 }
 
 // Texts and pictures from design/preview/Main.html and LoginMobile.html: the gate open, the cat
@@ -461,7 +474,7 @@ function loginPage(form: LoginForm) {
         <div class="gate-card framed">
           ${LOGO}
           <h1 class="title t-2 visually-hidden-phone">С возвращением во двор!</h1>
-          <form method="post" action="/login">
+          <form method="post" action="/login" data-fx="login">
             ${
               form.failed
                 ? html`<p id="login-error" class="note note-error">Неверный логин или пароль.</p>`
@@ -501,25 +514,28 @@ function loginPage(form: LoginForm) {
           </p>
         </div>
       </div>
-      <picture class="gate-scene">
-        <source
-          media="(max-width: 1023.98px)"
-          srcset="
-            /static/img/login-mobile-v2@2x.webp  780w,
-            /static/img/login-mobile-v2@3x.webp 1170w
-          "
-          sizes="100vw"
-        />
-        <img
-          src="/static/img/login-desktop-v2.webp"
-          srcset="
-            /static/img/login-desktop-v2.webp    1536w,
-            /static/img/login-desktop-v2@2x.webp 3072w
-          "
-          sizes="100vw"
-          alt="Открытые ворота замка, кот смотрит во двор"
-        />
-      </picture>
+      <div class="gate-scene">
+        <picture>
+          <source
+            media="(max-width: 1023.98px)"
+            srcset="
+              /static/img/login-mobile-v2@2x.webp  780w,
+              /static/img/login-mobile-v2@3x.webp 1170w
+            "
+            sizes="100vw"
+          />
+          <img
+            src="/static/img/login-desktop-v2.webp"
+            srcset="
+              /static/img/login-desktop-v2.webp    1536w,
+              /static/img/login-desktop-v2@2x.webp 3072w
+            "
+            sizes="100vw"
+            alt="Открытые ворота замка, кот смотрит во двор"
+          />
+        </picture>
+        <span class="cat-frame">${cat('login')}</span>
+      </div>
       <img
         class="blot blot-login-small"
         src="/static/img/ink-blot-small.webp"
@@ -584,6 +600,7 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
           <span class="fx fx-leaves fx-bush-r" aria-hidden="true"></span>
           <span class="fx fx-leaves fx-tree" aria-hidden="true"></span>
           <span class="fx fx-birds" aria-hidden="true"><i></i><i></i><i></i></span>
+          ${cat('map')}
           <span class="court-doors" aria-hidden="true">${places.map(({ at }) => door(at))}</span>
           ${places.map(
             ({ href, name, at }) =>
@@ -824,6 +841,7 @@ function accountPage(user: CurrentUser, services: readonly Service[], form: Acco
           sizes="(max-width: 1023.98px) 100vw, 600px"
           alt="Покои: окно во двор, стол с пером и чернильницей, кот спит на стуле"
         />
+        <span class="cat-frame">${cat('chambers')}</span>
       </div>`,
   });
 }
@@ -1013,7 +1031,9 @@ function memberPage(
       }
       <div class="card-grid">
         <div class="card-person">
-          <img src="/static/img/${member.is_disabled ? 'hook-empty' : 'key-tag'}.webp" alt="" />
+          <span class="card-key"
+            ><img src="/static/img/${member.is_disabled ? 'hook-empty' : 'key-tag'}.webp" alt=""
+          /></span>
           <div class="card-name">
             <h1 class="title t-1">${member.username}</h1>
             <span class="badge">${keyStatus(member)}</span>
@@ -1064,6 +1084,7 @@ function memberPage(
                   class="framed card-frame"
                   method="post"
                   action="/admin/users/${member.id}/disable"
+                  data-fx="key"
                 >
                   <h2 class="title t-3">Ключ от двора</h2>
                   <p class="card-text">
