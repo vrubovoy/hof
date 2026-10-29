@@ -3275,6 +3275,20 @@ describe('the look of Hof: pages, CSS and static files', () => {
   // M10.6: in a window of 1024–1350 px the picture of «Мои покои» is cut by cover and its cat lies
   // in the part cut off; the frame of the cats clips as the picture does, so the page does not grow
   // sideways (it did by 160 px at 1024).
+  // M10.6: the seal stamped on a note ends as the seal of the rule itself: kept by the animation it
+  // was drawn by the compositor with another edge, and the page after the effect was not the page
+  // without it.
+  test('M10.6: the seal of a note is stamped, then the seal of the rule', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = await (await get(app, '/static/hof.css')).text();
+    assert.match(css, /\.fx-on \.note::before \{\s*animation: stamp 0\.45s [^;]* backwards;/);
+    assert.match(
+      css,
+      /@keyframes stamp \{[^}]*\}\s*to \{\s*transform: scale\(1\) rotate\(-9deg\);/,
+    );
+    assert.match(/\n\.note::before \{([^}]*)\}/.exec(css)![1]!, /transform: rotate\(-9deg\);/);
+  });
+
   test('M10.6: the frame of the cats clips them, as the picture does', async (t) => {
     const { app } = await drawnPages(t);
     const css = await (await get(app, '/static/hof.css')).text();

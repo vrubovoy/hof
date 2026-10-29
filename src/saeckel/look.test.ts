@@ -1286,6 +1286,12 @@ describe('the decor of Säckel (M10.5)', () => {
     }
   });
 
+  // M10.6: the seal stamped on a note ends as the seal of the rule itself (fill backwards).
+  test('the seal of a note is stamped, then the seal of the rule', () => {
+    assert.match(CSS, /\.fx-on \.note::before \{\s*animation: stamp 0\.45s [^;]* backwards;/);
+    assert.match(/\n\.note::before \{([^}]*)\}/.exec(CSS)![1]!, /transform: rotate\(-9deg\);/);
+  });
+
   test('note-income only for an income of this user', async () => {
     const own = await addOperation(ANNA, 'income', 8_000_000);
     const his = await addOperation(BORIS, 'income', 100);
