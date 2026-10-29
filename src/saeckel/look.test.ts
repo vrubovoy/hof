@@ -463,14 +463,8 @@ describe('the ways between pages', () => {
           if (act !== undefined) acts.add(act);
         } else if (/aria-current/.test(attributes!)) assert.equal(fx, undefined, path);
         else if (fx !== undefined) assert.ok(LINK_FX.includes(fx), `${path}: ${fx}`);
-        // Only «Разложить» of the treasury rings as it is pressed.
-        const sound = /data-sound="([^"]*)"/.exec(attributes!)?.[1];
-        if (sound !== undefined) {
-          assert.equal(
-            `${tag} ${/href="([^"]*)"/.exec(attributes!)?.[1]} ${sound}`,
-            'a /saeckel/assign coins',
-          );
-        }
+        // A way to a form rings not: the coins come after the money is written (M10.6).
+        assert.doesNotMatch(attributes!, /data-sound/, path);
       }
     }
     assert.deepEqual([...acts].sort(), ['assign', 'expense', 'income', 'transfer']);
@@ -1290,6 +1284,12 @@ describe('the decor of Säckel (M10.5)', () => {
         file,
       );
     }
+  });
+
+  // M10.6: the seal stamped on a note ends as the seal of the rule itself (fill backwards).
+  test('the seal of a note is stamped, then the seal of the rule', () => {
+    assert.match(CSS, /\.fx-on \.note::before \{\s*animation: stamp 0\.45s [^;]* backwards;/);
+    assert.match(/\n\.note::before \{([^}]*)\}/.exec(CSS)![1]!, /transform: rotate\(-9deg\);/);
   });
 
   test('note-income only for an income of this user', async () => {

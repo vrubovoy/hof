@@ -1139,11 +1139,10 @@ describe('fx.js in a page: the cats and the gate (M10.4)', () => {
 
 describe('fx.js in a page: Säckel (M10.5)', () => {
   // «Разложить» and «+ Доход» of the treasury, as the server draws them.
-  const treasuryLinks = () => {
-    const assign = new FakeLink('/saeckel/assign', 'flip-fwd-phone');
-    assign.dataset.sound = 'coins';
-    return { assign, income: new FakeLink('/saeckel/income', 'flip-fwd-phone') };
-  };
+  const treasuryLinks = () => ({
+    assign: new FakeLink('/saeckel/assign', 'flip-fwd-phone'),
+    income: new FakeLink('/saeckel/income', 'flip-fwd-phone'),
+  });
 
   test('the chest: a creak; with «Анимации» open, closed by the next press; without, only the creak', async () => {
     const chest = new FakeThing('chest');
@@ -1169,7 +1168,7 @@ describe('fx.js in a page: Säckel (M10.5)', () => {
     assert.equal(FakeAudio.made.length, 0, 'without «Звуки» no creak');
   });
 
-  test('«Разложить» and «+ Доход» beside the chest: never the chest, never held; «Разложить» rings on a computer', async (t: TestContext) => {
+  test('«Разложить» and «+ Доход» beside the chest: never the chest, never held, silent — the coins come after the money is written', async (t: TestContext) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const chest = new FakeThing('chest');
     const computer = await openChambers({
@@ -1178,9 +1177,8 @@ describe('fx.js in a page: Säckel (M10.5)', () => {
     });
     const { assign, income } = treasuryLinks();
     assert.equal(computer.press(assign).defaultPrevented, false);
-    assert.equal(sounds('coins').length, 1, 'the coins as it is pressed');
     assert.equal(computer.press(income).defaultPrevented, false);
-    assert.equal(FakeAudio.made.length, 1, 'no creak, «+ Доход» silent');
+    assert.equal(FakeAudio.made.length, 0, 'no coins, no creak');
     assert.ok(!chest.classList.contains('open'));
     assert.equal(computer.flag('hof.arrive'), null);
     assert.deepEqual([...computer.root.classList.names], ['fx-on']);
@@ -1191,11 +1189,6 @@ describe('fx.js in a page: Säckel (M10.5)', () => {
     assert.equal(phone.flag('hof.arrive')?.fx, 'flip-fwd');
     t.mock.timers.tick(500);
     assert.equal(sounds('coins').length, 0);
-
-    // Without «Звуки» «Разложить» is an ordinary link.
-    const quiet = await openChambers({ settings: { anim: true } });
-    assert.equal(quiet.press(treasuryLinks().assign).defaultPrevented, false);
-    assert.equal(FakeAudio.made.length, 0);
   });
 
   test('the cat at the empty pouches: a sniff at 0 and 1,5 s; a press meanwhile starts it over', async (t: TestContext) => {

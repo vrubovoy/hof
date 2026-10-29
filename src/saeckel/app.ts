@@ -472,8 +472,7 @@ function pouchNote(pouch: ListedPouch, money: MoneyFormat): string {
 // chest. Shown always — at zero, below zero, before the first pouch — with the way to laying out
 // and to income where the page asks for them. A sum longer than «1 234 567,89 ₽» is set smaller,
 // so that it stays on one line beside the chest. The chest itself is decor of Hof (data-poke,
-// M10.5): a press on it creaks and opens it, never one on the sum or the buttons beside it. On a
-// computer «Разложить» rings with coins as it is pressed (data-sound).
+// M10.5): a press on it creaks and opens it, never one on the sum or the buttons beside it.
 function treasuryFrame(treasury: number, money: MoneyFormat, buttons: boolean) {
   const sum = money.format(treasury);
   const classes = ['money', ...(treasury < 0 ? ['neg'] : []), ...(sum.length > 14 ? ['long'] : [])];
@@ -486,13 +485,7 @@ function treasuryFrame(treasury: number, money: MoneyFormat, buttons: boolean) {
     ${
       buttons
         ? html`<p class="treasury-actions">
-            <a
-              class="btn btn-ochre"
-              href="/saeckel/assign"
-              data-fx="flip-fwd-phone"
-              data-sound="coins"
-              >Разложить</a
-            >
+            <a class="btn btn-ochre" href="/saeckel/assign" data-fx="flip-fwd-phone">Разложить</a>
             <a class="btn" href="/saeckel/income" data-fx="flip-fwd-phone">+ Доход</a>
           </p>`
         : ''
