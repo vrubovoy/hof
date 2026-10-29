@@ -1292,7 +1292,6 @@ export function createCoreApp(
 
   // 2. Public paths.
 
-  // Sign-in page. With a live session there is nothing to sign in to: straight on to `next`.
   // The empty stylesheet of the sign-in page (§4.2). Its answer makes the browser forget what it
   // kept of this site — the HTTP cache and the pages kept for Back — but not its storage, where
   // the settings of «Звуки и движение» are. A page left by «Покинуть двор» goes into the
@@ -1305,6 +1304,7 @@ export function createCoreApp(
     return c.body('', 200, { 'Content-Type': 'text/css; charset=utf-8' });
   });
 
+  // Sign-in page. With a live session there is nothing to sign in to: straight on to `next`.
   core.get('/login', async (c) => {
     const next = safeNext(c.req.query('next'));
     if ((await currentUser(pool, sessionToken(c.req.header('Cookie')))) !== null) {
