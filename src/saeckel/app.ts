@@ -471,18 +471,28 @@ function pouchNote(pouch: ListedPouch, money: MoneyFormat): string {
 // «Казна» (design/preview/Saeckel.html): the money not laid out yet, in a frame with the closed
 // chest. Shown always — at zero, below zero, before the first pouch — with the way to laying out
 // and to income where the page asks for them. A sum longer than «1 234 567,89 ₽» is set smaller,
-// so that it stays on one line beside the chest.
+// so that it stays on one line beside the chest. The chest itself is decor of Hof (data-poke,
+// M10.5): a press on it creaks and opens it, never one on the sum or the buttons beside it. On a
+// computer «Разложить» rings with coins as it is pressed (data-sound).
 function treasuryFrame(treasury: number, money: MoneyFormat, buttons: boolean) {
   const sum = money.format(treasury);
   const classes = ['money', ...(treasury < 0 ? ['neg'] : []), ...(sum.length > 14 ? ['long'] : [])];
   return html`<div class="framed treasury">
-    <img class="chest" src="/saeckel/static/img/emblem-chest-closed.webp" alt="" />
+    <span class="chest-box" aria-hidden="true" data-poke="chest"
+      ><img class="chest" src="/saeckel/static/img/emblem-chest-closed.webp" alt=""
+    /></span>
     <h2 class="title t-3">Казна</h2>
     <p class="${classes.join(' ')}">${sum}</p>
     ${
       buttons
         ? html`<p class="treasury-actions">
-            <a class="btn btn-ochre" href="/saeckel/assign" data-fx="flip-fwd-phone">Разложить</a>
+            <a
+              class="btn btn-ochre"
+              href="/saeckel/assign"
+              data-fx="flip-fwd-phone"
+              data-sound="coins"
+              >Разложить</a
+            >
             <a class="btn" href="/saeckel/income" data-fx="flip-fwd-phone">+ Доход</a>
           </p>`
         : ''
@@ -556,7 +566,8 @@ function pouchColumn(column: PouchColumn, money: MoneyFormat, place: ColumnPlace
 // Мешки, texts from design/preview/Saeckel.html, SaeckelMobile.html, SaeckelEmpty.html and
 // SaeckelEmptyMobile.html. The treasury is always there; the empty state is about the active
 // pouches, beside the treasury and the storeroom (M6.1: SaeckelEmpty has no treasury); on a
-// computer the picture and the form of the first pouch stand to the right of them. With pouches,
+// computer the picture and the form of the first pouch stand to the right of them; the cat of the
+// picture is decor of Hof (data-poke, M10.5) and sniffs at the pouches when pressed. With pouches,
 // the first of the list is open on the right of a computer, as in Saeckel; the phone has only
 // the list, its pouches open on their own pages (SaeckelMobile).
 function pouchesPage(
@@ -584,7 +595,12 @@ function pouchesPage(
       column: pouchColumn(column, money, { buttons: true }),
     },
     html`<div class="sk-main sk-empty">
-        <img class="vignette" src="/saeckel/static/img/empty-saeckel.webp" alt="" />
+        <span class="vignette sniff" aria-hidden="true"
+          ><img src="/saeckel/static/img/empty-saeckel.webp" alt="" /><span
+            class="cat"
+            data-poke="sniff"
+          ></span
+        ></span>
         <div class="sk-empty-text">
           <h2 class="title">Мешков пока нет</h2>
           <img class="sprig" src="/saeckel/static/img/sprig-divider.webp" alt="" />
@@ -675,13 +691,20 @@ function entryFields(form: EntryForm, money: MoneyFormat) {
 
 // The form «Записать трату» (design/preview/Saeckel.html, PouchMobile.html): on a computer the
 // fields and the button in a row, on the phone in a frame, the amount the whole width. Its
-// heading is for the screen reader only on the phone; `level` is the level of that heading.
+// heading is for the screen reader only on the phone; `level` is the level of that heading. With
+// «Анимации» or «Звуки» the page of the pouch after it rings and writes the record in (data-fx,
+// read by fx.js of Hof, M10.5) — as do the pages after an income, laying out and a transfer.
 function expenseForm(pouch: Pouch, form: EntryForm, money: MoneyFormat, level: 2 | 3) {
   const heading =
     level === 2
       ? html`<h2 class="title t-3 visually-hidden-phone">Записать трату</h2>`
       : html`<h3 class="title t-3 visually-hidden-phone">Записать трату</h3>`;
-  return html`<form class="expense" method="post" action="/saeckel/pouches/${pouch.id}/expense">
+  return html`<form
+    class="expense"
+    method="post"
+    action="/saeckel/pouches/${pouch.id}/expense"
+    data-fx="expense"
+  >
     ${heading}
     <div class="expense-row">
       ${entryFields(form, money)}
@@ -703,7 +726,7 @@ function incomePage(form: EntryForm, money: MoneyFormat, column: PouchColumn) {
     },
     html`<div class="sk-form">
       <h1 class="title t-2">Доход</h1>
-      <form class="entry" method="post" action="/saeckel/income">
+      <form class="entry" method="post" action="/saeckel/income" data-fx="income">
         <div class="entry-row">${entryFields(form, money)}</div>
         <p class="hint">
           Деньги лягут в казну. После записи откроется раскладка по мешкам — её можно отложить.
@@ -719,7 +742,8 @@ function incomePage(form: EntryForm, money: MoneyFormat, column: PouchColumn) {
 // computer, on the phone only its first sentence, the whole of it left to the screen reader. On a
 // computer a table — the sign and the name, the balance, a field; on the phone the same rows as
 // lines of AssignMobile, the balance under the name. The error of a row is under its field; a
-// refusal of the whole form is a note with the red seal.
+// refusal of the whole form is a note with the red seal. The note of the income is what fx.js of
+// Hof looks for before it rings after «Записать доход» (note-income).
 function assignPage(
   column: PouchColumn,
   form: AssignForm,
@@ -769,7 +793,7 @@ function assignPage(
     html`${
         income === null
           ? ''
-          : html`<p class="note">
+          : html`<p class="note note-income">
               Доход ${money.format(income)} лёг в казну.<span class="visually-hidden-phone">
                 Разложите его по мешкам или оставьте в казне на потом.</span
               >
@@ -792,7 +816,7 @@ function assignPage(
               <h2 class="title t-3">Мешков пока нет</h2>
               <p><a class="link" href="/saeckel/pouches/new">+ Новый мешок</a></p>
             </div>`
-          : html`<form class="assign" method="post" action="/saeckel/assign">
+          : html`<form class="assign" method="post" action="/saeckel/assign" data-fx="assign">
               <table class="table assign-table">
                 <thead>
                   <tr>
@@ -881,7 +905,7 @@ function transferPage(column: PouchColumn, form: PouchesForm, money: MoneyFormat
     },
     html`<div class="sk-form">
       <h1 class="title t-2">Переложить из мешка в мешок</h1>
-      <form class="entry" method="post" action="/saeckel/transfer">
+      <form class="entry" method="post" action="/saeckel/transfer" data-fx="transfer">
         <div class="pouch-pair">
           ${pouchSelect('from', 'Из мешка', choices, form, true)}
           ${pouchSelect('to', 'В мешок', choices, form, true)}
