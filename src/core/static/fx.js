@@ -32,7 +32,15 @@ export const DEFAULTS = Object.freeze({
 });
 
 /** The sets of sounds and how many variants each has. @type {Readonly<Record<string, number>>} */
-export const SOUNDS = Object.freeze({ coins: 2, door: 6, page: 2, wind: 6 });
+export const SOUNDS = Object.freeze({
+  coins: 2,
+  door: 6,
+  page: 2,
+  wind: 6,
+  meow: 9,
+  purr: 1,
+  banner: 4,
+});
 
 /** The loops of the fountain on the courtyard. */
 export const FOUNTAINS = 3;
@@ -373,6 +381,37 @@ export function writeFlag(storage, key, value) {
 }
 
 /**
+ * Decor (M10.4, Ж4): what a thing with data-poke does when a pointer presses it — the set of its
+ * sound. The cats meow; the cat of my chambers purrs. M10.5 adds the chest of Säckel.
+ */
+export const POKES = Object.freeze({ meow: 'meow', purr: 'purr' });
+
+/** A press on these is the press of a control, also inside a thing with data-poke. */
+const CONTROLS = 'a[href], button, input, select, textarea, label, summary, [tabindex]';
+
+/**
+ * The thing a press of a pointer pokes, or null: the nearest element with data-poke that fx.js
+ * knows — never when the press is on a control.
+ * @param {Element} target
+ * @returns {HTMLElement | null}
+ */
+export function poked(target) {
+  if (target.closest(CONTROLS) !== null) return null;
+  const thing = /** @type {HTMLElement | null} */ (target.closest('[data-poke]'));
+  return thing !== null && Object.hasOwn(POKES, thing.dataset.poke ?? '') ? thing : null;
+}
+
+/**
+ * How long a cat keeps its other pose, in seconds: as long as its sound, at least 0,9 s; 1,2 s
+ * without a sound or while its length is not known.
+ * @param {number | null} sound the length of the sound in seconds
+ */
+export function poseTime(sound) {
+  if (sound === null || !Number.isFinite(sound) || sound <= 0) return 1.2;
+  return Math.max(0.9, sound);
+}
+
+/**
  * The guard against a form sent twice (§4.8): in this page a POST form goes once, until a new
  * page comes or this one comes back from the back/forward cache. Not idempotency: another tab, a
  * repeat of the network or a page without this script can still send twice.
@@ -485,10 +524,13 @@ function start() {
 
   /** @type {Record<string, number>} */
   const lastVariant = {};
-  /** @param {string} name */
+  /**
+   * @param {string} name
+   * @returns {HTMLAudioElement | null} the sound now played, for its length
+   */
   function playSound(name) {
     const count = SOUNDS[name];
-    if (!settings.sound || count === undefined) return;
+    if (!settings.sound || count === undefined) return null;
     const variant = pickVariant(count, lastVariant[name]);
     lastVariant[name] = variant;
     const audio = new Audio(soundAddress(name, variant));
@@ -499,6 +541,7 @@ function start() {
     // Not allowed or not loaded: silence, and nothing tries again.
     audio.play().catch(release);
     duck();
+    return audio;
   }
 
   // ---- music: one player in this page; the piece and the place are kept for the next one.
@@ -774,6 +817,33 @@ function start() {
       if (move) form.querySelector('.frames')?.classList.add('open');
       setTimeout(() => playSound('door'), 0);
     }
+    // The gate of the founding opens as the form goes (M10.4); the form does not wait for it.
+    if (act === 'setup' && move) document.querySelector('.gate-open')?.classList.add('open');
+  });
+
+  // ---- decor (M10.4): a thing with data-poke answers a press of a pointer on itself — never one
+  // on a control — and changes no way, tells and keeps nothing. A cat sounds and, with
+  // «Анимации», takes its other pose for as long as the sound.
+  document.addEventListener('click', (event) => {
+    if (event.defaultPrevented || !(event.target instanceof Element)) return;
+    const thing = poked(event.target);
+    if (thing === null) return;
+    const audio = playSound(POKES[/** @type {keyof typeof POKES} */ (thing.dataset.poke)]);
+    if (!canMove(settings, reduced.matches)) return;
+    /** @param {number | null} seconds */
+    const hold = (seconds) => thing.style.setProperty('--pose', `${poseTime(seconds)}s`);
+    hold(
+      audio !== null && audio.readyState >= HTMLMediaElement.HAVE_METADATA ? audio.duration : null,
+    );
+    audio?.addEventListener('loadedmetadata', () => hold(audio.duration), { once: true });
+    thing.classList.remove('meow');
+    void thing.offsetWidth;
+    thing.classList.add('meow');
+  });
+  document.addEventListener('animationend', (event) => {
+    if (event.animationName === 'pose' && event.target instanceof Element) {
+      event.target.classList.remove('meow');
+    }
   });
 
   // ---- back from the back/forward cache: the page is as it was left, the world may not be.
@@ -782,10 +852,11 @@ function start() {
     guard.reset();
     // As before it left: light, in its place, the doors closed.
     stopSliding();
-    root.classList.remove(...LEAVING, 'from-left', 'from-right', 'from-door');
-    for (const open of document.querySelectorAll('.frames.open, .door.open')) {
+    root.classList.remove(...LEAVING, 'from-left', 'from-right', 'from-door', 'unroll', 'key-off');
+    for (const open of document.querySelectorAll('.frames.open, .door.open, .gate-open.open')) {
       open.classList.remove('open');
     }
+    for (const cat of document.querySelectorAll('.cat.meow')) cat.classList.remove('meow');
     for (const inner of document.querySelectorAll('.court-inner')) {
       if (inner instanceof HTMLElement) inner.style.removeProperty('transform-origin');
     }
@@ -818,6 +889,15 @@ function start() {
   delete root.dataset.arrived;
   if (arrived === 'flip-fwd' || arrived === 'flip-back' || arrived === 'page') playSound('page');
   if (arrived === 'door' && !canMove(settings, reduced.matches)) playSound('door');
+  // Signed in or founded (M10.4): two rustles of cloth while the banner unrolls, at 0 and 0,6 s —
+  // where the banner is drawn: the phone has none.
+  if (
+    (arrived === 'login' || arrived === 'setup') &&
+    document.querySelector('.banner')?.getClientRects().length
+  ) {
+    playSound('banner');
+    setTimeout(() => playSound('banner'), 600);
+  }
 
   // ---- the living courtyard (M10.3): the fountain, the wind in the crowns, the birds. The
   // frames turning round (water, banners, smoke) are the CSS alone.
@@ -942,7 +1022,11 @@ function start() {
     else birds?.pause();
   }
   document.addEventListener('visibilitychange', live);
-  reduced.addEventListener('change', live);
+  // Motion allowed again: the crowns that have not woken yet wake now, not at the next gust.
+  reduced.addEventListener('change', () => {
+    live();
+    wake();
+  });
   addEventListener('pagehide', () => {
     wind?.pause();
     birds?.pause();
@@ -955,6 +1039,7 @@ function start() {
   /** Back from the back/forward cache: the settings may have changed meanwhile. */
   function courtBack() {
     live();
+    wake();
     if (!settings.sound) stopFountain();
     else if (water === null) startFountain();
     else {

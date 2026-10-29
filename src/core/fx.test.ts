@@ -35,8 +35,11 @@ import {
   level,
   nextFountain,
   nextPiece,
+  POKES,
   pickVariant,
   plainPress,
+  poked,
+  poseTime,
   readMusic,
   readSettings,
   soundFiles,
@@ -393,6 +396,10 @@ interface Visit {
   anim?: boolean;
   reduced?: boolean;
   marker?: boolean;
+  // What the page shows, by selector (instead of `marker` showing everything), and whether the
+  // banner is drawn (the phone has none).
+  shows?: string[];
+  drawn?: boolean;
   // The sessionStorage of the tab, shared by the visits of one test.
   session?: Map<string, string>;
 }
@@ -406,6 +413,8 @@ function visit({
   anim = true,
   reduced = false,
   marker = true,
+  shows,
+  drawn = true,
   session = new Map(),
 }: Visit) {
   const raw = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value));
@@ -437,7 +446,10 @@ function visit({
         },
       },
       addEventListener: listen,
-      querySelector: (selector: string) => (marker && selector !== '' ? {} : null),
+      querySelector: (selector: string) =>
+        (shows ? shows.includes(selector) : marker && selector !== '')
+          ? { getClientRects: () => (drawn ? [{}] : []) }
+          : null,
     },
     addEventListener: listen,
     requestAnimationFrame: (frame: () => void) => void frames.push(frame),
@@ -607,6 +619,66 @@ describe('fx: the living courtyard (M10.3)', () => {
   });
 });
 
+describe('fx: decor and the cats (M10.4)', () => {
+  // An element as poked() reads it: what closest() finds for a selector, from the element out.
+  const element = (chain: { matches: string; poke?: string }[]) => ({
+    closest(selector: string) {
+      const found = chain.find((link) =>
+        selector.split(', ').some((one) => link.matches.split(' ').includes(one)),
+      );
+      return found ? { dataset: found.poke === undefined ? {} : { poke: found.poke } } : null;
+    },
+  });
+
+  test('a press on the cat itself pokes it; on a control inside, or an unknown thing, nothing', () => {
+    assert.deepEqual(POKES, { meow: 'meow', purr: 'purr' });
+    const cat = [{ matches: '[data-poke]', poke: 'meow' }];
+    assert.notEqual(poked(element(cat)), null);
+    for (const control of [
+      'a[href]',
+      'button',
+      'input',
+      'select',
+      'textarea',
+      'label',
+      '[tabindex]',
+    ]) {
+      const inside = [{ matches: control }, ...cat];
+      assert.equal(poked(element(inside)), null, control);
+    }
+    assert.equal(poked(element([{ matches: '[data-poke]', poke: 'dragon' }])), null);
+    assert.equal(poked(element([{ matches: 'p' }])), null);
+  });
+
+  test('the pose lasts as long as the sound, at least 0,9 s; 1,2 s without one', () => {
+    assert.equal(poseTime(1.632), 1.632);
+    assert.equal(poseTime(3.296), 3.296);
+    assert.equal(poseTime(0.47), 0.9);
+    for (const none of [null, Number.NaN, Number.POSITIVE_INFINITY, 0, -1]) {
+      assert.equal(poseTime(none), 1.2, String(none));
+    }
+  });
+
+  test('meow, purr and the banner: every file in static, from freesound or Kenney, CC0', () => {
+    const licence = readFileSync(join(STATIC, 'sounds', 'LICENSE.txt'), 'utf8');
+    assert.equal(SOUNDS.meow, 9);
+    assert.equal(SOUNDS.purr, 1);
+    assert.equal(SOUNDS.banner, 4);
+    for (const [name, count, source] of [
+      ['meow', 9, /freesound\.org\/people\/[^/]+\/sounds\/\d+\/ — Creative Commons 0/],
+      ['purr', 1, /freesound\.org\/people\/[^/]+\/sounds\/\d+\/ — Creative Commons 0/],
+      ['banner', 4, /License \(Creative Commons Zero, CC0\)/],
+    ] as const) {
+      for (let variant = 1; variant <= count; variant += 1) {
+        const file = `${name}-${variant}.m4a`;
+        assert.ok(existsSync(join(STATIC, 'sounds', file)), file);
+        const entry = licence.split(/\n(?=\S)/).find((part) => part.startsWith(`${file}\n`));
+        assert.match(entry ?? '', source, file);
+      }
+    }
+  });
+});
+
 describe('fx-head.js: the page after a form (hof.after)', () => {
   const LOGOUT = { act: 'logout', action: '/logout', at: NOW - 1000 };
   // POST /logout → 303 → /login, a fresh flag, the form of the sign-in on the page.
@@ -689,6 +761,104 @@ describe('fx-head.js: the page after a form (hof.after)', () => {
       const page = visit({ ...RIGHT, ...change });
       assert.deepEqual(page.classes(), [], JSON.stringify(change));
       assert.equal(page.arrived(), 'logout');
+    }
+  });
+});
+
+describe('fx-head.js: the sign-in, the founding and the key (M10.4)', () => {
+  const LOGIN = { act: 'login', action: '/login', at: NOW - 1000 };
+  const SETUP = { act: 'setup', action: '/setup', at: NOW - 1000 };
+  const KEY = { act: 'key', action: '/admin/users/7/disable', at: NOW - 1000 };
+  const RETURN = (id: number) => `form[action="/admin/users/${id}/enable"]`;
+  const IN = { redirects: 1, shows: ['.banner'] };
+  const SIGNED_IN = { ...IN, after: LOGIN, path: '/' };
+  const FOUNDED = { ...IN, after: SETUP, path: '/' };
+  const KEY_TAKEN = { after: KEY, path: '/admin/users/7', redirects: 1, shows: [RETURN(7)] };
+
+  test('signed in or founded: out of the dark, the banner unrolls; the classes go with their animations', () => {
+    for (const [name, right] of [
+      ['the sign-in', SIGNED_IN],
+      ['the sign-in, next of the shell', { ...SIGNED_IN, path: '/admin/users/7?done=password' }],
+      ['the founding', FOUNDED],
+    ] as const) {
+      const page = visit(right);
+      page.parsed();
+      assert.deepEqual(page.classes(), ['from-door', 'fx-on', 'unroll'], name);
+      assert.equal(page.arrived(), right.after.act, name);
+      page.fire('animationend', { animationName: 'veil-out' });
+      assert.deepEqual(page.classes(), ['fx-on', 'unroll'], `${name}: the banner still unrolls`);
+      page.fire('animationend', { animationName: 'fx-unroll' });
+      page.fire('animationend', { animationName: 'fx-settle' });
+      assert.deepEqual(page.classes(), ['fx-on'], name);
+    }
+    // The phone has no banner drawn: everything goes with the veil.
+    const phone = visit({ ...SIGNED_IN, drawn: false });
+    phone.parsed();
+    phone.fire('animationend', { animationName: 'veil-out' });
+    assert.deepEqual(phone.classes(), ['fx-on']);
+  });
+
+  test('«Забрать ключ»: the key fades on the card of the same person', () => {
+    const page = visit(KEY_TAKEN);
+    page.parsed();
+    assert.deepEqual(page.classes(), ['fx-on', 'key-off']);
+    assert.equal(page.arrived(), 'key');
+    page.fire('animationend', { animationName: 'key-off' });
+    assert.deepEqual(page.classes(), ['fx-on']);
+  });
+
+  test('no effect in each other case, and the flag is gone all the same', () => {
+    const cases: [string, Visit][] = [
+      // the sign-in
+      ['a wrong password: 400 on /login', { ...SIGNED_IN, path: '/login', redirects: 0 }],
+      ['the address of the form after a redirect', { ...SIGNED_IN, path: '/login' }],
+      ['on to /setup', { ...SIGNED_IN, path: '/setup' }],
+      ['next to a page without the banner', { ...SIGNED_IN, path: '/saeckel/', shows: [] }],
+      ['no redirect', { ...SIGNED_IN, redirects: 0 }],
+      ['the browser does not say', { ...SIGNED_IN, redirects: null }],
+      ['a reload', { ...SIGNED_IN, type: 'reload' }],
+      ['Back or Forward', { ...SIGNED_IN, type: 'back_forward' }],
+      ['older than 30 s', { ...SIGNED_IN, after: { ...LOGIN, at: NOW - 31_000 } }],
+      ['another act', { ...SIGNED_IN, after: { ...LOGIN, act: 'assign' } }],
+      ['the act of another form', { ...SIGNED_IN, after: { ...LOGIN, action: '/setup' } }],
+      // the founding
+      ['a wrong key: 400 on /setup', { ...FOUNDED, path: '/setup', redirects: 0 }],
+      ['founded, then elsewhere', { ...FOUNDED, path: '/account' }],
+      ['founded without the banner', { ...FOUNDED, shows: [] }],
+      ['a reload of the courtyard', { ...FOUNDED, type: 'reload' }],
+      // the key
+      ['the card of another person', { ...KEY_TAKEN, path: '/admin/users/8', shows: [RETURN(8)] }],
+      ['«Вернуть ключ» of another person', { ...KEY_TAKEN, shows: [RETURN(8)] }],
+      ['the key still there', { ...KEY_TAKEN, shows: [] }],
+      ['the address of the form: its 404, 500', { ...KEY_TAKEN, path: '/admin/users/7/disable' }],
+      [
+        'another form of the card',
+        { ...KEY_TAKEN, after: { ...KEY, action: '/admin/users/7/password' } },
+      ],
+      ['«Вернуть ключ» sent', { ...KEY_TAKEN, after: { ...KEY, action: '/admin/users/7/enable' } }],
+      ['a reload of the card', { ...KEY_TAKEN, type: 'reload' }],
+      ['no redirect', { ...KEY_TAKEN, redirects: 0 }],
+    ];
+    for (const [name, change] of cases) {
+      const page = visit(change);
+      page.parsed();
+      assert.deepEqual(page.classes(), ['fx-on'], name);
+      assert.equal(page.arrived(), undefined, name);
+      assert.equal(page.session.size, 0, name);
+    }
+  });
+
+  test('read once; without «Анимации» or with less motion only told, for the sound', () => {
+    const session = new Map<string, string>();
+    assert.deepEqual(visit({ ...SIGNED_IN, session }).classes(), ['from-door', 'fx-on', 'unroll']);
+    assert.deepEqual(visit({ ...IN, path: '/', session }).classes(), ['fx-on']);
+    for (const change of [{ anim: false }, { reduced: true }]) {
+      const page = visit({ ...SIGNED_IN, ...change });
+      page.parsed();
+      assert.deepEqual(page.classes(), [], JSON.stringify(change));
+      assert.equal(page.arrived(), 'login', JSON.stringify(change));
+      const key = visit({ ...KEY_TAKEN, ...change });
+      assert.deepEqual(key.classes(), [], JSON.stringify(change));
     }
   });
 });

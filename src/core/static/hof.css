@@ -762,6 +762,22 @@ a {
   top: 62%;
   width: 2%;
 }
+/* кот на карте (M10.4) — у фонтана; кадр позы ложится над ним (ниже, «Коты») */
+.cat-map {
+  position: absolute;
+  left: calc(100% * 826 / 1536);
+  top: calc(100% * 680 / 1024);
+  width: calc(100% * 54 / 1536);
+  height: calc(100% * 72 / 1024);
+  --x: 826;
+  --y: 680;
+  --w: 54;
+  --h: 72;
+  --px: 792;
+  --py: 623;
+  --pw: 155;
+  --ph: 152;
+}
 /* место на карте компьютера — одна ссылка: вывеска и дверь (окно сторожки). Ссылка во всю карту
    не ловит нажатий, ловят вывеска и дверь. Кадр открытой двери вырезан из той же карты с
    открытыми дверями; он появляется сразу, без наплыва (fx.js, .open) — при плавной смене обе
@@ -2083,6 +2099,156 @@ a {
   }
 }
 
+/* Коты (M10.4) — украшение для мыши и касания (§6, Ж4): прозрачная область над котом картины, без
+   имени и фокуса. Рамка .cat-frame повторяет картину: масштаб --s (px окна на px исходника) и
+   начало картины --x0, --y0 считаются так же, как object-fit или размеры этой картины; кот и
+   створки стоят в px исходника (--x, --y, --w, --h). Кадр позы (--px, --py, --pw, --ph) лежит над
+   котом и виден только с «Анимациями», пока кот звучит. Рамка под колонкой с текстом и не ловит
+   нажатий, ловит только кот */
+.cat-frame {
+  position: absolute;
+  inset: 0;
+  container-type: size;
+  pointer-events: none;
+}
+.cat-frame > * {
+  position: absolute;
+  left: calc(var(--x0) + var(--x) * var(--s));
+  top: calc(var(--y0) + var(--y) * var(--s));
+  width: calc(var(--w) * var(--s));
+  height: calc(var(--h) * var(--s));
+}
+.cat {
+  pointer-events: auto;
+}
+.cat::before {
+  content: '';
+  position: absolute;
+  left: calc(100% * (var(--px) - var(--x)) / var(--w));
+  top: calc(100% * (var(--py) - var(--y)) / var(--h));
+  width: calc(100% * var(--pw) / var(--w));
+  height: calc(100% * var(--ph) / var(--h));
+  opacity: 0;
+  pointer-events: none;
+}
+.cat-login {
+  --x: 656;
+  --y: 770;
+  --w: 124;
+  --h: 126;
+  --px: 630;
+  --py: 758;
+  --pw: 171;
+  --ph: 160;
+}
+.cat-setup {
+  --x: 574;
+  --y: 740;
+  --w: 100;
+  --h: 124;
+  --px: 565;
+  --py: 740;
+  --pw: 128;
+  --ph: 129;
+}
+.cat-500 {
+  --x: 680;
+  --y: 736;
+  --w: 210;
+  --h: 160;
+  --px: 648;
+  --py: 796;
+  --pw: 112;
+  --ph: 115;
+}
+.cat-chambers {
+  --x: 347;
+  --y: 636;
+  --w: 330;
+  --h: 149;
+  --px: 315;
+  --py: 603;
+  --pw: 344;
+  --ph: 208;
+}
+/* створки основания открываются при отправке формы (fx.js, .open) — сразу, без наплыва */
+.gate-open {
+  --x: 424;
+  --y: 440;
+  --w: 264;
+  --h: 350;
+  opacity: 0;
+}
+.gate-open.open {
+  opacity: 1;
+}
+/* ключ на карточке: рамка картинки, над ней ключ растворяется после «Забрать ключ» */
+.card-key {
+  position: relative;
+  display: block;
+  flex: none;
+}
+@media (min-width: 1024px) {
+  /* ворота и 500: картина во всё окно, cover, прижата влево; покои — колонка, cover по центру */
+  .gate .cat-frame,
+  .error .cat-frame {
+    --s: max(100cqw / 1536, 100cqh / 1024);
+    --x0: 0px;
+    --y0: calc((100cqh - 1024 * var(--s)) / 2);
+  }
+  .chambers .cat-frame {
+    --s: max(100cqw / 683, 100cqh / 1024);
+    --x0: calc((100cqw - 683 * var(--s)) / 2);
+    --y0: calc((100cqh - 1024 * var(--s)) / 2);
+  }
+}
+@media (max-width: 1023.98px) {
+  /* вход: квадрат 1254 px исходника во всю ширину, cover, прижат вниз */
+  .gate-login .gate-scene {
+    position: relative;
+  }
+  .gate-login .cat-frame {
+    inset: auto 0 0;
+    height: min(100vw, 55vh);
+    --s: calc(max(100cqw, 100cqh) / 1254);
+    --x0: calc((100cqw - 1254 * var(--s)) / 2);
+    --y0: calc(100cqh - 1254 * var(--s));
+  }
+  .cat-login {
+    --x: 740;
+    --y: 1000;
+    --w: 150;
+    --h: 150;
+    --px: 738;
+    --py: 1013;
+    --pw: 96;
+    --ph: 106;
+  }
+  /* основание и 500: картина задана в vw от нижнего края полосы */
+  .gate-setup .cat-frame {
+    --s: calc(194.87vw / 1536);
+    --x0: -21.79vw;
+    --y0: calc(100cqh + 18.64vw - 1024 * var(--s));
+  }
+  .error .cat-frame {
+    --s: calc(164.1vw / 1536);
+    --x0: -10.26vw;
+    --y0: calc(100cqh + 4.274vw - 1024 * var(--s));
+  }
+  /* покои: полоса 170 px, cover, 50 % 72,33 %; кот ловит нажатие на всём кадре позы */
+  .chambers .cat-frame {
+    --s: max(100cqw / 683, 100cqh / 1024);
+    --x0: calc((100cqw - 683 * var(--s)) / 2);
+    --y0: calc((100cqh - 1024 * var(--s)) * 0.7233);
+  }
+  .cat-chambers {
+    --x: 315;
+    --y: 603;
+    --w: 344;
+    --h: 208;
+  }
+}
+
 /* Эффекты переходов (§6). Классы на <html> ставят fx-head.js (приход) и fx.js (уход), и только с
    «Анимациями»; двигаются лишь opacity, transform и кадры. Системное «уменьшить движение»
    выключает их и здесь. Конечный кадр каждого перехода — страница как без него */
@@ -2213,6 +2379,32 @@ a {
   .fx-on .door-tower {
     background-image: url(img/map-tower-door.webp);
   }
+  /* кот: кадр позы над котом, пока он звучит (.meow и длину --pose ставит fx.js); смена кадра
+     мгновенная — при плавной видны два кота сразу. Створки основания — кадр той же сцены */
+  .fx-on .cat::before {
+    background: 0 0 / 100% 100% no-repeat;
+  }
+  .fx-on .cat-login::before {
+    background-image: image-set(url(img/pose-login.webp) 1x, url(img/pose-login@2x.webp) 2x);
+  }
+  .fx-on .cat-setup::before {
+    background-image: image-set(url(img/pose-setup.webp) 1x, url(img/pose-setup@2x.webp) 2x);
+  }
+  .fx-on .cat-500::before {
+    background-image: image-set(url(img/pose-500.webp) 1x, url(img/pose-500@2x.webp) 2x);
+  }
+  .fx-on .cat-map::before {
+    background-image: url(img/map-cat.webp);
+  }
+  .fx-on .cat-chambers::before {
+    background-image: url(img/chambers-cat.webp);
+  }
+  .fx-on .cat.meow::before {
+    animation: pose var(--pose, 1.2s) ease-out;
+  }
+  .fx-on .gate-open {
+    background: url(img/setup-gate-open.webp) 0 0 / 100% 100% no-repeat;
+  }
 
   /* сдвиг: сцена уезжает на 32 % и темнеет до 0,85 (.go-left, .go-right — 0,5 с), новая выезжает
      навстречу и светлеет (.from-right, .from-left — 0,6 с). Так же, в ту же сторону, листается
@@ -2255,9 +2447,18 @@ a {
   .go-dark body::after {
     animation: veil-in 0.5s ease-in forwards;
   }
-  .from-door body::after {
+  /* html. — иначе общее правило завесы выше сильнее и оставляет её прозрачной */
+  html.from-door body::after {
     opacity: 1;
     animation: veil-out 0.7s ease-out forwards;
+  }
+  /* после «Забрать ключ» (fx-head.js, .key-off): ключ на бирке растворяется в пустой крючок */
+  .key-off .card-key::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: url(img/key-tag.webp) 0 0 / 100% 100% no-repeat;
+    animation: key-off 0.75s ease-in-out forwards;
   }
   /* виньетки и кляксы печатаются на бумагу страницы (multiply), а сдвигаемая часть — свой слой:
      на время перехода у неё та же бумага, узор с того же места (часть стоит в 288, 0 у знамени
@@ -2302,6 +2503,49 @@ a {
     background-position:
       -288px 0,
       -288px 0;
+  }
+}
+/* у кота на входе телефона свой кадр — картина телефона своя */
+@media (prefers-reduced-motion: no-preference) and (max-width: 1023.98px) {
+  .fx-on .cat-login::before {
+    background-image: url(img/pose-login-m.webp);
+  }
+}
+/* после входа и основания (fx-head.js, .unroll, вместе с .from-door): знамя разворачивается за
+   1,2 с — под древком рулон катится вниз и худеет, у начала выреза (74 px от низа) он кончается и
+   концы выпадают; потом знамя качнётся. Рулон и тень над ним стоят в окне: знамя прилипает к его
+   верху во всю высоту. На телефоне знамени нет — только завеса */
+@media (prefers-reduced-motion: no-preference) and (min-width: 1024px) {
+  .unroll .banner {
+    transform-origin: 50% 0;
+    animation:
+      fx-unroll 1.2s both,
+      fx-settle 0.9s ease-out 1.2s;
+  }
+  .unroll .shell::before,
+  .unroll .shell::after {
+    content: '';
+    position: fixed;
+    z-index: 3;
+    left: 40px;
+    top: 40px;
+    width: 208px;
+    pointer-events: none;
+  }
+  .unroll .shell::after {
+    height: 42px;
+    transform: translateY(-50%);
+    filter: drop-shadow(0 4px 3px rgb(14 26 46 / 0.35));
+    background: url(img/banner-roll.webp) 0 0 / 100% 100% no-repeat;
+    animation: fx-roll 1.2s both;
+  }
+  .unroll .shell::before {
+    left: 42px;
+    width: 204px;
+    height: 28px;
+    transform: translateY(-100%);
+    background: linear-gradient(to bottom, transparent, rgb(8 18 40 / 0.4));
+    animation: fx-roll-shade 1.2s both;
   }
 }
 @media (prefers-reduced-motion: no-preference) and (max-width: 1023.98px) {
@@ -2359,6 +2603,80 @@ a {
 @keyframes fx-flap {
   to {
     background-position: 133.33% 0;
+  }
+}
+@keyframes pose {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  1%,
+  97% {
+    opacity: 1;
+  }
+}
+@keyframes key-off {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes fx-unroll {
+  from {
+    clip-path: inset(0 0 calc(100% - 40px) 0);
+    animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 1);
+  }
+  86% {
+    clip-path: inset(0 0 74px 0);
+    animation-timing-function: ease-in;
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes fx-settle {
+  30% {
+    transform: perspective(900px) rotateX(7deg);
+  }
+  62% {
+    transform: perspective(900px) rotateX(-3deg);
+  }
+  85% {
+    transform: perspective(900px) rotateX(1deg);
+  }
+}
+@keyframes fx-roll {
+  from {
+    top: 40px;
+    height: 42px;
+    animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 1);
+  }
+  86% {
+    top: calc(100% - 74px);
+    height: 18px;
+    opacity: 1;
+    animation-timing-function: ease-in;
+  }
+  to {
+    top: calc(100% - 74px);
+    height: 0;
+    opacity: 0;
+  }
+}
+@keyframes fx-roll-shade {
+  from {
+    top: 40px;
+    animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 1);
+  }
+  86% {
+    top: calc(100% - 74px);
+    opacity: 1;
+  }
+  to {
+    top: calc(100% - 74px);
+    opacity: 0;
   }
 }
 @keyframes stamp {
