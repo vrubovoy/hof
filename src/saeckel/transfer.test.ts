@@ -101,7 +101,7 @@ describe('the page «Переложить»', () => {
     for (const text of [
       '<title>Säckel — переложить</title>',
       '<h1 class="title t-2">Переложить из мешка в мешок</h1>',
-      '<form class="entry" method="post" action="/saeckel/transfer">',
+      '<form class="entry" method="post" action="/saeckel/transfer" data-fx="transfer">',
       '<label for="from">Из мешка</label>',
       '<label for="to">В мешок</label>',
       '<label for="amount">Сумма, ₽</label>',
@@ -233,6 +233,25 @@ describe('Переложить', () => {
     );
     assert.deepEqual(await balances(), { Продукты: '−1 240,79 ₽', Транспорт: '1 240,79 ₽' });
     assert.equal(await treasury(), '0,00 ₽');
+  });
+
+  // M10.5: 303 to Мешки is what rings with coins after a transfer — only after its record.
+  test('an amount of 0: 400 and nothing written; 0,01: 303 and one record', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const flat = await addPouch(1, 'Квартира');
+    for (const amount of ['0', '0,00']) {
+      const res = await transfer({ from: String(food), to: String(flat), amount, note: '' });
+      assert.equal(res.status, 400, amount);
+      assert.equal(res.headers.get('location'), null, amount);
+    }
+    assert.deepEqual(await operations(), []);
+    const done = await transfer({ from: String(food), to: String(flat), amount: '0,01', note: '' });
+    assert.equal(done.status, 303);
+    assert.equal(done.headers.get('location'), '/saeckel/');
+    assert.deepEqual(
+      (await operations()).map((row) => [row.kind, row.from_pouch_id, row.to_pouch_id, row.amount]),
+      [['transfer', food, flat, '1']],
+    );
   });
 
   test('no choice: «Выберите мешок.» under each list, what was typed kept, nothing written', async () => {

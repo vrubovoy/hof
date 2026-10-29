@@ -783,7 +783,7 @@ describe('the page of a pouch: balance, form, expenses', () => {
     const flat = page.replace(/\s+/g, ' ');
     for (const text of [
       '<h2 class="title t-3 visually-hidden-phone">Записать трату</h2>',
-      `<form class="expense" method="post" action="/saeckel/pouches/${id}/expense">`,
+      `<form class="expense" method="post" action="/saeckel/pouches/${id}/expense" data-fx="expense" >`,
       '<label for="amount">Сумма, ₽</label>',
       'inputmode="decimal"',
       '<label for="date">Дата</label>',

@@ -72,7 +72,7 @@ describe('Казна on Мешки', () => {
     assert.equal(treasury(page), '0,00 ₽');
     assert.ok(
       page.includes(
-        '<a class="btn btn-ochre" href="/saeckel/assign" data-fx="flip-fwd-phone">Разложить</a>',
+        '<a class="btn btn-ochre" href="/saeckel/assign" data-fx="flip-fwd-phone" data-sound="coins" >Разложить</a >',
       ),
     );
     assert.ok(
@@ -129,7 +129,7 @@ describe('Доход', () => {
     for (const text of [
       '<title>Säckel — доход</title>',
       '<h1 class="title t-2">Доход</h1>',
-      '<form class="entry" method="post" action="/saeckel/income">',
+      '<form class="entry" method="post" action="/saeckel/income" data-fx="income">',
       '<label for="amount">Сумма, ₽</label>',
       'inputmode="decimal"',
       `value="${dateForField(todayInCourt())}"`,
@@ -143,7 +143,7 @@ describe('Доход', () => {
     assert.equal(treasury(page), '0,00 ₽');
     assert.ok(
       page.includes(
-        '<a class="btn btn-ochre" href="/saeckel/assign" data-fx="flip-fwd-phone">Разложить</a>',
+        '<a class="btn btn-ochre" href="/saeckel/assign" data-fx="flip-fwd-phone" data-sound="coins" >Разложить</a >',
       ),
     );
   });
@@ -198,7 +198,7 @@ describe('Доход', () => {
       '<p id="note-error" class="err-text">Заметка — до 200 символов, одной строкой.</p>',
       'value="1,2,3"',
       'value="31.02.2026"',
-      '<form class="entry" method="post" action="/saeckel/income">',
+      '<form class="entry" method="post" action="/saeckel/income" data-fx="income">',
     ]) {
       assert.ok(page.includes(text), text);
     }
@@ -236,7 +236,7 @@ describe('the page «Разложить»', () => {
     for (const text of [
       '<title>Säckel — разложить</title>',
       '<h1 class="title t-2">Разложить по мешкам</h1>',
-      '<form class="assign" method="post" action="/saeckel/assign">',
+      '<form class="assign" method="post" action="/saeckel/assign" data-fx="assign">',
       '<th>Мешок</th> <th class="num">Сейчас в мешке</th> <th class="put-head">Положить, ₽</th>',
       `name="amount_${food}"`,
       'aria-label="Положить в мешок Продукты"',
@@ -257,7 +257,7 @@ describe('the page «Разложить»', () => {
     assert.ok(!page.includes('лёг в казну'));
     // The column beside it: the same treasury, no buttons — they lead here (SaeckelAssign).
     assert.equal(treasury(page), '1 000,00 ₽');
-    assert.ok(!page.includes('href="/saeckel/assign" data-fx="flip-fwd-phone">Разложить</a>'));
+    assert.ok(!page.includes('href="/saeckel/assign" data-fx="flip-fwd-phone"'));
     assert.ok(!page.includes('href="/saeckel/income" data-fx="flip-fwd-phone">+ Доход</a>'));
     assert.ok(!page.includes('class="treasury-actions"'));
   });
@@ -278,7 +278,7 @@ describe('the page «Разложить»', () => {
     await addPouch(1, 'Продукты');
     const id = await addOperation(1, 'income', 8_000_000);
     const page = await (await get(`/saeckel/assign?income=${id}`, 'anna')).text();
-    const note = /<p class="note">([\s\S]*?)<\/p>/.exec(page)?.[1] ?? '';
+    const note = /<p class="note note-income">([\s\S]*?)<\/p>/.exec(page)?.[1] ?? '';
     assert.equal(
       textOf(note),
       'Доход 80 000,00 ₽ лёг в казну. Разложите его по мешкам или оставьте в казне на потом.',
@@ -349,6 +349,23 @@ describe('Разложить', () => {
       );
     }
     assert.deepEqual(await operations(), []);
+  });
+
+  // M10.5: 303 to Мешки is what rings with coins after laying out — only after records written.
+  test('every amount 0: 400 and nothing written; one right row among empty ones: 303, one record', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const flat = await addPouch(1, 'Квартира');
+    const zero = await assign({ [`amount_${food}`]: '0', [`amount_${flat}`]: '0,00' });
+    assert.equal(zero.status, 400);
+    assert.equal(zero.headers.get('location'), null);
+    assert.deepEqual(await operations(), []);
+    const done = await assign({ [`amount_${food}`]: '', [`amount_${flat}`]: '0,01' });
+    assert.equal(done.status, 303);
+    assert.equal(done.headers.get('location'), '/saeckel/');
+    assert.deepEqual(
+      (await operations()).map((row) => [row.kind, row.to_pouch_id, row.amount]),
+      [['assign', flat, '1']],
+    );
   });
 
   test('a wrong amount in one row: 400 under that row, every row as typed, nothing written', async () => {

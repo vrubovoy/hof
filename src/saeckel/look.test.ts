@@ -403,12 +403,13 @@ describe('the shell', () => {
 });
 
 // M10.2: with «Анимации» the book of Säckel turns a page (data-fx, read by fx.js of Hof). Links
-// stay <a href>, forms <form method="post">; Säckel has no banner, so nothing keeps it.
+// stay <a href>, forms <form method="post">; Säckel has no banner, so nothing keeps it. M10.5: a
+// form that writes money names its act for the coins of the next page; no other form has one.
 describe('the ways between pages', () => {
   // The effects of a link fx.js of Hof knows that Säckel uses (LINK_FX in src/core/static/fx.js;
   // Säckel does not import Core, §2).
   const LINK_FX = ['flip-fwd', 'flip-back', 'flip-fwd-phone', 'page'];
-  // Each way of a piece of a page as "address fx", the links only: a form of Säckel has no act.
+  // Each way of a piece of a page as "address fx", the links only.
   function ways(piece: string): string[] {
     return [...piece.matchAll(/<a\s([^>]*)>/g)].flatMap(([, attributes]) => {
       const fx = /data-fx="([^"]*)"/.exec(attributes!)?.[1];
@@ -441,17 +442,38 @@ describe('the ways between pages', () => {
     return { ids, pages };
   }
 
-  test('every data-fx is one fx.js knows; none on the current tab or pouch; no data-keep, no act of a form', async () => {
+  test('every data-fx is one fx.js knows; none on the current tab or pouch; no data-keep; a form of money has its act, no other form one', async () => {
     const { pages } = await bookPages();
+    // The acts of money fx.js of Hof knows (MONEY), by the address of the form.
+    const ACTS: [RegExp, string][] = [
+      [/^\/saeckel\/pouches\/\d+\/expense$/, 'expense'],
+      [/^\/saeckel\/income$/, 'income'],
+      [/^\/saeckel\/assign$/, 'assign'],
+      [/^\/saeckel\/transfer$/, 'transfer'],
+    ];
+    const acts = new Set<string>();
     for (const [path, page] of pages) {
       for (const [, tag, attributes] of page.matchAll(/<(a|form)\s([^>]*)>/g)) {
         const fx = /data-fx="([^"]*)"/.exec(attributes!)?.[1];
         assert.doesNotMatch(attributes!, /data-keep/, path);
-        if (tag === 'form') assert.equal(fx, undefined, path);
-        else if (/aria-current/.test(attributes!)) assert.equal(fx, undefined, path);
+        if (tag === 'form') {
+          const action = /action="([^"]*)"/.exec(attributes!)?.[1] ?? '';
+          const act = ACTS.find(([address]) => address.test(action))?.[1];
+          assert.equal(fx, act, `${path}: ${action}`);
+          if (act !== undefined) acts.add(act);
+        } else if (/aria-current/.test(attributes!)) assert.equal(fx, undefined, path);
         else if (fx !== undefined) assert.ok(LINK_FX.includes(fx), `${path}: ${fx}`);
+        // Only «Разложить» of the treasury rings as it is pressed.
+        const sound = /data-sound="([^"]*)"/.exec(attributes!)?.[1];
+        if (sound !== undefined) {
+          assert.equal(
+            `${tag} ${/href="([^"]*)"/.exec(attributes!)?.[1]} ${sound}`,
+            'a /saeckel/assign coins',
+          );
+        }
       }
     }
+    assert.deepEqual([...acts].sort(), ['assign', 'expense', 'income', 'transfer']);
   });
 
   test('Двор and «назад» turn back; a tab by the order of the tabs; deeper into Мешки forward on the phone; Летопись rustles', async () => {
@@ -652,7 +674,10 @@ function openPouch(page: string) {
   const pane = page.split('<div class="sk-main sk-first">')[1] ?? '';
   return {
     name: /<h2 class="title t-1">([^<]*)<\/h2>/.exec(pane)?.[1],
-    action: /<form class="expense" method="post" action="([^"]*)">/.exec(pane)?.[1],
+    action:
+      /<form\s+class="expense"\s+method="post"\s+action="([^"]*)"\s+data-fx="expense"\s*>/.exec(
+        pane,
+      )?.[1],
     row: /<a\s+class="pouch open"\s+href="([^"]*)"/.exec(page)?.[1],
   };
 }
@@ -704,7 +729,11 @@ describe('the first pouch on Мешки', () => {
     const fields = { amount: '1 240,50', date: '05.10.2026', note: 'овощи' };
     const fromList = openPouch(await (await get('/saeckel/', 'anna')).text()).action!;
     const ownPage = await (await get(`/saeckel/pouches/${food}`, 'anna')).text();
-    assert.ok(ownPage.includes(`<form class="expense" method="post" action="${fromList}">`));
+    assert.ok(
+      fold(ownPage).includes(
+        `<form class="expense" method="post" action="${fromList}" data-fx="expense" >`,
+      ),
+    );
     const written = [];
     for (let n = 0; n < 2; n++) {
       const res = await post(fromList, fields, 'anna');
@@ -826,7 +855,12 @@ describe('Доход, Разложить, Переложить', () => {
       assert.equal(res.status, 400);
       const page = await res.text();
       const name = JSON.stringify(fields);
-      assert.ok(page.includes('<form class="entry" method="post" action="/saeckel/income">'), name);
+      assert.ok(
+        page.includes(
+          '<form class="entry" method="post" action="/saeckel/income" data-fx="income">',
+        ),
+        name,
+      );
       assertInvalid(page, wrong, name);
       for (const value of Object.values(fields)) {
         assert.ok(page.includes(`value="${value}"`), `${name}: ${value}`);
@@ -904,7 +938,7 @@ describe('Доход, Разложить, Переложить', () => {
     // The second sentence is hidden from the screen of a phone only; a screen reader reads both.
     assert.match(
       page,
-      /<p class="note"> Доход 80 000,00 ₽ лёг в казну\.<span class="visually-hidden-phone"> Разложите его по мешкам или оставьте в казне на потом\.<\/span ?> <\/p>/,
+      /<p class="note note-income"> Доход 80 000,00 ₽ лёг в казну\.<span class="visually-hidden-phone"> Разложите его по мешкам или оставьте в казне на потом\.<\/span ?> <\/p>/,
     );
     assert.ok(!page.includes('note-error'));
     const refused = fold(
@@ -1167,6 +1201,108 @@ describe('Летопись and a record', () => {
     );
     assert.ok(!page.includes('<form') && !page.includes('<details') && !page.includes('<input'));
     assert.equal((await operations()).length, 1);
+  });
+});
+
+// M10.5: the chest of the treasury and the cat at the empty pouches are decor of Hof (data-poke,
+// Ж4): a <span> hidden from the screen reader, without focus, around the picture only — never
+// around the sum or the buttons beside it. Their other frames are backgrounds under fx-on.
+describe('the decor of Säckel (M10.5)', () => {
+  // The decor of a page: every data-poke, and the tag that has it.
+  const pokes = (page: string) =>
+    [...page.matchAll(/<(\w+)\s([^>]*data-poke="([^"]*)"[^>]*)>/g)].map(([, tag, attrs, poke]) => ({
+      tag,
+      attrs: attrs!,
+      poke,
+    }));
+
+  test('the chest: data-poke only on the wrapper of its picture, hidden, no focus; the buttons beside it', async () => {
+    const food = await addPouch(ANNA, 'Продукты');
+    for (const path of [
+      '/saeckel/',
+      `/saeckel/pouches/${food}`,
+      '/saeckel/income',
+      '/saeckel/assign',
+      '/saeckel/transfer',
+    ]) {
+      const page = fold(await (await get(path, 'anna')).text());
+      assert.deepEqual(
+        pokes(page).map(({ tag, poke }) => `${tag} ${poke}`),
+        ['span chest'],
+        path,
+      );
+      const { attrs } = pokes(page)[0]!;
+      assert.match(attrs, /aria-hidden="true"/, path);
+      assert.doesNotMatch(attrs, /tabindex|role=/, path);
+      const frame = /<div class="framed treasury">([\s\S]*?)<\/div>/.exec(page)![1]!;
+      const chest = /<span class="chest-box"[^>]*>([\s\S]*?)<\/span>/.exec(frame)!;
+      // Inside: the picture of the closed chest and nothing else.
+      assert.equal(
+        chest[1]!.trim(),
+        '<img class="chest" src="/saeckel/static/img/emblem-chest-closed.webp" alt="" />',
+        path,
+      );
+      // The sum and the buttons are after it, outside.
+      const after = frame.slice(frame.indexOf(chest[0]) + chest[0].length);
+      assert.ok(after.includes('<p class="money'), path);
+      if (path !== '/saeckel/assign') {
+        assert.match(after, /href="\/saeckel\/assign"[^>]*>Разложить/, path);
+        assert.match(after, /href="\/saeckel\/income"[^>]*>\+ Доход/, path);
+      }
+      // The open chest is not a picture of the page: only a background of the CSS.
+      assert.ok(!page.includes('emblem-chest.webp'), path);
+    }
+  });
+
+  test('the cat at the empty pouches: data-poke over the cat of the vignette, hidden, no focus', async () => {
+    const page = fold(await (await get('/saeckel/', 'anna')).text());
+    assert.ok(
+      page.includes(
+        '<span class="vignette sniff" aria-hidden="true" ><img src="/saeckel/static/img/empty-saeckel.webp" alt="" /><span class="cat" data-poke="sniff" ></span ></span>',
+      ),
+    );
+    assert.deepEqual(
+      pokes(page).map(({ tag, poke }) => `${tag} ${poke}`),
+      ['span chest', 'span sniff'],
+    );
+    assert.ok(!page.includes('sniff-1') && !page.includes('sniff-2'));
+    // With a pouch the cat is not there.
+    await addPouch(ANNA, 'Продукты');
+    assert.ok(!(await (await get('/saeckel/', 'anna')).text()).includes('data-poke="sniff"'));
+  });
+
+  test('the frames of the chest and of the cat: backgrounds under fx-on, in reduced motion none', () => {
+    for (const file of [
+      'emblem-chest.webp',
+      'empty-saeckel-sniff-1.webp',
+      'empty-saeckel-sniff-2.webp',
+    ]) {
+      const rules = [...CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, , body]) =>
+        body!.includes(`img/${file}`),
+      );
+      assert.equal(rules.length, 1, file);
+      const selector = rules[0]![1]!.replace(/\/\*[\s\S]*?\*\//g, '').trim();
+      assert.match(selector, /^\.fx-on /, file);
+      const at = CSS.indexOf(`img/${file}`);
+      const block = CSS.lastIndexOf('@media', at);
+      assert.ok(
+        CSS.slice(block, at).startsWith('@media (prefers-reduced-motion: no-preference)'),
+        file,
+      );
+    }
+  });
+
+  test('note-income only for an income of this user', async () => {
+    const own = await addOperation(ANNA, 'income', 8_000_000);
+    const his = await addOperation(BORIS, 'income', 100);
+    const spent = await addOperation(ANNA, 'expense', 100, { from: await addPouch(ANNA, 'Еда') });
+    const notes = async (query: string) =>
+      ((await (await get(`/saeckel/assign${query}`, 'anna')).text()).match(/note-income/g) ?? [])
+        .length;
+    assert.equal(await notes(`?income=${own}`), 1);
+    for (const query of ['', `?income=${his}`, `?income=${spent}`, '?income=999', '?income=x']) {
+      assert.equal(await notes(query), 0, query);
+    }
   });
 });
 

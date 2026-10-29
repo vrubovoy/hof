@@ -1,8 +1,8 @@
 // fx.js (ARCHITECTURE.md §6, §4.8): what the effects decide, without a page — the settings of the
 // device, motion, variants of a sound, the place of the music, the guard against a form sent
 // twice, what a press on a link does (M10.2), the fountain, the rare events of the courtyard and
-// the way through a door (M10.3) — and that every sound it may ask for is in static and in the
-// licence list. fx-head.js, a script of <head> without exports, runs here as it is against a page
+// the way through a door (M10.3), what a press on decor pokes (M10.4, M10.5) — and that every
+// sound it may ask for is in static and in the licence list. fx-head.js, a script of <head> without exports, runs here as it is against a page
 // made of only what it reads: how a page arrives after a link or a form.
 
 import assert from 'node:assert/strict';
@@ -21,6 +21,7 @@ import {
   FOUNTAINS,
   GUST,
   LINK_FX,
+  MONEY,
   MUSIC_KEY,
   PIECES,
   SETTINGS_KEY,
@@ -41,6 +42,7 @@ import {
   poked,
   poseTime,
   readMusic,
+  SNIFFS,
   readSettings,
   soundFiles,
   tryNextPiece,
@@ -631,7 +633,7 @@ describe('fx: decor and the cats (M10.4)', () => {
   });
 
   test('a press on the cat itself pokes it; on a control inside, or an unknown thing, nothing', () => {
-    assert.deepEqual(POKES, { meow: 'meow', purr: 'purr' });
+    assert.deepEqual(POKES, { meow: 'meow', purr: 'purr', chest: 'chest', sniff: 'sniff' });
     const cat = [{ matches: '[data-poke]', poke: 'meow' }];
     assert.notEqual(poked(element(cat)), null);
     for (const control of [
@@ -670,6 +672,47 @@ describe('fx: decor and the cats (M10.4)', () => {
       ['banner', 4, /License \(Creative Commons Zero, CC0\)/],
     ] as const) {
       for (let variant = 1; variant <= count; variant += 1) {
+        const file = `${name}-${variant}.m4a`;
+        assert.ok(existsSync(join(STATIC, 'sounds', file)), file);
+        const entry = licence.split(/\n(?=\S)/).find((part) => part.startsWith(`${file}\n`));
+        assert.match(entry ?? '', source, file);
+      }
+    }
+  });
+});
+
+describe('fx: Säckel (M10.5)', () => {
+  // The frame of the treasury as poked() reads it, from the element pressed out: the chest is
+  // the thing; «Разложить» and «+ Доход» are links beside it, in the frame but not in the chest.
+  const element = (chain: { matches: string; poke?: string }[]) => ({
+    closest(selector: string) {
+      const found = chain.find((link) =>
+        selector.split(', ').some((one) => link.matches.split(' ').includes(one)),
+      );
+      return found ? { dataset: found.poke === undefined ? {} : { poke: found.poke } } : null;
+    },
+  });
+  const frame = { matches: 'div' };
+
+  test('the chest and the cat at the empty pouches are pokes; a link in the frame of the treasury is not', () => {
+    const chest = { matches: '[data-poke]', poke: 'chest' };
+    assert.notEqual(poked(element([{ matches: 'img' }, chest, frame])), null);
+    assert.equal(poked(element([{ matches: 'a[href]' }, frame])), null, '«Разложить», «+ Доход»');
+    assert.equal(poked(element([{ matches: 'p' }, frame])), null, 'the sum');
+    assert.notEqual(poked(element([{ matches: '[data-poke]', poke: 'sniff' }])), null);
+    assert.deepEqual(SNIFFS, [0, 1500]);
+    assert.deepEqual(MONEY, ['expense', 'income', 'assign', 'transfer']);
+  });
+
+  test('the chest and the sniffs: every file in static, from Kenney or freesound, CC0', () => {
+    const licence = readFileSync(join(STATIC, 'sounds', 'LICENSE.txt'), 'utf8');
+    assert.equal(SOUNDS.chest, 3);
+    assert.equal(SOUNDS.sniff, 3);
+    for (const [name, source] of [
+      ['chest', /набор «RPG Audio», Kenney[^]*License \(Creative Commons Zero, CC0\)/],
+      ['sniff', /freesound\.org\/people\/[^/]+\/sounds\/\d+\/ — Creative Commons 0/],
+    ] as const) {
+      for (let variant = 1; variant <= 3; variant += 1) {
         const file = `${name}-${variant}.m4a`;
         assert.ok(existsSync(join(STATIC, 'sounds', file)), file);
         const entry = licence.split(/\n(?=\S)/).find((part) => part.startsWith(`${file}\n`));
@@ -859,6 +902,148 @@ describe('fx-head.js: the sign-in, the founding and the key (M10.4)', () => {
       assert.equal(page.arrived(), 'login', JSON.stringify(change));
       const key = visit({ ...KEY_TAKEN, ...change });
       assert.deepEqual(key.classes(), [], JSON.stringify(change));
+    }
+  });
+});
+
+describe('fx-head.js: money of Säckel (M10.5)', () => {
+  const EXPENSE = { act: 'expense', action: '/saeckel/pouches/7/expense', at: NOW - 1000 };
+  const INCOME = { act: 'income', action: '/saeckel/income', at: NOW - 1000 };
+  const ASSIGN = { act: 'assign', action: '/saeckel/assign', at: NOW - 1000 };
+  const TRANSFER = { act: 'transfer', action: '/saeckel/transfer', at: NOW - 1000 };
+  // POST → 303 → the page the act leads to, with what the act shows: the record just written
+  // marked, the note of the income; Мешки shows nothing of its own.
+  const SPENT = {
+    after: EXPENSE,
+    path: '/saeckel/pouches/7?fresh=31',
+    redirects: 1,
+    shows: ['mark.move'],
+  };
+  const EARNED = {
+    after: INCOME,
+    path: '/saeckel/assign?income=32',
+    redirects: 1,
+    shows: ['.note-income'],
+  };
+  const LAID = { after: ASSIGN, path: '/saeckel/', redirects: 1, shows: [] };
+  const MOVED = { after: TRANSFER, path: '/saeckel/', redirects: 1, shows: [] };
+
+  test('an expense: the record written in, the sign squeezed; the class goes with the pen mark', () => {
+    const page = visit(SPENT);
+    page.parsed();
+    assert.deepEqual(page.classes(), ['fx-on', 'spent']);
+    assert.equal(page.arrived(), 'expense');
+    assert.equal(page.session.size, 0);
+    // The cells and the sign end first; the pen mark comes when the last cell is written.
+    for (const name of ['squeeze', 'fx-fresh']) {
+      page.fire('animationend', { animationName: name });
+      assert.deepEqual(page.classes(), ['fx-on', 'spent'], name);
+    }
+    page.fire('animationend', { animationName: 'fx-mark' });
+    assert.deepEqual(page.classes(), ['fx-on']);
+  });
+
+  test('an income, laying out and a transfer: only told, for the coins', () => {
+    for (const [name, right] of [
+      ['income', EARNED],
+      ['assign', LAID],
+      ['transfer', MOVED],
+    ] as const) {
+      const page = visit(right);
+      page.parsed();
+      page.frame();
+      assert.deepEqual(page.classes(), ['fx-on'], name);
+      assert.equal(page.arrived(), name);
+      assert.equal(page.session.size, 0, name);
+    }
+  });
+
+  test('no effect in each other case, and the flag is gone all the same', () => {
+    // The cases of M10.2 for each of the four acts, then those of money.
+    const cases: [string, Visit][] = [];
+    for (const right of [SPENT, EARNED, LAID, MOVED]) {
+      const flag = right.after;
+      for (const [name, change] of [
+        ['no flag', { after: undefined }],
+        ['broken JSON', { after: `{"act":"${flag.act}",` }],
+        ['not an object', { after: 7 }],
+        ['older than 30 s', { after: { ...flag, at: NOW - 31_000 } }],
+        ['from the future', { after: { ...flag, at: NOW + 60_000 } }],
+        ['no time', { after: { act: flag.act, action: flag.action } }],
+        ['the address of the form: its 400, 403, 429, 500', { path: flag.action, redirects: 0 }],
+        ['the address of the form after a redirect', { path: flag.action }],
+        ['a reload', { type: 'reload' }],
+        ['Back or Forward', { type: 'back_forward' }],
+        ['no redirect: opened by itself', { redirects: 0 }],
+        ['the browser does not say', { redirects: null }],
+        ['to the sign-in: the session is over', { path: '/login', shows: ['.banner'] as string[] }],
+        ['an act of Core', { after: { ...flag, act: 'logout' } }],
+      ] as const) {
+        cases.push([`${flag.act}: ${name}`, { ...right, ...change }]);
+      }
+    }
+    cases.push(
+      // an expense
+      ['the page of another pouch', { ...SPENT, path: '/saeckel/pouches/8?fresh=31' }],
+      [
+        'an expense of another pouch',
+        { ...SPENT, after: { ...EXPENSE, action: '/saeckel/pouches/8/expense' } },
+      ],
+      ['no record marked: a strange or old fresh', { ...SPENT, shows: [] }],
+      ['Мешки', { ...SPENT, path: '/saeckel/' }],
+      ['«Изменить» sent', { ...SPENT, after: { ...EXPENSE, action: '/saeckel/pouches/7/edit' } }],
+      // an income
+      ['no note of the income: a strange income', { ...EARNED, shows: [] }],
+      ['Мешки after an income', { ...EARNED, path: '/saeckel/' }],
+      // laying out and a transfer
+      ['Летопись', { ...LAID, path: '/saeckel/history' }],
+      ['a pouch after laying out', { ...LAID, path: '/saeckel/pouches/7' }],
+      ['a record changed', { ...MOVED, after: { ...TRANSFER, action: '/saeckel/operations/5' } }],
+      [
+        'a record deleted',
+        { ...LAID, after: { ...ASSIGN, action: '/saeckel/operations/5/delete' } },
+      ],
+      [
+        '«В кладовую» by the flag of laying out',
+        { ...LAID, after: { ...ASSIGN, action: '/saeckel/pouches/7/archive' } },
+      ],
+      ['an expense flag on Мешки', { ...LAID, after: EXPENSE }],
+      ['an income flag on Мешки', { ...LAID, after: INCOME }],
+      ['a flag of laying out on «Разложить»', { ...EARNED, after: ASSIGN }],
+    );
+    for (const [name, change] of cases) {
+      const page = visit(change);
+      page.parsed();
+      assert.deepEqual(page.classes(), ['fx-on'], name);
+      assert.equal(page.arrived(), undefined, name);
+      assert.equal(page.session.size, 0, name);
+    }
+  });
+
+  test('«В кладовую» after laying out: its form takes the flag away, Мешки rings not', () => {
+    const session = new Map<string, string>();
+    const storage = {
+      setItem: (key: string, value: string) => void session.set(key, value),
+      removeItem: (key: string) => void session.delete(key),
+    };
+    writeFlag(storage, AFTER_KEY, ASSIGN);
+    // The archiving is a form without data-fx: fx.js writes null for it.
+    writeFlag(storage, AFTER_KEY, null);
+    const page = visit({ path: '/saeckel/', redirects: 1, session });
+    assert.equal(page.arrived(), undefined);
+    // And a transfer sent after an expense rings as a transfer, once.
+    writeFlag(storage, AFTER_KEY, EXPENSE);
+    writeFlag(storage, AFTER_KEY, TRANSFER);
+    assert.equal(visit({ ...MOVED, after: undefined, session }).arrived(), 'transfer');
+    assert.equal(visit({ ...MOVED, after: undefined, session }).arrived(), undefined);
+  });
+
+  test('without «Анимации» or with less motion: no record written in, no squeeze; still told', () => {
+    for (const change of [{ anim: false }, { reduced: true }]) {
+      const page = visit({ ...SPENT, ...change });
+      page.parsed();
+      assert.deepEqual(page.classes(), [], JSON.stringify(change));
+      assert.equal(page.arrived(), 'expense', JSON.stringify(change));
     }
   });
 });
