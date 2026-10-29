@@ -151,8 +151,9 @@ interface LoginUser {
 }
 
 // Every page of Core: the CSS of Hof (§6), the mark of Hof as the icon of the tab and the two
-// scripts of the effects — without them every page works the same.
-function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString>) {
+// scripts of the effects — without them every page works the same. `forget` — the sign-in page
+// asks the browser to forget the pages it kept (/forget.css).
+function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString>, forget = false) {
   return html`<!doctype html>
     <html lang="ru">
       <head>
@@ -160,6 +161,7 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>${title}</title>
         <link rel="stylesheet" href="/static/hof.css" />
+        ${forget ? html`<link rel="stylesheet" href="/forget.css" />` : ''}
         <link rel="icon" href="/static/img/hof-mark.svg" type="image/svg+xml" />
         <script src="/static/fx-head.js"></script>
         <script type="module" src="/static/fx.js"></script>
@@ -464,7 +466,8 @@ function cat(where: 'login' | 'setup' | 'map' | 'chambers' | '500') {
 // Texts and pictures from design/preview/Main.html and LoginMobile.html: the gate open, the cat
 // looking into the courtyard; the phone has a picture of its own. One error for every refusal,
 // so the page does not tell whether the login exists. The login is written back as typed, the
-// password never. On the phone the heading is not drawn, but stays for a screen reader.
+// password never. On the phone the heading is not drawn, but stays for a screen reader. Shown only
+// to a person not signed in, it makes the browser forget the pages it kept (/forget.css).
 function loginPage(form: LoginForm) {
   const describedBy = form.failed ? html`aria-describedby="login-error"` : '';
   return page(
@@ -550,6 +553,7 @@ function loginPage(form: LoginForm) {
       />
       <img class="blot blot-login-drip" src="/static/img/ink-drip.webp" alt="" loading="lazy" />
     </main>`,
+    true,
   );
 }
 
@@ -1289,6 +1293,18 @@ export function createCoreApp(
   // 2. Public paths.
 
   // Sign-in page. With a live session there is nothing to sign in to: straight on to `next`.
+  // The empty stylesheet of the sign-in page (§4.2). Its answer makes the browser forget what it
+  // kept of this site — the HTTP cache and the pages kept for Back — but not its storage, where
+  // the settings of «Звуки и движение» are. A page left by «Покинуть двор» goes into the
+  // back/forward cache only when the next page comes, after the answer to the sign-out; and Chrome
+  // restores the page the sign-in itself led to although the cookie is deleted (M10.6). So the
+  // sign-in page asks once it has come: Back then goes to the server, which answers with /login.
+  core.get('/forget.css', (c) => {
+    c.header('Clear-Site-Data', '"cache"');
+    c.header('Cache-Control', 'no-store');
+    return c.body('', 200, { 'Content-Type': 'text/css; charset=utf-8' });
+  });
+
   core.get('/login', async (c) => {
     const next = safeNext(c.req.query('next'));
     if ((await currentUser(pool, sessionToken(c.req.header('Cookie')))) !== null) {

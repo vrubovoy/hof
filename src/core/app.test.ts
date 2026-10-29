@@ -858,6 +858,30 @@ describe('sign-out', () => {
     assert.equal(await count('sessions'), 1);
   });
 
+  // Chrome keeps the page left by the way out for Back, and restores the page the sign-in led to
+  // although its cookie is deleted. The sign-in page, once it has come, asks the browser to forget
+  // the pages it kept (Clear-Site-Data: "cache") — never its storage, where the settings of
+  // «Звуки и движение» are.
+  test('the sign-in page makes the browser forget the pages it kept, not its storage', async (t) => {
+    const { app, cookie } = await found(t);
+    const forget = '<link rel="stylesheet" href="/forget.css" />';
+    assert.ok((await (await get(app, '/login')).text()).includes(forget));
+    const refused = await post(app, '/login', { username: 'nobody', password: 'not the password' });
+    assert.equal(refused.status, 400);
+    assert.ok((await refused.text()).includes(forget));
+    for (const path of ['/', '/account']) {
+      assert.ok(!(await (await get(app, path, { cookie })).text()).includes('/forget.css'), path);
+    }
+    for (const headers of [{}, { cookie }] as Record<string, string>[]) {
+      const res = await get(app, '/forget.css', headers);
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get('clear-site-data'), '"cache"');
+      assert.equal(res.headers.get('cache-control'), 'no-store');
+      assert.equal(res.headers.get('content-type'), 'text/css; charset=utf-8');
+      assert.equal(await res.text(), '');
+    }
+  });
+
   test('needs Origin like every POST', async (t) => {
     const { app, cookie } = await found(t);
     const res = await app.request('/logout', {
@@ -2891,7 +2915,11 @@ describe('the look of Hof: pages, CSS and static files', () => {
       assertScripts(page, name);
       assert.doesNotMatch(page, /https?:\/\//, name);
       for (const address of pageFiles(page)) {
-        assert.match(address, /^\/(saeckel\/)?static\//, `${name}: ${address}`);
+        // The one address that is not a file: the empty stylesheet of the sign-in page, which
+        // makes the browser forget the pages it kept (sign-out).
+        if (address !== '/forget.css') {
+          assert.match(address, /^\/(saeckel\/)?static\//, `${name}: ${address}`);
+        }
         assert.equal((await get(app, address)).status, 200, `${name}: ${address}`);
       }
       // Local paths only; "" is the same address, «Попробовать ещё раз» of the 500 page after GET.
