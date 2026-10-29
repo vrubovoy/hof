@@ -40,6 +40,8 @@ export const SOUNDS = Object.freeze({
   meow: 9,
   purr: 1,
   banner: 4,
+  chest: 3,
+  sniff: 3,
 });
 
 /** The loops of the fountain on the courtyard. */
@@ -382,9 +384,16 @@ export function writeFlag(storage, key, value) {
 
 /**
  * Decor (M10.4, Ж4): what a thing with data-poke does when a pointer presses it — the set of its
- * sound. The cats meow; the cat of my chambers purrs. M10.5 adds the chest of Säckel.
+ * sound. The cats meow; the cat of my chambers purrs. In Säckel (M10.5) the chest of the treasury
+ * creaks and the cat at the empty pouches sniffs.
  */
-export const POKES = Object.freeze({ meow: 'meow', purr: 'purr' });
+export const POKES = Object.freeze({ meow: 'meow', purr: 'purr', chest: 'chest', sniff: 'sniff' });
+
+/** The cat at the empty pouches sniffs for 3 s, at 0 and 1,5 s. */
+export const SNIFFS = Object.freeze([0, 1500]);
+
+/** The acts of Säckel that write money (M10.5): the next page rings with coins. */
+export const MONEY = Object.freeze(['expense', 'income', 'assign', 'transfer']);
 
 /** A press on these is the press of a control, also inside a thing with data-poke. */
 const CONTROLS = 'a[href], button, input, select, textarea, label, summary, [tabindex]';
@@ -742,7 +751,12 @@ function start() {
       sound: settings.sound,
       phone: phone.matches,
     });
-    if (effect === null) return;
+    // A link that is ordinary here sounds as it is pressed and goes at once: «Разложить» of the
+    // treasury on a computer (M10.5) rings with coins.
+    if (effect === null) {
+      if (link.dataset.sound !== undefined) playSound(link.dataset.sound);
+      return;
+    }
     const keep = link.dataset.keep !== undefined;
     writeFlag(session, ARRIVE_KEY, {
       fx: effect.fx,
@@ -823,27 +837,49 @@ function start() {
 
   // ---- decor (M10.4): a thing with data-poke answers a press of a pointer on itself — never one
   // on a control — and changes no way, tells and keeps nothing. A cat sounds and, with
-  // «Анимации», takes its other pose for as long as the sound.
+  // «Анимации», takes its other pose for as long as the sound. The chest of Säckel (M10.5) creaks
+  // and, with «Анимации», opens; the next press closes it. The cat at the empty pouches sniffs
+  // twice and, with «Анимации», sniffs at them in its frames; a press meanwhile starts it again.
+  /** The second sniff of the cat now sniffing. @type {ReturnType<typeof setTimeout> | undefined} */
+  let sniffing;
   document.addEventListener('click', (event) => {
     if (event.defaultPrevented || !(event.target instanceof Element)) return;
     const thing = poked(event.target);
     if (thing === null) return;
-    const audio = playSound(POKES[/** @type {keyof typeof POKES} */ (thing.dataset.poke)]);
-    if (!canMove(settings, reduced.matches)) return;
+    const poke = /** @type {keyof typeof POKES} */ (thing.dataset.poke);
+    const move = canMove(settings, reduced.matches);
+    if (poke === 'chest') {
+      playSound('chest');
+      if (move) thing.classList.toggle('open');
+      return;
+    }
+    if (poke === 'sniff') {
+      clearTimeout(sniffing);
+      playSound('sniff');
+      sniffing = setTimeout(() => playSound('sniff'), SNIFFS[1]);
+      if (move) replay(thing, 'sniffing');
+      return;
+    }
+    const audio = playSound(POKES[poke]);
+    if (!move) return;
     /** @param {number | null} seconds */
     const hold = (seconds) => thing.style.setProperty('--pose', `${poseTime(seconds)}s`);
     hold(
       audio !== null && audio.readyState >= HTMLMediaElement.HAVE_METADATA ? audio.duration : null,
     );
     audio?.addEventListener('loadedmetadata', () => hold(audio.duration), { once: true });
-    thing.classList.remove('meow');
-    void thing.offsetWidth;
-    thing.classList.add('meow');
+    replay(thing, 'meow');
   });
+  /** Starts the animation of a class again. @param {HTMLElement} thing @param {string} name */
+  function replay(thing, name) {
+    thing.classList.remove(name);
+    void thing.offsetWidth;
+    thing.classList.add(name);
+  }
   document.addEventListener('animationend', (event) => {
-    if (event.animationName === 'pose' && event.target instanceof Element) {
-      event.target.classList.remove('meow');
-    }
+    if (!(event.target instanceof Element)) return;
+    if (event.animationName === 'pose') event.target.classList.remove('meow');
+    if (event.animationName === 'sniff-b') event.target.classList.remove('sniffing');
   });
 
   // ---- back from the back/forward cache: the page is as it was left, the world may not be.
@@ -852,11 +888,23 @@ function start() {
     guard.reset();
     // As before it left: light, in its place, the doors closed.
     stopSliding();
-    root.classList.remove(...LEAVING, 'from-left', 'from-right', 'from-door', 'unroll', 'key-off');
-    for (const open of document.querySelectorAll('.frames.open, .door.open, .gate-open.open')) {
+    root.classList.remove(
+      ...LEAVING,
+      'from-left',
+      'from-right',
+      'from-door',
+      'unroll',
+      'key-off',
+      'spent',
+    );
+    for (const open of document.querySelectorAll(
+      '.frames.open, .door.open, .gate-open.open, [data-poke="chest"].open',
+    )) {
       open.classList.remove('open');
     }
     for (const cat of document.querySelectorAll('.cat.meow')) cat.classList.remove('meow');
+    clearTimeout(sniffing);
+    for (const cat of document.querySelectorAll('.sniffing')) cat.classList.remove('sniffing');
     for (const inner of document.querySelectorAll('.court-inner')) {
       if (inner instanceof HTMLElement) inner.style.removeProperty('transform-origin');
     }
@@ -898,6 +946,8 @@ function start() {
     playSound('banner');
     setTimeout(() => playSound('banner'), 600);
   }
+  // Money of Säckel written (M10.5): the coins, also without «Анимации».
+  if (arrived !== undefined && MONEY.includes(arrived)) playSound('coins');
 
   // ---- the living courtyard (M10.3): the fountain, the wind in the crowns, the birds. The
   // frames turning round (water, banners, smoke) are the CSS alone.

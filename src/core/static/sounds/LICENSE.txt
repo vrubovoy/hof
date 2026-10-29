@@ -8,7 +8,7 @@ design/sounds/mix.py из одной исходной записи, указан
 
 Лицензия каждого исходника — CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/),
 так её указывает страница источника. Страницы проверены 2026-10-22, ветра и фонтана — 2026-10-28,
-кота — 2026-10-29.
+кота (мяуканье, мурчание, обнюхивание) — 2026-10-29.
 
 Сверка исходника: «размер» — исходный файл совпадает по размеру в байтах с файлом на странице;
 «длительность» — исходный файл не сохранён, длительность сведённого файла совпадает с
@@ -237,6 +237,47 @@ purr-1.m4a
   Исходник: freesound 260881 — «Cat purr.wav», Trautwein
   Страница: https://freesound.org/people/Trautwein/sounds/260881/ — Creative Commons 0
   Сверка:   превью, 60,144 с (на странице 60,103 с)
+
+
+Сундук
+------
+
+chest-1.m4a
+  Исходник: creak1.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+chest-2.m4a
+  Исходник: creak2.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+chest-3.m4a
+  Исходник: creak3.ogg, набор «RPG Audio», Kenney (kenney.nl)
+  Страница: https://kenney.nl/assets/rpg-audio — «Creative Commons CC0»; License.txt набора:
+            «License (Creative Commons Zero, CC0)»
+  Сверка:   набор
+
+
+Кот нюхает
+----------
+
+sniff-1.m4a
+  Исходник: freesound 848385 — «Adult Cat Sniffing», RavenWolfProds
+  Страница: https://freesound.org/people/RavenWolfProds/sounds/848385/ — Creative Commons 0
+  Сверка:   превью, 4,344 с (на странице 4,306 с)
+
+sniff-2.m4a
+  Исходник: freesound 801809 — «Cat sniffing mic», Sadiquecat
+  Страница: https://freesound.org/people/Sadiquecat/sounds/801809/ — Creative Commons 0
+  Сверка:   превью, 3,768 с (на странице 3,728 с)
+
+sniff-3.m4a
+  Исходник: freesound 418161 — «Cats sniffing.wav», 14FPanskaZummer_Jakub
+  Страница: https://freesound.org/people/14FPanskaZummer_Jakub/sounds/418161/ — Creative Commons 0
+  Сверка:   превью, 10,032 с (на странице 10,000 с)
 
 
 Музыка

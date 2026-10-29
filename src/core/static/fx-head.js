@@ -19,7 +19,9 @@
 //
 // Through a door of the courtyard (M10.3) a page comes out of the dark (from-door). After the
 // sign-in and the founding (M10.4) the courtyard comes out of the dark and the banner unrolls
-// (unroll); after «Забрать ключ» the key fades into the empty hook (key-off).
+// (unroll); after «Забрать ключ» the key fades into the empty hook (key-off). After an expense of
+// Säckel (M10.5) its record is written in and the sign of the pouch squeezed (spent); an income,
+// laying out and a transfer only ring.
 //
 // A page of the book (flip-fwd, flip-back) comes as a slide the same way, in every browser: with
 // View Transitions between documents Chrome turns a blank sheet instead of a page sent with
@@ -29,8 +31,9 @@
   const FRESH = 30_000;
   // The acts of forms: the address of the form (a pattern), the addresses it leads to and what
   // that page shows — both may depend on the address of the form — and the way the page arrives:
-  // as fx of a link (fx) or classes of its own (arrive). M10.5 adds its own.
-  /** @type {Record<string, { action: RegExp, leads: (path: string, match: RegExpExecArray) => boolean, marker: (match: RegExpExecArray) => string, fx?: string, arrive?: string }>} */
+  // as fx of a link (fx) or classes of its own (arrive). A page with nothing to show has no marker
+  // (null): only the redirect and the address count.
+  /** @type {Record<string, { action: RegExp, leads: (path: string, match: RegExpExecArray) => boolean, marker: (match: RegExpExecArray) => string | null, fx?: string, arrive?: string }>} */
   const AFTER = {
     logout: {
       action: /^\/logout$/,
@@ -58,6 +61,32 @@
       leads: (path, [, id]) => path === `/admin/users/${id}`,
       marker: ([, id]) => `form[action="/admin/users/${id}/enable"]`,
       arrive: 'key-off',
+    },
+    // Money of Säckel written (M10.5). An expense: the page of the same pouch with the record just
+    // written marked (`?fresh`, only a record shown is marked). An income: «Разложить» with the
+    // note of that income. Laying out and a transfer: Мешки — the server answers so only after
+    // their records are committed; «В кладовую», the other way there, is a form of its own and
+    // takes the flag away.
+    expense: {
+      action: /^\/saeckel\/pouches\/(\d+)\/expense$/,
+      leads: (path, [, id]) => path === `/saeckel/pouches/${id}`,
+      marker: () => 'mark.move',
+      arrive: 'spent',
+    },
+    income: {
+      action: /^\/saeckel\/income$/,
+      leads: (path) => path === '/saeckel/assign',
+      marker: () => '.note-income',
+    },
+    assign: {
+      action: /^\/saeckel\/assign$/,
+      leads: (path) => path === '/saeckel/',
+      marker: () => null,
+    },
+    transfer: {
+      action: /^\/saeckel\/transfer$/,
+      leads: (path) => path === '/saeckel/',
+      marker: () => null,
     },
   };
   // fx of the last page → the class of the arrival; the rustle of a page has none.
@@ -138,7 +167,15 @@
     marker = row.marker(match);
   }
 
-  const ARRIVALS = ['from-left', 'from-right', 'from-door', 'keep-banner', 'unroll', 'key-off'];
+  const ARRIVALS = [
+    'from-left',
+    'from-right',
+    'from-door',
+    'keep-banner',
+    'unroll',
+    'key-off',
+    'spent',
+  ];
   /** @param {string[]} names */
   const end = (names) => root.classList.remove(...names);
   if (arrived !== null) {
@@ -163,7 +200,8 @@
   }
   // The slide in and the way out of the dark end with their veil (both CSS files name the
   // animation so); the banner unrolled ends with its last swing — on the phone, without the
-  // banner, with the veil; the key with its fading.
+  // banner, with the veil; the key with its fading; an expense with the pen mark of its record,
+  // which comes when the last cell is written.
   document.addEventListener('animationend', (event) => {
     if (event.animationName === 'veil-out') {
       end(['from-left', 'from-right', 'from-door', 'keep-banner']);
@@ -171,5 +209,6 @@
     }
     if (event.animationName === 'fx-settle') end(['unroll']);
     if (event.animationName === 'key-off') end(['key-off']);
+    if (event.animationName === 'fx-mark') end(['spent']);
   });
 })();

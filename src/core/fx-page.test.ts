@@ -6,7 +6,8 @@
 // left alone, a form is never held and leaves the flag of its act, the door opens with it; back
 // from the back/forward cache the page is as before it left. The living courtyard (M10.3): the
 // door of a place, the chains of the wind and the birds, the fountain. The cats and the gate of
-// the founding (M10.4).
+// the founding (M10.4). Säckel (M10.5): the chest, the links beside it, the cat at the empty
+// pouches, the coins after money written.
 
 import assert from 'node:assert/strict';
 import { describe, test, type TestContext } from 'node:test';
@@ -339,7 +340,10 @@ async function openChambers({
       if (selector === '.court-inner') return court ? [court.inner] : [];
       const all = Object.values(elements);
       if (selector === '.cat.meow') return all.filter((e) => e.classList.contains('meow'));
-      if (selector !== '.frames.open, .door.open, .gate-open.open') return [];
+      if (selector === '.sniffing') return all.filter((e) => e.classList.contains('sniffing'));
+      if (selector !== '.frames.open, .door.open, .gate-open.open, [data-poke="chest"].open') {
+        return [];
+      }
       return [...forms.map((form) => form.frames), ...(court?.doors ?? []), ...all].filter(
         (element) => element.classList.contains('open'),
       );
@@ -1125,10 +1129,151 @@ describe('fx.js in a page: the cats and the gate (M10.4)', () => {
     });
     page.send(new FakeForm('/setup', 'setup'));
     page.poke(cat);
-    page.root.classList.add('unroll', 'key-off');
+    page.root.classList.add('unroll', 'key-off', 'spent');
     page.backFromCache();
     assert.ok(!gate.classList.contains('open'));
     assert.ok(!cat.classList.contains('meow'));
     assert.deepEqual([...page.root.classList.names], ['fx-on']);
+  });
+});
+
+describe('fx.js in a page: Säckel (M10.5)', () => {
+  // «Разложить» and «+ Доход» of the treasury, as the server draws them.
+  const treasuryLinks = () => {
+    const assign = new FakeLink('/saeckel/assign', 'flip-fwd-phone');
+    assign.dataset.sound = 'coins';
+    return { assign, income: new FakeLink('/saeckel/income', 'flip-fwd-phone') };
+  };
+
+  test('the chest: a creak; with «Анимации» open, closed by the next press; without, only the creak', async () => {
+    const chest = new FakeThing('chest');
+    const page = await openChambers({ settings: { anim: true, sound: true }, elements: { chest } });
+    assert.equal(page.poke(chest).defaultPrevented, false);
+    assert.ok(chest.classList.contains('open'));
+    page.poke(chest);
+    assert.ok(!chest.classList.contains('open'));
+    assert.equal(sounds('chest').length, 2);
+
+    const still = new FakeThing('chest');
+    const off = await openChambers({ settings: { sound: true }, elements: { still } });
+    off.poke(still);
+    assert.equal(sounds('chest').length, 1);
+    assert.ok(!still.classList.contains('open'));
+    const reduced = await openChambers({
+      settings: { anim: true },
+      reduced: true,
+      elements: { still },
+    });
+    reduced.poke(still);
+    assert.ok(!still.classList.contains('open'));
+    assert.equal(FakeAudio.made.length, 0, 'without «Звуки» no creak');
+  });
+
+  test('«Разложить» and «+ Доход» beside the chest: never the chest, never held; «Разложить» rings on a computer', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const chest = new FakeThing('chest');
+    const computer = await openChambers({
+      settings: { anim: true, sound: true },
+      elements: { chest },
+    });
+    const { assign, income } = treasuryLinks();
+    assert.equal(computer.press(assign).defaultPrevented, false);
+    assert.equal(sounds('coins').length, 1, 'the coins as it is pressed');
+    assert.equal(computer.press(income).defaultPrevented, false);
+    assert.equal(FakeAudio.made.length, 1, 'no creak, «+ Доход» silent');
+    assert.ok(!chest.classList.contains('open'));
+    assert.equal(computer.flag('hof.arrive'), null);
+    assert.deepEqual([...computer.root.classList.names], ['fx-on']);
+
+    // On the phone both turn the page, as in M10.2; no coins.
+    const phone = await openChambers({ settings: { anim: true, sound: true }, phone: true });
+    assert.equal(phone.press(treasuryLinks().assign).defaultPrevented, true);
+    assert.equal(phone.flag('hof.arrive')?.fx, 'flip-fwd');
+    t.mock.timers.tick(500);
+    assert.equal(sounds('coins').length, 0);
+
+    // Without «Звуки» «Разложить» is an ordinary link.
+    const quiet = await openChambers({ settings: { anim: true } });
+    assert.equal(quiet.press(treasuryLinks().assign).defaultPrevented, false);
+    assert.equal(FakeAudio.made.length, 0);
+  });
+
+  test('the cat at the empty pouches: a sniff at 0 and 1,5 s; a press meanwhile starts it over', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const cat = new FakeThing('sniff');
+    const page = await openChambers({ settings: { anim: true, sound: true }, elements: { cat } });
+    page.poke(cat);
+    assert.equal(sounds('sniff').length, 1);
+    assert.ok(cat.classList.contains('sniffing'));
+    t.mock.timers.tick(700);
+    page.poke(cat);
+    assert.equal(sounds('sniff').length, 2);
+    // The second sniff of the first press is not made: 1,5 s after the second.
+    t.mock.timers.tick(1499);
+    assert.equal(sounds('sniff').length, 2);
+    t.mock.timers.tick(1);
+    assert.equal(sounds('sniff').length, 3);
+    t.mock.timers.tick(5000);
+    assert.equal(sounds('sniff').length, 3);
+
+    const still = new FakeThing('sniff');
+    const off = await openChambers({ settings: { sound: true }, elements: { still } });
+    off.poke(still);
+    t.mock.timers.tick(1500);
+    assert.equal(sounds('sniff').length, 2, 'only the sniffs');
+    assert.ok(!still.classList.contains('sniffing'));
+  });
+
+  test('money written: the coins on the next page, also without «Анимации»; after nothing else', async () => {
+    for (const arrived of ['expense', 'income', 'assign', 'transfer']) {
+      const { root } = await openChambers({ settings: { sound: true }, arrived });
+      assert.equal(sounds('coins').length, 1, arrived);
+      assert.equal(root.dataset.arrived, undefined, arrived);
+    }
+    for (const arrived of ['logout', 'login', 'key', 'page', 'door', 'flip-fwd']) {
+      await openChambers({ settings: { anim: true, sound: true }, arrived });
+      assert.equal(sounds('coins').length, 0, arrived);
+    }
+    await openChambers({ settings: { anim: true }, arrived: 'expense' });
+    assert.equal(sounds('coins').length, 0, 'without «Звуки»');
+  });
+
+  test('a form of money leaves the flag of its act, never held; «В кладовую» after it takes it away', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['Date'], now: 3_000_000 });
+    const page = await openChambers({ settings: { anim: true, sound: true } });
+    for (const [action, act] of [
+      ['/saeckel/pouches/3/expense', 'expense'] as const,
+      ['/saeckel/income', 'income'],
+      ['/saeckel/assign', 'assign'],
+      ['/saeckel/transfer', 'transfer'],
+    ]) {
+      assert.equal(page.send(new FakeForm(action, act)).defaultPrevented, false, act);
+      assert.deepEqual(page.flag('hof.after'), { act, action, at: 3_000_000 });
+    }
+    assert.equal(page.send(new FakeForm('/saeckel/pouches/3/archive')).defaultPrevented, false);
+    assert.equal(page.flag('hof.after'), null);
+    // Sent twice: the second sending is held by the guard, one record.
+    const expense = new FakeForm('/saeckel/pouches/3/expense', 'expense');
+    assert.equal(page.send(expense).defaultPrevented, false);
+    assert.equal(page.send(expense).defaultPrevented, true);
+  });
+
+  test('back from the back/forward cache: the chest closed, the cat still, no sniff to come', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const chest = new FakeThing('chest');
+    const cat = new FakeThing('sniff');
+    const page = await openChambers({
+      settings: { anim: true, sound: true },
+      elements: { chest, cat },
+    });
+    page.poke(chest);
+    page.poke(cat);
+    page.root.classList.add('spent');
+    page.backFromCache();
+    assert.ok(!chest.classList.contains('open'));
+    assert.ok(!cat.classList.contains('sniffing'));
+    assert.deepEqual([...page.root.classList.names], ['fx-on']);
+    t.mock.timers.tick(2000);
+    assert.equal(sounds('sniff').length, 1);
   });
 });
