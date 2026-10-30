@@ -6,7 +6,9 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   closeSync,
+  mkdirSync,
   mkdtempSync,
   openSync,
   readFileSync,
@@ -325,6 +327,40 @@ test('an interrupted run removes what it made', async () => {
   child.kill('SIGINT');
   assert.equal(await code, 130);
   assert.ok(stderr.includes('прервано'), stderr);
+});
+
+test('Docker gone during the cleanup: a failure that names the project, though the copy passed', () => {
+  const file = writeCopy('docker_gone', 'hof');
+  const real = spawnSync('which', ['docker'], { env: ENV, encoding: 'utf8' }).stdout.trim();
+  const bin = join(dir, 'gone-bin');
+  mkdirSync(bin, { recursive: true });
+  // The real Docker until the cleanup starts, then an unavailable one.
+  writeFileSync(
+    join(bin, 'docker'),
+    `#!/bin/bash
+case " $* " in *' down '*) touch "${dir}/docker-gone" ;; esac
+if [ -f "${dir}/docker-gone" ]; then echo 'Cannot connect to the Docker daemon' >&2; exit 1; fi
+exec "${real}" "$@"
+`,
+  );
+  chmodSync(join(bin, 'docker'), 0o755);
+
+  const result = check(file, { PATH: `${bin}:${ENV.PATH}` });
+  rmSync(join(dir, 'docker-gone'), { force: true });
+
+  assert.ok(result.stdout.includes('Копия прошла проверку.'), result.stdout + result.stderr);
+  assert.equal(result.status, 1);
+  assert.ok(result.stderr.includes('очистка НЕ подтверждена'), result.stderr);
+  const project = /hof-drill-[0-9a-f]{12}/.exec(result.stderr)?.[0];
+  assert.ok(project, result.stderr);
+  assert.ok(result.stderr.includes('docs/OPERATIONS.md'), result.stderr);
+
+  // The data really stayed; the commands of the documentation remove them, and only them.
+  assert.ok(drillResources().includes(`${project}_pgdata`));
+  docker(['rm', '-f', `${project}-hof-1`, `${project}-postgres-1`]);
+  docker(['network', 'rm', `${project}_default`]);
+  docker(['volume', 'rm', `${project}_pgdata`]);
+  docker(['image', 'rm', `${project}-hof`]);
 });
 
 test('a Docker that is not local: refused, nothing starts', () => {

@@ -77,12 +77,21 @@ assert_ours() {
   [ "$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql"}}{{.Name}}{{end}}{{end}}' "$id")" = "$volume" ]
 }
 
+# What is left of this run. It fails if Docker does not answer: silence is no proof of absence.
+remaining() {
+  local label="label=com.docker.compose.project=$project"
+  docker ps --all --quiet --filter "$label" &&
+    docker network ls --quiet --filter "$label" &&
+    docker volume ls --quiet --filter "$label" &&
+    docker image ls --quiet "$image"
+}
+
 started=false
 step='подготовка'
 # A failure inside a command with 2> leaves that redirection in place for the trap below.
 exec 3>&2
 on_exit() {
-  local code=$? left=''
+  local code=$? left='' confirmed=true
   exec 2>&3
   trap - EXIT INT TERM
   if $started; then
@@ -91,12 +100,7 @@ on_exit() {
       docker volume rm "$volume" >/dev/null 2>&1 || true
     fi
     docker image rm "$image" >/dev/null 2>&1 || true
-    left=$({
-      docker ps --all --quiet --filter "label=com.docker.compose.project=$project"
-      docker network ls --quiet --filter "label=com.docker.compose.project=$project"
-      docker volume ls --quiet --filter "label=com.docker.compose.project=$project"
-      docker image ls --quiet "$image"
-    } 2>/dev/null) || true
+    if ! left=$(remaining 2>/dev/null) || [ -n "$left" ]; then confirmed=false; fi
   fi
   if [ "$code" -ne 0 ] && [ "$code" -ne 2 ]; then
     echo "hof-restore-check: копия НЕ прошла проверку: $step" >&2
@@ -106,8 +110,9 @@ on_exit() {
     fi
   fi
   rm -rf "$tmp"
-  if [ -n "$left" ]; then
-    echo "hof-restore-check: не все ресурсы $project удалены (docs/OPERATIONS.md, «Проверить копию»)" >&2
+  if ! $confirmed; then
+    echo "hof-restore-check: очистка НЕ подтверждена, в Docker могут оставаться данные копии: проект $project" >&2
+    echo 'hof-restore-check: удалите его ресурсы вручную (docs/OPERATIONS.md, раздел «Проверить копию»)' >&2
     exit 1
   fi
 }
