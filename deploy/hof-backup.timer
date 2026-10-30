@@ -1,0 +1,10 @@
+# Расписание hof-backup.service. Persistent: пропущенный запуск выполняется после простоя сервера.
+[Unit]
+Description=Hof: расписание ночной резервной копии
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

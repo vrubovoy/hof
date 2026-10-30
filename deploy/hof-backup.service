@@ -1,0 +1,13 @@
+# Ночная резервная копия базы Hof (docs/OPERATIONS.md, раздел «Автоматические копии»).
+[Unit]
+Description=Hof: ночная резервная копия базы
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+# Пропущенный запуск выполняется сразу после загрузки: сначала ждём, пока поднимутся контейнеры.
+ExecStartPre=/usr/bin/sleep 120
+ExecStart=/usr/local/sbin/hof-backup --timer
+# Зависший процесс не должен навсегда занять блокировку обновления.
+TimeoutStartSec=30min
