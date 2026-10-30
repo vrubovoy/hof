@@ -1,13 +1,13 @@
 #!/bin/bash
-# Единственная команда SSH-ключа hof-backup (docs/OPERATIONS.md, раздел «Копия на Mac»):
+# The only command of the SSH key of hof-backup (docs/OPERATIONS.md, section «Копия на Mac»):
 #
-#   list          имена готовых копий, по одному в строке
-#   fetch <имя>   содержимое копии или её файла .meta
-#   status        итог последней попытки создать копию
+#   list          the names of the ready copies, one per line
+#   fetch <name>  a copy or its .meta file
+#   status        the result of the last attempt to make a copy
 #
-# Ввод не разбирается shell: SSH_ORIGINAL_COMMAND сравнивается с точными формами, а имя файла — со
-# строгим шаблоном. Блокировку не берёт: копии появляются под рабочим именем атомарно, а файл,
-# который удаляют во время чтения, дочитывается до конца.
+# No shell parses the input: SSH_ORIGINAL_COMMAND is compared with exact forms and the file name
+# with a strict pattern. It takes no lock: a copy appears under its name atomically, and a file
+# deleted while it is read is still read to the end.
 set -euo pipefail
 export LC_ALL=C
 
@@ -38,7 +38,7 @@ status)
     exit 1
   fi
   cat -- "$DIR/$name"
-  # Время забора показывает hof-check. Неудачная запись не отменяет уже переданную копию.
+  # hof-check shows the time of the pull. A failed write does not undo a copy already sent.
   if [[ $name != *.meta ]]; then
     date -u +%Y%m%dT%H%M%SZ >"$LAST_PULL" || echo 'hof-backup-send: время забора не записано' >&2
   fi

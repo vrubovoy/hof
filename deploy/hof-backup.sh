@@ -1,16 +1,17 @@
 #!/bin/bash
-# Резервная копия базы Hof (docs/OPERATIONS.md, раздел «Автоматические копии»).
+# Backup of the database of Hof (docs/OPERATIONS.md, section «Автоматические копии»).
 #
-#   hof-backup                           ручной запуск: блокировку ждёт до 60 с
-#   hof-backup --timer                   запуск из hof-backup.timer: блокировку ждёт до 10 минут
-#   hof-backup --pre-deploy              предрелизная копия, блокировку ждёт до 60 с
-#   hof-backup --pre-deploy --lock-held  то же, блокировку уже держит команда обновления
+#   hof-backup                           by hand: waits for the lock up to 60 s
+#   hof-backup --timer                   from hof-backup.timer: waits for the lock up to 10 minutes
+#   hof-backup --pre-deploy              a copy before an update: waits for the lock up to 60 s
+#   hof-backup --pre-deploy --lock-held  the same, the update command already holds the lock
 #
-# Работает от root. Контейнер postgres находит по меткам Compose, как certbot-hook, поэтому не
-# зависит от compose.yaml и .env. Hof останавливать не нужно: pg_dump читает согласованный снимок.
+# Runs as root. It finds the postgres container by the labels Compose puts on it, like certbot-hook,
+# so it depends on neither compose.yaml nor .env. Hof need not stop: pg_dump reads a consistent
+# snapshot.
 #
-# Код выхода: 0 — копия готова; 1 — копия не создана, прежние копии на месте; 2 — неверный
-# аргумент; 3 — блокировка занята, ничего не менялось.
+# Exit code: 0 the copy is ready; 1 no copy, the earlier ones are in place; 2 a wrong argument;
+# 3 the lock is taken, nothing changed.
 set -euo pipefail
 export LC_ALL=C
 umask 027
@@ -20,7 +21,7 @@ DOCKER=/usr/bin/docker
 DIR=/var/backups/hof
 LOCK=/run/lock/hof-ops.lock
 STATUS=$DIR/backup-status.txt
-# Запас на диске сверх двойного размера прошлой копии: порог из docs/OPERATIONS.md.
+# Free space kept on top of twice the size of the last copy: the threshold of docs/OPERATIONS.md.
 RESERVE_KB=$((1536 * 1024))
 
 kind=nightly
@@ -44,12 +45,12 @@ if ! $lock_held; then
     echo "hof-backup: блокировка занята дольше $lock_wait с (последняя запись в ней: $(cat "$LOCK")); копия не создана, файлы не менялись" >&2
     exit 3
   fi
-  # Для того, кто будет ждать: понятно, какая операция держит блокировку.
+  # For whoever waits next: which operation holds the lock.
   : >"$LOCK"
   echo "hof-backup $kind, pid $$, с $(date -u +%Y-%m-%dT%H:%M:%SZ)" >&9
 fi
 
-# Итог последней попытки: его читают hof-backup-send и hof-check.
+# The result of the last attempt, read by hof-backup-send and hof-check.
 write_status() {
   local tmp
   tmp=$(mktemp "$DIR/.backup-status.XXXXXX")
@@ -75,7 +76,7 @@ step="нет каталога $DIR"
 [ -d "$DIR" ]
 shopt -s nullglob
 
-# Блокировка наша, поэтому такие файлы остались только от убитого процесса.
+# The lock is ours, so such files can only be left by a process that was killed.
 leftovers=("$DIR"/.*.part.*)
 if [ "${#leftovers[@]}" -gt 0 ]; then rm -f -- "${leftovers[@]}"; fi
 
@@ -84,13 +85,13 @@ ids=$("$DOCKER" ps --quiet \
   --filter "label=com.docker.compose.project=$PROJECT" \
   --filter label=com.docker.compose.service=postgres \
   --filter label=com.docker.compose.oneoff=False)
-# ID становятся позиционными параметрами: шестнадцатеричные строки через перевод строки.
+# The IDs become the positional parameters: hex strings separated by line breaks.
 # shellcheck disable=SC2086
 set -- $ids
 [ "$#" -eq 1 ]
 postgres=$1
 
-# Место проверяется до создания копии. Исправные копии ради новой попытки не удаляются.
+# Space is checked before the copy is made. Good copies are never deleted to make room for it.
 step='не удалось определить свободное место'
 newest=
 for file in "$DIR"/hof-*.dump; do
@@ -113,7 +114,7 @@ meta_part=$(mktemp "$DIR/.$name.meta.part.XXXXXX")
 step='pg_dump завершился с ошибкой'
 "$DOCKER" exec "$postgres" pg_dump --username=postgres --dbname=hof --format=custom >"$part"
 
-# --list читает только оглавление и не замечает обрезанных данных; здесь читается весь архив.
+# --list reads the table of contents only and misses cut data; this reads the whole archive.
 step='архив не читается целиком'
 "$DOCKER" exec -i "$postgres" pg_restore --file=/dev/null <"$part"
 
@@ -133,16 +134,16 @@ image=$("$DOCKER" ps --all \
 } >"$meta_part"
 chmod 640 "$part" "$meta_part"
 
-# ln, а не mv: файл с тем же именем никогда не заменяется. Сведения появляются раньше архива,
-# поэтому у каждого архива в каталоге они уже есть. Если архив опубликовать не удалось, on_exit
-# убирает только сведения этой попытки: на чужом файле .meta первый ln падает раньше.
+# ln, not mv: a file of the same name is never replaced. The .meta comes before the archive, so
+# every archive in the folder already has one. If the archive cannot be published, on_exit removes
+# the .meta of this attempt only: on a .meta that was already there the first ln fails earlier.
 step="не удалось опубликовать $name: имя занято или ошибка записи"
 ln "$meta_part" "$DIR/$name.meta"
 published_meta=$DIR/$name.meta
 ln "$part" "$DIR/$name"
 published_meta=
 
-# Плановая очистка только теперь и только своего вида. Глоб отсортирован по времени в имени.
+# Old copies go only now and only of this kind. The glob is sorted by the time in the name.
 step='копия создана, но очистка старых не удалась'
 case $kind in
 nightly) keep=7 ;;

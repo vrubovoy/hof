@@ -1,9 +1,9 @@
 #!/bin/bash
-# Забор резервных копий Hof на Mac (docs/OPERATIONS.md, раздел «Копия на Mac»).
+# Pulls the backups of Hof to the Mac (docs/OPERATIONS.md, section «Копия на Mac»).
 #
-# launchd запускает его при загрузке и каждый час, пока Mac не спит, и не начинает второй запуск,
-# пока идёт первый. Повтор после сбоя — следующий часовой запуск. Сервер задан псевдонимом
-# hof-backup в ~/.ssh/config. Написано для bash 3.2 из macOS.
+# launchd starts it at load and every hour while the Mac is awake, and never starts a second run
+# during the first. A retry after a failure is the next hourly run. The server is the alias
+# hof-backup in ~/.ssh/config. Written for the bash 3.2 of macOS.
 set -u
 umask 077
 export LC_ALL=C
@@ -20,13 +20,13 @@ remote() {
     -o StrictHostKeyChecking=yes "$HOST" "$@"
 }
 
-# Не чаще раза в 12 часов для каждого вида сигнала. В текст идут только постоянные строки этого
-# файла: ответ сервера в AppleScript не попадает.
+# At most once in 12 hours for each kind of signal. The text holds only constant strings of this
+# file: no answer of the server reaches AppleScript.
 notify() {
   local flag="$DIR/.notified-$1"
   say "$2"
   [ -n "$(find "$flag" -mmin -720 2>/dev/null)" ] && return 0
-  # Метка только после показа: иначе ошибка показа подавила бы повтор на 12 часов.
+  # The mark only after it is shown: otherwise a failure would silence the retry for 12 hours.
   if osascript -e "display notification \"$2\" with title \"Hof: резервные копии\"" >/dev/null; then
     touch "$flag"
   else
@@ -34,7 +34,7 @@ notify() {
   fi
 }
 
-# Самая новая метка времени из имён копий на входе.
+# The newest time among the names of copies on stdin.
 newest_stamp() { sed -E 's/^hof-[a-z]+-//; s/\.dump$//' | sort | tail -n 1; }
 
 local_copies() { ls -1 "$DIR" | grep -E "^hof-$1-$STAMP\\.dump\$" | sort; }
@@ -43,8 +43,8 @@ hours_ago() {
   date -u -v-"$1"H +%Y%m%dT%H%M%SZ 2>/dev/null || date -u -d "$1 hours ago" +%Y%m%dT%H%M%SZ
 }
 
-# Полная копия: у архива есть .meta с SHA-256, а его размер совпадает с записанным. Содержимое
-# здесь не читается: SHA-256 считается при заборе, а не каждый час по всей истории.
+# A complete copy: the archive has a .meta with SHA-256 and the size written there. The contents
+# are not read here: SHA-256 is computed on a pull, not every hour over the whole history.
 is_complete() {
   local file="$DIR/$1"
   [ -f "$file" ] && [ -f "$file.meta" ] || return 1
@@ -52,9 +52,9 @@ is_complete() {
   [ "$(sed -n 's/^size=//p' "$file.meta")" = "$(wc -c <"$file" | tr -d ' ')" ]
 }
 
-# Неполный архив не удаляется: возможно, это единственная копия того дня. Если он ещё есть на
-# сервере, забор уже заменил его проверенным. Возраст считается только по полным копиям.
-# Выключенный Mac этого сообщить не может, сигнал приходит при включении.
+# An incomplete archive is not deleted: it may be the only copy of that day. If the server still
+# has it, the pull has already replaced it with a verified one. Age counts complete copies only.
+# A Mac that is off cannot say any of this: the signal comes when it is on again.
 check_local_copies() {
   local name complete='' incomplete=''
   for name in $(ls -1 "$DIR" | grep -E "$NAME"); do
@@ -75,9 +75,9 @@ check_local_copies() {
   fi
 }
 
-# Архив под рабочим именем появляется только после сверки SHA-256 с файлом .meta. Сведения
-# публикуются последними: при сбое на любом шаге копия остаётся неполной и её заберут снова, а
-# прежний архив заменяется только проверенным.
+# An archive gets its name only after SHA-256 matches the .meta. The .meta is published last: a
+# failure at any step leaves the copy incomplete, so it is pulled again, and an earlier archive is
+# replaced only by a verified one.
 fetch_copy() {
   local name=$1 part meta want got
   part=$(mktemp "$DIR/.$name.part.XXXXXX") || return 1
@@ -106,8 +106,8 @@ fetch_copy() {
   return 1
 }
 
-# Только после новой проверенной копии. Считаем по количеству, поэтому долгий простой Mac не
-# удаляет историю. Новейшая копия входит в последние 30 или 5 и не удаляется.
+# Only after a new verified copy. Copies are counted, so a long downtime of the Mac does not delete
+# history. The newest copy is among the last 30 or 5 and stays.
 thin_copies() {
   local nightly keep name
   nightly=$(local_copies nightly)
@@ -130,8 +130,8 @@ thin_copies() {
 mkdir -p "$DIR" && chmod 700 "$DIR" || exit 1
 touch "$DIR/.metadata_never_index"
 
-# Копии не должны попасть на диск Time Machine. Без исключения забор идёт только по решению
-# владельца: файлу .time-machine-allowed в каталоге копий.
+# Copies must not reach a Time Machine disk. Without the exclusion the pull goes on only by the
+# decision of the owner: the file .time-machine-allowed in the folder of copies.
 if ! tmutil addexclusion "$DIR" >/dev/null; then
   if [ -f "$DIR/.time-machine-allowed" ]; then
     say 'исключение из Time Machine не установлено, забор разрешён владельцем'
@@ -162,7 +162,7 @@ fi
 touch "$DIR/.last-contact"
 list=$(printf '%s\n' "$raw_list" | grep -E "$NAME" | sort)
 
-# Сравниваем до забора: новые копии скрыли бы разрыв.
+# Compared before the pull: new copies would hide the gap.
 oldest_remote=$(printf '%s\n' "$list" | grep '^hof-nightly-' | head -n 1 | newest_stamp)
 newest_local=$(local_copies nightly | newest_stamp)
 if [ -n "$oldest_remote" ] && [ -n "$newest_local" ] && [[ $newest_local < $oldest_remote ]]; then

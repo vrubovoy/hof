@@ -1,4 +1,4 @@
-# Расписание hof-backup.service. Persistent: пропущенный запуск выполняется после простоя сервера.
+# The schedule of hof-backup.service. Persistent: a missed run starts after the server was down.
 [Unit]
 Description=Hof: расписание ночной резервной копии
 

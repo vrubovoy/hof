@@ -1,9 +1,10 @@
-// Резервные копии (docs/OPERATIONS.md, раздел «Автоматические копии»).
+// Backups (docs/OPERATIONS.md, section «Автоматические копии»).
 //
-// hof-backup и hof-backup-send написаны для Linux (flock, GNU coreutils), поэтому идут в контейнере
-// с настоящим PostgreSQL и настоящими pg_dump и pg_restore. Вместо /usr/bin/docker там лежит
-// заглушка: она выполняет `docker exec` прямо в этом контейнере и по файлу в /tmp ломает pg_dump.
-// hof-backup-pull написан для Mac; его проверяем на этой машине с заглушками ssh и команд macOS.
+// hof-backup and hof-backup-send are written for Linux (flock, GNU coreutils), so they run in a
+// container with a real PostgreSQL, pg_dump and pg_restore. /usr/bin/docker there is a stub: it
+// runs `docker exec` right in that container and breaks pg_dump on a file in /tmp.
+// hof-backup-pull is written for the Mac and runs on this machine with stubs of ssh and of the
+// commands of macOS.
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -28,7 +29,7 @@ const ROOT = join(import.meta.dirname, '..');
 const DIR = '/var/backups/hof';
 const LOCK = '/run/lock/hof-ops.lock';
 
-describe('сервер: hof-backup и hof-backup-send', () => {
+describe('server: hof-backup and hof-backup-send', () => {
   const NAME = `hof-backup-test-${process.pid}`;
 
   const DOCKER_STUB = `#!/bin/bash
@@ -55,7 +56,7 @@ esac
     return spawnSync('docker', args, { encoding: 'utf8' });
   }
 
-  // Команда в контейнере; extraArgs — параметры `docker exec`, например переменная окружения.
+  // A command in the container; extraArgs go to `docker exec`, an environment variable for one.
   function run(script: string, extraArgs: string[] = []) {
     return docker('exec', ...extraArgs, NAME, 'bash', '-c', script);
   }
@@ -66,12 +67,12 @@ esac
     return result.stdout;
   }
 
-  // Рабочий каталог копий: только видимые файлы, в порядке имён.
+  // The folder of copies: visible files only, in the order of their names.
   function copies(): string[] {
     return ok(`ls -1 ${DIR}`).split('\n').filter(Boolean);
   }
 
-  // Имя единственной новой копии.
+  // The name of the one new copy.
   function onlyDump(): string {
     const dumps = copies().filter((name) => name.endsWith('.dump'));
     assert.equal(dumps.length, 1);
@@ -82,7 +83,7 @@ esac
     return ok(`cat ${DIR}/backup-status.txt`);
   }
 
-  // Готовые копии для проверки хранения: день n января как метка времени в имени.
+  // Ready copies for the retention tests: day n of January as the time in the name.
   function seed(kind: string, days: number[]) {
     for (const day of days) {
       const file = `${DIR}/hof-${kind}-202601${String(day).padStart(2, '0')}T000000Z.dump`;
@@ -145,7 +146,7 @@ esac
         rm -f ${LOCK} /var/lib/hof-backup/state/last-pull`);
   });
 
-  test('копия готова: архив читается, .meta совпадает, права 640, статус OK', () => {
+  test('a ready copy: the archive reads, .meta matches, mode 640, status OK', () => {
     assert.match(ok('hof-backup'), /копия готова: hof-nightly-\d{8}T\d{6}Z\.dump/);
     const name = onlyDump();
     const meta = `${name}.meta`;
@@ -162,7 +163,7 @@ esac
       '640 hof-backup\n640 hof-backup\n640 hof-backup\n',
     );
 
-    // Вторая база того же сервера: восстановление целиком, а не только чтение оглавления.
+    // A second database of the same server: a whole restore, not only reading the contents.
     ok(`createdb --username=postgres check_restore
         pg_restore --username=postgres --dbname=check_restore --single-transaction ${DIR}/${name}`);
     const rows = ok(
@@ -172,7 +173,7 @@ esac
     assert.ok(Number(rows) >= 20000);
   });
 
-  test('копия под одновременной записью создаётся и полностью читается', () => {
+  test('a copy made during writes is created and reads in full', () => {
     const copy = run(`
       (for i in $(seq 1 200); do
          psql --username=postgres --dbname=hof -q -c "INSERT INTO operations (note) VALUES ('новая')"
@@ -187,10 +188,10 @@ esac
   });
 
   for (const [title, flag, reason] of [
-    ['сбой pg_dump', '/tmp/fail-dump', 'pg_dump завершился с ошибкой'],
-    ['обрезанный архив', '/tmp/cut-dump', 'архив не читается целиком'],
+    ['pg_dump fails', '/tmp/fail-dump', 'pg_dump завершился с ошибкой'],
+    ['the archive is cut', '/tmp/cut-dump', 'архив не читается целиком'],
   ] as const) {
-    test(`${title}: рабочего имени нет, очистки нет, статус FAIL`, () => {
+    test(`${title}: no working name, no cleanup, status FAIL`, () => {
       const days = [1, 2, 3, 4, 5, 6, 7, 8, 9];
       seed('nightly', days);
       const earlier = copies();
@@ -204,7 +205,7 @@ esac
     });
   }
 
-  test('нехватка места: ошибка, статус FAIL, прежние копии на месте, pg_dump не запускался', () => {
+  test('not enough space: an error, status FAIL, earlier copies in place, no pg_dump', () => {
     seed('nightly', [1, 2, 3]);
     const earlier = copies();
     ok(`printf '#!/bin/bash\\necho Avail\\necho 1024\\n' > /tmp/stub/df; chmod 755 /tmp/stub/df`);
@@ -216,8 +217,8 @@ esac
     assert.ok(!ok('cat /tmp/docker-calls').includes('pg_dump'));
   });
 
-  test('запас считается от размера прошлой копии', () => {
-    // Копия в 1 ГиБ при свободных 3 ГиБ: нужно 1,5 + 2 ГиБ, поэтому отказ.
+  test('the reserve depends on the size of the last copy', () => {
+    // A copy of 1 GiB with 3 GiB free: 1.5 + 2 GiB are needed, so it refuses.
     ok(`truncate -s 1G ${DIR}/hof-nightly-20260101T000000Z.dump
         printf '#!/bin/bash\\necho Avail\\necho ${3 * 1024 * 1024}\\n' > /tmp/stub/df
         chmod 755 /tmp/stub/df`);
@@ -225,7 +226,7 @@ esac
     assert.ok(copies().includes('hof-nightly-20260101T000000Z.dump'));
   });
 
-  test('очистка: только после новой копии, только свой вид, чужие файлы на месте', () => {
+  test('cleanup: only after a new copy, only of its kind, other files stay', () => {
     seed('nightly', [1, 2, 3, 4, 5, 6, 7, 8, 9]);
     seed('predeploy', [1, 2, 3, 4, 5]);
     ok(`touch ${DIR}/hof-nightly-старая.dump ${DIR}/manual.dump`);
@@ -247,7 +248,7 @@ esac
     assert.equal(names.filter((n) => /^hof-nightly-\d.*\.dump$/.test(n)).length, 7);
   });
 
-  test('отказ публикации: файлы попытки убраны, файлы с тем же именем и прежние копии целы', () => {
+  test('a failed publication: files of the attempt go, same-named files and earlier copies stay', () => {
     seed('nightly', [1]);
     const name = 'hof-nightly-20260301T000000Z.dump';
     ok(`cat > /tmp/stub/date <<'E'
@@ -257,7 +258,7 @@ E
         chmod 755 /tmp/stub/date
         echo 'прежний архив' > ${DIR}/${name}`);
 
-    // Занято имя архива: .meta опубликован первым и должен исчезнуть, архив остаётся прежним.
+    // The name of the archive is taken: the .meta came first and must go, the archive stays.
     const second = run('PATH=/tmp/stub:$PATH hof-backup');
     assert.equal(second.status, 1);
     assert.ok(second.stderr.includes(`не удалось опубликовать ${name}`), second.stderr);
@@ -266,7 +267,7 @@ E
     assert.match(status(), /^FAIL /);
     assert.equal(ok(`ls -A ${DIR} | grep -c '\\.part\\.' || true`), '0\n');
 
-    // Занято имя .meta: чужой файл не заменяется и не удаляется.
+    // The name of the .meta is taken: that file is neither replaced nor deleted.
     ok(`rm ${DIR}/${name}; echo 'прежние сведения' > ${DIR}/${name}.meta`);
     assert.equal(run('PATH=/tmp/stub:$PATH hof-backup').status, 1);
     assert.equal(ok(`cat ${DIR}/${name}.meta`), 'прежние сведения\n');
@@ -276,7 +277,7 @@ E
     assert.ok(copies().includes('hof-nightly-20260101T000000Z.dump.meta'));
   });
 
-  test('блокировка занята: ожидание ограничено, сообщение называет операцию, файлы не менялись', () => {
+  test('the lock is taken: a bounded wait, the message names the holder, no file changes', () => {
     seed('nightly', [1]);
     const earlier = copies();
     ok(`printf '#!/bin/bash\\necho "$*" >> /tmp/flock-calls\\nexit 1\\n' > /tmp/stub/flock
@@ -295,7 +296,7 @@ E
     assert.equal(run('test -e /tmp/docker-calls').status, 1);
   });
 
-  test('блокировка держится: второй запуск дождался, а не помешал', () => {
+  test('the lock is held: a second run waits instead of interfering', () => {
     const result = run(`
       flock ${LOCK} sleep 2 &
       sleep 0.3
@@ -307,16 +308,16 @@ E
       exit $code`);
     assert.equal(result.status, 0, result.stderr);
     const waited = Number(result.stdout.trim().split('\n').at(-1));
-    assert.ok(waited > 1000, `ждал ${waited} мс`);
+    assert.ok(waited > 1000, `waited ${waited} ms`);
   });
 
-  test('блокировка свободна после завершения, в ней записано, кто её брал', () => {
+  test('the lock is free after the run and records who took it', () => {
     ok('hof-backup');
     assert.match(ok(`cat ${LOCK}`), /^hof-backup nightly, pid \d+/);
     ok(`flock --nonblock ${LOCK} true`);
   });
 
-  test('--lock-held: блокировку не трогает, копию создаёт', () => {
+  test('--lock-held: leaves the lock alone and makes the copy', () => {
     ok(`printf '#!/bin/bash\\ntouch /tmp/flock-called\\nexit 1\\n' > /tmp/stub/flock
         chmod 755 /tmp/stub/flock
         rm -f /tmp/flock-called`);
@@ -325,18 +326,18 @@ E
     assert.ok(copies().some((n) => /^hof-predeploy-.*\.dump$/.test(n)));
   });
 
-  test('неверный аргумент: ничего не запускается', () => {
+  test('a wrong argument: nothing runs', () => {
     assert.equal(run('hof-backup --all').status, 2);
     assert.equal(run('test -e /tmp/docker-calls').status, 1);
   });
 
-  test('остатки убитого процесса убирает следующий запуск', () => {
+  test('the next run removes what a killed process left', () => {
     ok(`touch ${DIR}/.hof-nightly-20260101T000000Z.dump.part.abc`);
     ok('hof-backup');
     assert.equal(ok(`ls -A ${DIR} | grep -c '\\.part\\.' || true`), '0\n');
   });
 
-  test('hof-backup-send: list показывает только готовые копии', () => {
+  test('hof-backup-send: list shows ready copies only', () => {
     seed('nightly', [1]);
     seed('predeploy', [2]);
     ok(`touch ${DIR}/.hof-nightly-20260103T000000Z.dump.part.x ${DIR}/manual.dump
@@ -349,7 +350,7 @@ E
     );
   });
 
-  test('hof-backup-send: fetch отдаёт файл без искажений и запоминает время забора', () => {
+  test('hof-backup-send: fetch sends the file intact and records the time of the pull', () => {
     ok('hof-backup');
     const name = onlyDump();
     const dump = run(
@@ -364,13 +365,13 @@ E
     assert.equal(run('test -e /var/lib/hof-backup/state/last-pull').status, 1);
   });
 
-  test('hof-backup-send: status показывает итог последней попытки', () => {
+  test('hof-backup-send: status shows the result of the last attempt', () => {
     assert.equal(send('status').stdout, 'NONE\n');
     ok('hof-backup');
     assert.match(send('status').stdout, /^OK /);
   });
 
-  test('hof-backup-send: всё остальное отклоняется без вывода данных', () => {
+  test('hof-backup-send: anything else is refused with no data', () => {
     seed('nightly', [1]);
     const good = 'hof-nightly-20260101T000000Z.dump';
     ok(`echo secret > ${DIR}/../outside.dump`);
@@ -408,7 +409,7 @@ describe('Mac: hof-backup-pull', () => {
   let copiesDir: string;
   let server: string;
 
-  // Метка времени в имени копии: hoursAgo часов назад.
+  // The time in the name of a copy: hoursAgo hours ago.
   function stamp(hoursAgo: number) {
     return new Date(Date.now() - hoursAgo * 3600_000)
       .toISOString()
@@ -467,7 +468,7 @@ describe('Mac: hof-backup-pull', () => {
     writeFileSync(join(base, 'server-status'), 'OK now x\n');
     writeFileSync(join(base, 'filevault'), 'FileVault is On.\n');
     const stubs: Record<string, string> = {
-      // Отбрасывает параметры -o и хост; ведёт себя как hof-backup-send на сервере.
+      // Drops the -o options and the host; behaves like hof-backup-send on the server.
       ssh: `while [ "$1" = -o ]; do shift 2; done
             echo "$1" >> "$BASE/ssh-hosts"
             shift
@@ -501,7 +502,7 @@ describe('Mac: hof-backup-pull', () => {
     rmSync(base, { recursive: true, force: true });
   });
 
-  test('забирает все недостающие копии, права 700 и 600, каталог закрыт от индексации', () => {
+  test('pulls every missing copy, modes 700 and 600, the folder is closed to indexing', () => {
     const names = [`hof-nightly-${stamp(30)}.dump`, `hof-nightly-${stamp(6)}.dump`];
     for (const name of names) serverCopy(name);
     const result = pull();
@@ -516,7 +517,7 @@ describe('Mac: hof-backup-pull', () => {
     assert.ok(!result.stdout.includes('данные'));
   });
 
-  test('FileVault выключен: предупреждение, копии не забираются', () => {
+  test('FileVault is off: a warning, no copies are pulled', () => {
     serverCopy(`hof-nightly-${stamp(1)}.dump`);
     writeFileSync(join(base, 'filevault'), 'FileVault is Off.\n');
     assert.equal(pull().status, 1);
@@ -525,7 +526,7 @@ describe('Mac: hof-backup-pull', () => {
     assert.ok(!existsSync(join(base, 'ssh-hosts')));
   });
 
-  test('Time Machine: без исключения забора нет, его открывают настройка или решение владельца', () => {
+  test('Time Machine: no exclusion, no pull, unless it is set up or the owner decides', () => {
     const name = `hof-nightly-${stamp(1)}.dump`;
     serverCopy(name);
     writeFileSync(join(base, 'tmutil-fail'), '');
@@ -536,7 +537,7 @@ describe('Mac: hof-backup-pull', () => {
     assert.ok(notifications().includes('не исключён из Time Machine'));
     assert.ok(refused.stderr.includes('tmutil: отказ'));
 
-    // Отдельное решение владельца: файл в каталоге копий.
+    // A separate decision of the owner: a file in the folder of copies.
     writeFileSync(join(copiesDir, '.time-machine-allowed'), '');
     assert.equal(pull().status, 0);
     assert.ok(working().includes(name));
@@ -544,19 +545,19 @@ describe('Mac: hof-backup-pull', () => {
     rmSync(join(copiesDir, name));
     rmSync(join(copiesDir, `${name}.meta`));
 
-    // Настройка заработала: забор идёт без решения владельца.
+    // The exclusion works again: the pull needs no decision of the owner.
     rmSync(join(base, 'tmutil-fail'));
     assert.equal(pull().status, 0);
     assert.ok(working().includes(name));
   });
 
-  test('неполная копия: заменяется только проверенной, при сбое остаётся, полная не перечитывается', () => {
+  test('an incomplete copy: replaced only by a verified one, stays on failure; a complete one is not read', () => {
     const name = `hof-nightly-${stamp(1)}.dump`;
     const damaged = 'архив без сведений';
     serverCopy(name);
     writeFileSync(join(copiesDir, name), damaged);
 
-    // Сервер отдал неверный архив: прежний файл цел, уведомления есть.
+    // The server sent a wrong archive: the earlier file stays, the notifications come.
     writeFileSync(join(server, name), 'испорчено');
     assert.equal(pull().status, 1);
     assert.equal(readFileSync(join(copiesDir, name), 'utf8'), damaged);
@@ -565,31 +566,31 @@ describe('Mac: hof-backup-pull', () => {
     assert.ok(notifications().includes('не считается полной'));
     assert.ok(notifications().includes('На Mac нет копии моложе 36 часов'));
 
-    // Обрыв при заборе: тоже цел.
+    // A pull cut short: it stays as well.
     serverCopy(name);
     writeFileSync(join(base, `cut-${name}`), '');
     assert.equal(pull().status, 1);
     assert.equal(readFileSync(join(copiesDir, name), 'utf8'), damaged);
     assert.deepEqual(hidden(), []);
 
-    // Забор прошёл: заменён проверенным, появились сведения.
+    // The pull went through: replaced by a verified copy, with its .meta.
     rmSync(join(base, `cut-${name}`));
     assert.equal(pull().status, 0);
     assert.equal(readFileSync(join(copiesDir, name), 'utf8'), `данные ${name}`);
     assert.equal(readFileSync(join(copiesDir, `${name}.meta`), 'utf8'), metaOf(`данные ${name}`));
 
-    // Теперь копия полная: каждый час архив не читается и с сервера заново не берётся.
+    // Now the copy is complete: it is not read every hour or pulled again.
     rmSync(join(base, 'ssh-calls'));
     assert.equal(pull().status, 0);
     assert.ok(!readFileSync(join(base, 'ssh-calls'), 'utf8').includes('fetch'));
 
-    // Размер не совпал с записанным: забирается заново.
+    // The size differs from the one written down: pulled again.
     writeFileSync(join(copiesDir, name), 'обрезано');
     assert.equal(pull().status, 0);
     assert.equal(readFileSync(join(copiesDir, name), 'utf8'), `данные ${name}`);
   });
 
-  test('неполная копия, которой уже нет на сервере: сохраняется и не считается свежей', () => {
+  test('an incomplete copy the server no longer has: kept, not counted as fresh', () => {
     const name = `hof-nightly-${stamp(1)}.dump`;
     writeFileSync(join(copiesDir, name), 'единственный архив');
     serverCopy(`hof-nightly-${stamp(2)}.dump`);
@@ -598,7 +599,7 @@ describe('Mac: hof-backup-pull', () => {
     assert.ok(notifications().includes('не считается полной'));
   });
 
-  test('уведомление не показано: ошибка в логе, метки нет, следующий запуск повторяет', () => {
+  test('a notification not shown: the error is logged, no mark, the next run tries again', () => {
     writeFileSync(join(base, 'filevault'), 'FileVault is Off.\n');
     writeFileSync(join(base, 'osascript-fail'), '');
     const flag = join(copiesDir, '.notified-filevault');
@@ -619,7 +620,7 @@ describe('Mac: hof-backup-pull', () => {
     assert.equal(attempts().length, 3);
   });
 
-  test('прерванный забор не оставляет рабочего файла, повторный запуск забирает недостающее', () => {
+  test('a pull cut short leaves no working file, the next run pulls what is missing', () => {
     const first = `hof-nightly-${stamp(30)}.dump`;
     const second = `hof-nightly-${stamp(6)}.dump`;
     serverCopy(first);
@@ -636,7 +637,7 @@ describe('Mac: hof-backup-pull', () => {
     assert.equal(readFileSync(join(copiesDir, second), 'utf8'), `данные ${second}`);
   });
 
-  test('SHA-256 не совпал: копия не сохранена, уведомление', () => {
+  test('SHA-256 differs: the copy is not kept, a notification comes', () => {
     const name = `hof-nightly-${stamp(1)}.dump`;
     serverCopy(name);
     writeFileSync(join(server, name), 'испорчено');
@@ -646,14 +647,14 @@ describe('Mac: hof-backup-pull', () => {
     assert.ok(notifications().includes('не совпала по SHA-256'));
   });
 
-  test('сервер ответил мусором: такие имена не забираются', () => {
+  test('garbage from the server: such names are not pulled', () => {
     serverCopy(`hof-nightly-${stamp(1)}.dump`);
     writeFileSync(join(base, 'list-extra'), '../../x.dump\nevil;id.dump\nhof-nightly-1.dump\n');
     assert.equal(pull().status, 0);
     assert.equal(working().filter((n) => n.endsWith('.dump')).length, 1);
   });
 
-  test('самая старая копия на сервере новее локальной: уведомление о разрыве, новейшая забрана', () => {
+  test('the oldest copy on the server is newer than the local one: a gap signal, the newest is pulled', () => {
     localCopy(`hof-nightly-${stamp(24 * 20)}.dump`);
     const oldest = `hof-nightly-${stamp(24 * 3)}.dump`;
     const newest = `hof-nightly-${stamp(2)}.dump`;
@@ -664,7 +665,7 @@ describe('Mac: hof-backup-pull', () => {
     assert.ok(working().includes(newest));
   });
 
-  test('разрыва нет, если локальная копия ещё есть на сервере', () => {
+  test('no gap while the server still has the local copy', () => {
     const shared = `hof-nightly-${stamp(30)}.dump`;
     localCopy(shared);
     serverCopy(shared);
@@ -673,7 +674,7 @@ describe('Mac: hof-backup-pull', () => {
     assert.ok(!notifications().includes('разрыв'));
   });
 
-  test('копии старше 36 часов: уведомления, не чаще раза в 12 часов', () => {
+  test('copies older than 36 hours: notifications, at most once in 12 hours', () => {
     const old = `hof-nightly-${stamp(40)}.dump`;
     localCopy(old);
     serverCopy(old);
@@ -696,7 +697,7 @@ describe('Mac: hof-backup-pull', () => {
     );
   });
 
-  test('сервер недоступен: сразу без уведомления, больше суток — уведомление, Mac повторит', () => {
+  test('the server is down: no notification at first, one after a day, the Mac retries', () => {
     localCopy(`hof-nightly-${stamp(2)}.dump`);
     writeFileSync(join(base, 'ssh-down'), '');
     assert.equal(pull().status, 1);
@@ -714,7 +715,7 @@ describe('Mac: hof-backup-pull', () => {
     assert.ok(working().includes(fresh));
   });
 
-  test('сервер сообщил о сбое: уведомление без текста сервера', () => {
+  test('the server reports a failure: a notification without the text of the server', () => {
     serverCopy(`hof-nightly-${stamp(1)}.dump`);
     writeFileSync(join(base, 'server-status'), 'FAIL now "; do shell script "id"\n');
     assert.equal(pull().status, 0);
@@ -722,8 +723,8 @@ describe('Mac: hof-backup-pull', () => {
     assert.ok(!notifications().includes('shell script'));
   });
 
-  test('хранение: 30 ночных, по одной за месяц за 12 месяцев, 5 предрелизных', () => {
-    // По четыре копии в месяц за 15 месяцев: 60 ночных.
+  test('retention: 30 nightly, one a month for 12 months, 5 before updates', () => {
+    // Four copies a month for 15 months: 60 nightly.
     const nightly: string[] = [];
     for (let m = 0; m < 15; m++) {
       const year = 2025 + Math.floor(m / 12);
@@ -737,7 +738,7 @@ describe('Mac: hof-backup-pull', () => {
     for (const name of predeploy) localCopy(name);
     writeFileSync(join(copiesDir, 'hof-2026-01-01-000000-abc.dump'), 'ручная копия');
 
-    // Без новой копии очистки нет.
+    // No new copy, no cleanup.
     serverCopy(nightly.at(-1)!);
     pull();
     assert.equal(working().filter((n) => n.endsWith('.dump')).length, nightly.length + 8);
@@ -755,7 +756,7 @@ describe('Mac: hof-backup-pull', () => {
     );
     const keptNightly = kept.filter((n) => n.startsWith('hof-nightly-'));
     for (const name of [...nightly.slice(-29), fresh]) assert.ok(keptNightly.includes(name), name);
-    // Начало каждого из 12 последних месяцев остаётся, более старые месяцы уходят.
+    // The start of each of the last 12 months stays, older months go.
     assert.ok(keptNightly.includes('hof-nightly-20250601T033000Z.dump'));
     assert.ok(!keptNightly.includes('hof-nightly-20250508T033000Z.dump'));
     assert.ok(!kept.some((n) => n === 'hof-nightly-20250101T033000Z.dump'));
