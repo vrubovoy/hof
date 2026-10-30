@@ -494,46 +494,60 @@ SHA-256. Если забрать её нельзя, файл остаётся н
 
 ## Проверить копию
 
-Учения: копию восстанавливают на своём компьютере в отдельный проект `hof-drill` со своим томом, а
-не на сервере и не в рабочий проект. Нужен этот же репозиторий, лучше на коммите из имени копии, и
-`.env` — тот, что для разработки, подходит: роли учебной базы создаются из его паролей. Если код
-на компьютере новее копии и в нём есть новые миграции, Hof применит их к учебной базе: для учений
-это допустимо, для восстановления на сервере — нет (раздел «Восстановление из копии»). `CURRENCY` в нём должна совпадать с валютой записей в копии. Учебная база одна: проект
-всегда называется `hof-drill`.
+Учения: `deploy/hof-restore-check.sh` восстанавливает копию на этом компьютере в отдельный временный
+проект Compose и запускает на ней Hof. К серверу скрипт не обращается, с рабочей базой копию не
+сравнивает.
 
 ```sh
-copy=~/hof-backups/<файл>.dump
-docker compose -p hof-drill up -d --wait postgres
-docker compose -p hof-drill exec -T postgres dropdb --username=postgres --force hof
-docker compose -p hof-drill exec -T postgres createdb --username=postgres hof
-docker compose -p hof-drill exec -T postgres pg_restore --username=postgres --dbname=hof --single-transaction < "$copy"
-docker compose -p hof-drill up -d hof
-docker compose -p hof-drill logs hof
+deploy/hof-restore-check.sh ~/hof-backups/<файл>.dump
 ```
 
-Через несколько секунд после запуска в логе должна быть строка `info start … migrations=none` (на
-более новом коде — с именами его новых миграций); если её ещё нет, команду `logs` повторяют. Строк `gate_key` и
-`startup_failed` быть не должно: двор уже основан, база цела. Затем сравнивают отпечаток учебной
-базы с отпечатком исходной, снятым сразу после копии, — та же команда без `-p hof-drill`:
+Нужны локальный Docker и этот же репозиторий: образ Hof собирается из него. Рядом с архивом должен
+лежать `.meta` с SHA-256, как у автоматических копий. У ручной копии его можно создать, сверив сумму
+с сервером: `printf 'sha256=%s\n' <сумма> > <файл>.dump.meta`.
+
+Правило: учения проводят раз в месяц и перед каждым выпуском с миграциями. Если код новее копии, Hof
+применит его миграции к временной базе и отчёт их назовёт: это репетиция обновления на реальных
+данных. Для восстановления на сервере так нельзя (раздел «Восстановление из копии»).
+
+Скрипт останавливается на первой ошибке и всегда убирает за собой:
+
+1. Сверяет SHA-256 с `.meta`, ещё до запуска контейнеров.
+2. Поднимает `postgres` из `compose.yaml` в проекте `hof-drill-<случайное>` с новыми случайными
+   паролями. Это заодно доказывает, что копии не нужны старые секреты.
+3. Читает архив целиком (`pg_restore --file=/dev/null`).
+4. Проверяет, что Docker локальный, а контейнер и том принадлежат этому проекту, и только затем
+   пересоздаёт базу: `postgres-init.sh` уже создал в ней схемы, и архив на них упал бы. Роли остаются,
+   схемы с владельцами приносит архив. Восстановление идёт одной транзакцией, поэтому при ошибке
+   частичных данных не остаётся.
+5. Проверяет структуру: схемы и таблицы с владельцами `hof_core` и `hof_saeckel`, первичные ключи, два
+   внешних ключа `operations`, индекс `users_one_admin`, отсутствие непроверенных ограничений.
+6. Проверяет записи: ровно один Хозяин и одна валюта.
+7. Собирает образ и запускает Hof: должна быть строка `info start`, не должно быть `gate_key` и
+   `startup_failed`.
+
+Отчёт содержит имя файла, число записей, дату новейшей операции, отпечаток записей и миграции. Имён и
+сумм в нём нет. Сверять число записей с ожидаемым должен человек: с живой базой скрипт копию намеренно
+не сравнивает, потому что записи меняются и после снимка. Отпечаток — это хеш всех записей: у копий с
+одними и теми же данными он совпадает, хотя SHA-256 архивов разные, потому что в архиве есть время
+создания.
+
+Код выхода: 0 — копия прошла проверку; 1 — не прошла или проверка не удалась; 2 — неверный аргумент или
+Docker не локальный, тогда ничего не запускалось. Контекст Docker или `DOCKER_HOST` с адресом вроде
+`ssh://` скрипт отклоняет: так он не попадёт на сервер.
+
+Другие контейнеры Hof на компьютере не мешают и не затрагиваются, несколько проверок могут идти
+одновременно: порты не публикуются, а у каждого прогона свои контейнеры, сеть, том и образ. Очистка
+удаляет только их, по точным именам. Если процесс убит и очистка не прошла, в томе на этом компьютере
+остаются данные копии. Найти и удалить их:
 
 ```sh
-docker compose -p hof-drill exec -T postgres psql --username=postgres --dbname=hof --no-psqlrc <<'SQL'
-SELECT (SELECT count(*) FROM core.users)                          AS users,
-       (SELECT count(*) FROM core.sessions)                       AS sessions,
-       (SELECT count(*) FROM saeckel.pouches)                     AS pouches,
-       (SELECT count(*) FROM saeckel.operations)                  AS operations,
-       (SELECT coalesce(sum(amount), 0) FROM saeckel.operations)  AS amount;
-SELECT schemaname, tablename, tableowner FROM pg_tables
- WHERE schemaname IN ('core', 'saeckel') ORDER BY 1, 2;
-SQL
-```
-
-Владельцы таблиц — `hof_core` в `core` и `hof_saeckel` в `saeckel`. После учений проект и его том
-удаляют; том — по точному имени, а не через `down -v`:
-
-```sh
-docker compose -p hof-drill down
-docker volume rm hof-drill_pgdata
+docker ps -a --filter name=hof-drill- --format '{{.Names}}'
+docker volume ls --filter name=hof-drill- --format '{{.Name}}'
+docker rm -f hof-drill-<случайное>-hof-1 hof-drill-<случайное>-postgres-1
+docker network rm hof-drill-<случайное>_default
+docker volume rm hof-drill-<случайное>_pgdata
+docker image rm hof-drill-<случайное>-hof
 ```
 
 ## Восстановление из копии
@@ -570,8 +584,22 @@ docker volume rm hof-drill_pgdata
    docker compose exec -T postgres pg_restore --username=postgres --dbname=hof --single-transaction < "$copy"
    ```
 
-6. Сравнить отпечаток с тем, что был снят после копии (команда раздела «Проверить копию» без
-   `-p hof-drill`).
+6. Сравнить показатели с теми, что были сняты после копии:
+
+   ```sh
+   docker compose exec -T postgres psql --username=postgres --dbname=hof --no-psqlrc <<'SQL'
+   SELECT (SELECT count(*) FROM core.users)                          AS users,
+          (SELECT count(*) FROM core.sessions)                       AS sessions,
+          (SELECT count(*) FROM saeckel.pouches)                     AS pouches,
+          (SELECT count(*) FROM saeckel.operations)                  AS operations,
+          (SELECT coalesce(sum(amount), 0) FROM saeckel.operations)  AS amount;
+   SELECT schemaname, tablename, tableowner FROM pg_tables
+    WHERE schemaname IN ('core', 'saeckel') ORDER BY 1, 2;
+   SQL
+   ```
+
+   Владельцы таблиц — `hof_core` в `core` и `hof_saeckel` в `saeckel`.
+
 7. Запустить Hof и через несколько секунд посмотреть лог: `docker compose up -d hof`,
    `docker compose logs hof` — строка `info start`, без `gate_key` и `startup_failed`. Затем в
    браузере войти и открыть Мешки и Летопись.
