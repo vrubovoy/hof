@@ -247,6 +247,35 @@ esac
     assert.equal(names.filter((n) => /^hof-nightly-\d.*\.dump$/.test(n)).length, 7);
   });
 
+  test('отказ публикации: файлы попытки убраны, файлы с тем же именем и прежние копии целы', () => {
+    seed('nightly', [1]);
+    const name = 'hof-nightly-20260301T000000Z.dump';
+    ok(`cat > /tmp/stub/date <<'E'
+#!/bin/bash
+if [ "$*" = '-u +%Y%m%dT%H%M%SZ' ]; then echo 20260301T000000Z; else exec /usr/bin/date "$@"; fi
+E
+        chmod 755 /tmp/stub/date
+        echo 'прежний архив' > ${DIR}/${name}`);
+
+    // Занято имя архива: .meta опубликован первым и должен исчезнуть, архив остаётся прежним.
+    const second = run('PATH=/tmp/stub:$PATH hof-backup');
+    assert.equal(second.status, 1);
+    assert.ok(second.stderr.includes(`не удалось опубликовать ${name}`), second.stderr);
+    assert.equal(ok(`cat ${DIR}/${name}`), 'прежний архив\n');
+    assert.equal(run(`test -e ${DIR}/${name}.meta`).status, 1);
+    assert.match(status(), /^FAIL /);
+    assert.equal(ok(`ls -A ${DIR} | grep -c '\\.part\\.' || true`), '0\n');
+
+    // Занято имя .meta: чужой файл не заменяется и не удаляется.
+    ok(`rm ${DIR}/${name}; echo 'прежние сведения' > ${DIR}/${name}.meta`);
+    assert.equal(run('PATH=/tmp/stub:$PATH hof-backup').status, 1);
+    assert.equal(ok(`cat ${DIR}/${name}.meta`), 'прежние сведения\n');
+    assert.equal(run(`test -e ${DIR}/${name}`).status, 1);
+
+    assert.ok(copies().includes('hof-nightly-20260101T000000Z.dump'));
+    assert.ok(copies().includes('hof-nightly-20260101T000000Z.dump.meta'));
+  });
+
   test('блокировка занята: ожидание ограничено, сообщение называет операцию, файлы не менялись', () => {
     seed('nightly', [1]);
     const earlier = copies();
@@ -387,15 +416,19 @@ describe('Mac: hof-backup-pull', () => {
       .replace(/\.\d+Z$/, 'Z');
   }
 
-  function serverCopy(name: string, body = `данные ${name}`) {
+  function metaOf(body: string) {
     const sha = createHash('sha256').update(body).digest('hex');
-    writeFileSync(join(server, name), body);
-    writeFileSync(join(server, `${name}.meta`), `created=x\nsize=1\nsha256=${sha}\nimage=-\n`);
+    return `created=x\nsize=${Buffer.byteLength(body)}\nsha256=${sha}\nimage=-\n`;
   }
 
-  function localCopy(name: string) {
-    writeFileSync(join(copiesDir, name), 'старая копия');
-    writeFileSync(join(copiesDir, `${name}.meta`), '');
+  function serverCopy(name: string, body = `данные ${name}`) {
+    writeFileSync(join(server, name), body);
+    writeFileSync(join(server, `${name}.meta`), metaOf(body));
+  }
+
+  function localCopy(name: string, body = 'старая копия') {
+    writeFileSync(join(copiesDir, name), body);
+    writeFileSync(join(copiesDir, `${name}.meta`), metaOf(body));
   }
 
   function pull() {
@@ -438,6 +471,7 @@ describe('Mac: hof-backup-pull', () => {
       ssh: `while [ "$1" = -o ]; do shift 2; done
             echo "$1" >> "$BASE/ssh-hosts"
             shift
+            echo "$*" >> "$BASE/ssh-calls"
             [ -f "$BASE/ssh-down" ] && exit 255
             case $1 in
             list)
@@ -450,8 +484,11 @@ describe('Mac: hof-backup-pull', () => {
               cat "$BASE/server/$2" ;;
             esac`,
       fdesetup: 'cat "$BASE/filevault"',
-      tmutil: 'echo "$*" >> "$BASE/tmutil"',
-      osascript: 'echo "$*" >> "$BASE/notified"',
+      tmutil: `echo "$*" >> "$BASE/tmutil"
+               if [ -f "$BASE/tmutil-fail" ]; then echo 'tmutil: отказ' >&2; exit 1; fi`,
+      osascript: `echo "$*" >> "$BASE/notify-attempts"
+                  if [ -f "$BASE/osascript-fail" ]; then echo 'osascript: отказ' >&2; exit 1; fi
+                  echo "$*" >> "$BASE/notified"`,
     };
     for (const [name, body] of Object.entries(stubs)) {
       const path = join(base, 'bin', name);
@@ -486,6 +523,100 @@ describe('Mac: hof-backup-pull', () => {
     assert.deepEqual(working(), []);
     assert.ok(notifications().includes('FileVault выключен'));
     assert.ok(!existsSync(join(base, 'ssh-hosts')));
+  });
+
+  test('Time Machine: без исключения забора нет, его открывают настройка или решение владельца', () => {
+    const name = `hof-nightly-${stamp(1)}.dump`;
+    serverCopy(name);
+    writeFileSync(join(base, 'tmutil-fail'), '');
+    const refused = pull();
+    assert.equal(refused.status, 1);
+    assert.deepEqual(working(), []);
+    assert.ok(!existsSync(join(base, 'ssh-hosts')));
+    assert.ok(notifications().includes('не исключён из Time Machine'));
+    assert.ok(refused.stderr.includes('tmutil: отказ'));
+
+    // Отдельное решение владельца: файл в каталоге копий.
+    writeFileSync(join(copiesDir, '.time-machine-allowed'), '');
+    assert.equal(pull().status, 0);
+    assert.ok(working().includes(name));
+    rmSync(join(copiesDir, '.time-machine-allowed'));
+    rmSync(join(copiesDir, name));
+    rmSync(join(copiesDir, `${name}.meta`));
+
+    // Настройка заработала: забор идёт без решения владельца.
+    rmSync(join(base, 'tmutil-fail'));
+    assert.equal(pull().status, 0);
+    assert.ok(working().includes(name));
+  });
+
+  test('неполная копия: заменяется только проверенной, при сбое остаётся, полная не перечитывается', () => {
+    const name = `hof-nightly-${stamp(1)}.dump`;
+    const damaged = 'архив без сведений';
+    serverCopy(name);
+    writeFileSync(join(copiesDir, name), damaged);
+
+    // Сервер отдал неверный архив: прежний файл цел, уведомления есть.
+    writeFileSync(join(server, name), 'испорчено');
+    assert.equal(pull().status, 1);
+    assert.equal(readFileSync(join(copiesDir, name), 'utf8'), damaged);
+    assert.ok(!existsSync(join(copiesDir, `${name}.meta`)));
+    assert.ok(notifications().includes('не совпала по SHA-256'));
+    assert.ok(notifications().includes('не считается полной'));
+    assert.ok(notifications().includes('На Mac нет копии моложе 36 часов'));
+
+    // Обрыв при заборе: тоже цел.
+    serverCopy(name);
+    writeFileSync(join(base, `cut-${name}`), '');
+    assert.equal(pull().status, 1);
+    assert.equal(readFileSync(join(copiesDir, name), 'utf8'), damaged);
+    assert.deepEqual(hidden(), []);
+
+    // Забор прошёл: заменён проверенным, появились сведения.
+    rmSync(join(base, `cut-${name}`));
+    assert.equal(pull().status, 0);
+    assert.equal(readFileSync(join(copiesDir, name), 'utf8'), `данные ${name}`);
+    assert.equal(readFileSync(join(copiesDir, `${name}.meta`), 'utf8'), metaOf(`данные ${name}`));
+
+    // Теперь копия полная: каждый час архив не читается и с сервера заново не берётся.
+    rmSync(join(base, 'ssh-calls'));
+    assert.equal(pull().status, 0);
+    assert.ok(!readFileSync(join(base, 'ssh-calls'), 'utf8').includes('fetch'));
+
+    // Размер не совпал с записанным: забирается заново.
+    writeFileSync(join(copiesDir, name), 'обрезано');
+    assert.equal(pull().status, 0);
+    assert.equal(readFileSync(join(copiesDir, name), 'utf8'), `данные ${name}`);
+  });
+
+  test('неполная копия, которой уже нет на сервере: сохраняется и не считается свежей', () => {
+    const name = `hof-nightly-${stamp(1)}.dump`;
+    writeFileSync(join(copiesDir, name), 'единственный архив');
+    serverCopy(`hof-nightly-${stamp(2)}.dump`);
+    assert.equal(pull().status, 0);
+    assert.equal(readFileSync(join(copiesDir, name), 'utf8'), 'единственный архив');
+    assert.ok(notifications().includes('не считается полной'));
+  });
+
+  test('уведомление не показано: ошибка в логе, метки нет, следующий запуск повторяет', () => {
+    writeFileSync(join(base, 'filevault'), 'FileVault is Off.\n');
+    writeFileSync(join(base, 'osascript-fail'), '');
+    const flag = join(copiesDir, '.notified-filevault');
+    const attempts = () => readFileSync(join(base, 'notify-attempts'), 'utf8').trim().split('\n');
+
+    const failed = pull();
+    assert.ok(failed.stdout.includes('уведомление не показано'));
+    assert.ok(failed.stderr.includes('osascript: отказ'));
+    assert.ok(!existsSync(flag));
+    pull();
+    assert.equal(attempts().length, 2);
+
+    rmSync(join(base, 'osascript-fail'));
+    pull();
+    assert.equal(attempts().length, 3);
+    assert.ok(existsSync(flag));
+    pull();
+    assert.equal(attempts().length, 3);
   });
 
   test('прерванный забор не оставляет рабочего файла, повторный запуск забирает недостающее', () => {

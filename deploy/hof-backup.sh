@@ -60,10 +60,11 @@ write_status() {
 
 part=
 meta_part=
+published_meta=
 step='подготовка'
 on_exit() {
   local code=$?
-  rm -f -- ${part:+"$part"} ${meta_part:+"$meta_part"}
+  rm -f -- ${part:+"$part"} ${meta_part:+"$meta_part"} ${published_meta:+"$published_meta"}
   [ "$code" -eq 0 ] && return
   echo "hof-backup: копия не создана: $step" >&2
   write_status FAIL "$kind: $step" || echo 'hof-backup: статус не записан' >&2
@@ -132,11 +133,14 @@ image=$("$DOCKER" ps --all \
 } >"$meta_part"
 chmod 640 "$part" "$meta_part"
 
-# ln, а не mv: готовая копия с тем же именем никогда не заменяется. Сведения появляются раньше
-# архива, поэтому у каждого архива в каталоге они уже есть.
-step="копия с именем $name уже есть"
+# ln, а не mv: файл с тем же именем никогда не заменяется. Сведения появляются раньше архива,
+# поэтому у каждого архива в каталоге они уже есть. Если архив опубликовать не удалось, on_exit
+# убирает только сведения этой попытки: на чужом файле .meta первый ln падает раньше.
+step="не удалось опубликовать $name: имя занято или ошибка записи"
 ln "$meta_part" "$DIR/$name.meta"
+published_meta=$DIR/$name.meta
 ln "$part" "$DIR/$name"
+published_meta=
 
 # Плановая очистка только теперь и только своего вида. Глоб отсортирован по времени в имени.
 step='копия создана, но очистка старых не удалась'

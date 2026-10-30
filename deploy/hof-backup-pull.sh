@@ -26,9 +26,12 @@ notify() {
   local flag="$DIR/.notified-$1"
   say "$2"
   [ -n "$(find "$flag" -mmin -720 2>/dev/null)" ] && return 0
-  touch "$flag"
-  osascript -e "display notification \"$2\" with title \"Hof: резервные копии\"" >/dev/null ||
+  # Метка только после показа: иначе ошибка показа подавила бы повтор на 12 часов.
+  if osascript -e "display notification \"$2\" with title \"Hof: резервные копии\"" >/dev/null; then
+    touch "$flag"
+  else
     say 'уведомление не показано'
+  fi
 }
 
 # Самая новая метка времени из имён копий на входе.
@@ -40,16 +43,41 @@ hours_ago() {
   date -u -v-"$1"H +%Y%m%dT%H%M%SZ 2>/dev/null || date -u -d "$1 hours ago" +%Y%m%dT%H%M%SZ
 }
 
-# Новейшая локальная копия: выключенный Mac этого сообщить не может, сигнал приходит при включении.
-check_local_age() {
+# Полная копия: у архива есть .meta с SHA-256, а его размер совпадает с записанным. Содержимое
+# здесь не читается: SHA-256 считается при заборе, а не каждый час по всей истории.
+is_complete() {
+  local file="$DIR/$1"
+  [ -f "$file" ] && [ -f "$file.meta" ] || return 1
+  grep -Eq '^sha256=[0-9a-f]{64}$' "$file.meta" || return 1
+  [ "$(sed -n 's/^size=//p' "$file.meta")" = "$(wc -c <"$file" | tr -d ' ')" ]
+}
+
+# Неполный архив не удаляется: возможно, это единственная копия того дня. Если он ещё есть на
+# сервере, забор уже заменил его проверенным. Возраст считается только по полным копиям.
+# Выключенный Mac этого сообщить не может, сигнал приходит при включении.
+check_local_copies() {
+  local name complete='' incomplete=''
+  for name in $(ls -1 "$DIR" | grep -E "$NAME"); do
+    if is_complete "$name"; then
+      complete="$complete$name"$'\n'
+    else
+      incomplete="$incomplete $name"
+    fi
+  done
+  if [ -n "$incomplete" ]; then
+    say "копии без проверяемых сведений:$incomplete"
+    notify incomplete 'Есть копия без проверяемых сведений: она сохранена, но не считается полной'
+  fi
   local newest
-  newest=$(ls -1 "$DIR" | grep -E "$NAME" | newest_stamp)
+  newest=$(printf '%s' "$complete" | newest_stamp)
   if [ -z "$newest" ] || [[ $newest < $(hours_ago 36) ]]; then
     notify stale-local 'На Mac нет копии моложе 36 часов'
   fi
 }
 
-# Архив под рабочим именем появляется только после сверки SHA-256 с файлом .meta.
+# Архив под рабочим именем появляется только после сверки SHA-256 с файлом .meta. Сведения
+# публикуются последними: при сбое на любом шаге копия остаётся неполной и её заберут снова, а
+# прежний архив заменяется только проверенным.
 fetch_copy() {
   local name=$1 part meta want got
   part=$(mktemp "$DIR/.$name.part.XXXXXX") || return 1
@@ -62,12 +90,15 @@ fetch_copy() {
     got=$(shasum -a 256 "$part")
     got=${got%% *}
     if [ -n "$want" ] && [ "$want" = "$got" ]; then
-      mv -f "$meta" "$DIR/$name.meta"
-      mv -f "$part" "$DIR/$name"
-      say "забрана $name, $(wc -c <"$DIR/$name" | tr -d ' ') байт"
-      return 0
+      rm -f "$DIR/$name.meta"
+      if mv -f "$part" "$DIR/$name" && mv -f "$meta" "$DIR/$name.meta"; then
+        say "забрана $name, $(wc -c <"$DIR/$name" | tr -d ' ') байт"
+        return 0
+      fi
+      say "$name не сохранена"
+    else
+      notify integrity 'Копия с сервера не совпала по SHA-256 и не сохранена'
     fi
-    notify integrity 'Копия с сервера не совпала по SHA-256 и не сохранена'
   else
     say "$name не забрана"
   fi
@@ -98,7 +129,17 @@ thin_copies() {
 
 mkdir -p "$DIR" && chmod 700 "$DIR" || exit 1
 touch "$DIR/.metadata_never_index"
-tmutil addexclusion "$DIR" >/dev/null 2>&1 || say 'исключение из Time Machine не установлено'
+
+# Копии не должны попасть на диск Time Machine. Без исключения забор идёт только по решению
+# владельца: файлу .time-machine-allowed в каталоге копий.
+if ! tmutil addexclusion "$DIR" >/dev/null; then
+  if [ -f "$DIR/.time-machine-allowed" ]; then
+    say 'исключение из Time Machine не установлено, забор разрешён владельцем'
+  else
+    notify time-machine 'Каталог копий не исключён из Time Machine: копии не забираются'
+    exit 1
+  fi
+fi
 
 case $(fdesetup status 2>/dev/null) in
 *'FileVault is On'*) ;;
@@ -115,7 +156,7 @@ if [ "$?" -ne 0 ]; then
   if [ -n "$(find "$DIR/.last-contact" -mmin +1440 2>/dev/null)" ]; then
     notify unreachable 'Сервер недоступен больше суток'
   fi
-  check_local_age
+  check_local_copies
   exit 1
 fi
 touch "$DIR/.last-contact"
@@ -131,7 +172,8 @@ fi
 fetched=0
 result=0
 for name in $list; do
-  [ -f "$DIR/$name" ] && continue
+  is_complete "$name" && continue
+  if [ -f "$DIR/$name" ]; then say "$name: нет проверяемых сведений, забираем заново"; fi
   if ! fetch_copy "$name"; then
     result=1
     break
@@ -144,7 +186,7 @@ newest_remote=$(printf '%s\n' "$list" | newest_stamp)
 if [ -z "$newest_remote" ] || [[ $newest_remote < $(hours_ago 36) ]]; then
   notify stale-server 'На сервере нет копии моложе 36 часов'
 fi
-check_local_age
+check_local_copies
 
 status=$(remote status)
 case $status in
