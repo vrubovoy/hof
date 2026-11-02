@@ -79,8 +79,8 @@ export function applicationUser(corePool: Pool): CurrentUser {
   };
 }
 
-// Request order: response headers, Origin, POST body (common checks below), then static files,
-// then the first-run gate, then the modules' own routes, and finally the common 404.
+// Request order: response headers, Origin, POST body (common checks below), then static files and
+// /healthz, then the first-run gate, then the modules' own routes, and finally the common 404.
 export function createApp(
   corePool: Pool,
   saeckelPool: Pool,
@@ -135,6 +135,13 @@ export function createApp(
   // Each module has its own folder; the routes of Säckel never see a request for its files.
   app.use('/static/*', staticFiles('/static/', CORE_STATIC));
   app.use('/saeckel/static/*', staticFiles('/saeckel/static/', SAECKEL_STATIC));
+
+  // The healthcheck of Docker (§4.1, §9): the process answers. Before the first-run gate and with
+  // no database query, so the answer is the same `ok` in every state of the court.
+  app.get('/healthz', (c) => {
+    c.header('Cache-Control', 'no-store');
+    return c.text('ok');
+  });
 
   // First run (§4.1, §4.4): until the court is founded, every path leads to /setup, for every
   // module. /setup itself decides what it does before and after founding.

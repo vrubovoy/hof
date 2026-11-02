@@ -247,6 +247,78 @@ describe('static files of Core and Säckel', () => {
   });
 });
 
+describe('/healthz', () => {
+  // The court is not founded yet and the database is down: the answer must depend on neither.
+  let gateAsked = 0;
+  const notFounded: FirstRun = {
+    isFounded: () => {
+      gateAsked++;
+      return Promise.resolve(false);
+    },
+    keyMatches: () => false,
+    markFounded: () => undefined,
+  };
+  const downPool = new Pool({ host: '127.0.0.1', port: 1 });
+  after(() => downPool.end());
+
+  function healthz(method: string, headers: Record<string, string> = {}) {
+    return createApp(downPool, downPool, SETTINGS, notFounded, 'unused').request('/healthz', {
+      method,
+      headers: { host: HOST, ...headers },
+    });
+  }
+
+  test('GET before founding, the database down: 200 ok, no-store, nothing asked', async (t) => {
+    gateAsked = 0;
+    const query = t.mock.method(downPool, 'query');
+    const connect = t.mock.method(downPool, 'connect');
+    const res = await healthz('GET', { cookie: `__Host-hof=${'C'.repeat(43)}` });
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), 'ok');
+    // Only these headers: nothing about the version, the database or the court.
+    assert.deepEqual([...res.headers.keys()].sort(), [
+      'cache-control',
+      'content-security-policy',
+      'content-type',
+      'referrer-policy',
+      'x-content-type-options',
+    ]);
+    assert.equal(res.headers.get('content-type'), 'text/plain; charset=UTF-8');
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    assert.equal(res.headers.get('content-security-policy'), CSP);
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(res.headers.get('referrer-policy'), 'same-origin');
+    assert.equal(gateAsked, 0);
+    assert.equal(query.mock.callCount(), 0);
+    assert.equal(connect.mock.callCount(), 0);
+  });
+
+  test('HEAD: the same status and headers, no body', async () => {
+    const res = await healthz('HEAD');
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    assert.equal(res.headers.get('content-security-policy'), CSP);
+    assert.equal(await res.text(), '');
+  });
+
+  test('POST is no route: refused like any other POST', async (t) => {
+    captureLog(t);
+    assert.equal((await healthz('POST')).status, 403);
+    // With the right Origin and form it passes the common checks and meets the first-run gate,
+    // then the common 404 once the court is founded.
+    const form = { origin: `https://${HOST}`, 'content-type': FORM };
+    const beforeFounding = await healthz('POST', form);
+    assert.equal(beforeFounding.status, 303);
+    assert.equal(beforeFounding.headers.get('location'), '/setup');
+    const res = await createApp(downPool, downPool, SETTINGS, founded, 'unused').request(
+      '/healthz',
+      { method: 'POST', headers: { host: HOST, ...form } },
+    );
+    assert.equal(res.status, 404);
+    assert.ok((await res.text()).includes(NOT_FOUND_H1));
+  });
+});
+
 describe('404 page', () => {
   test('an unknown path, GET or POST: the page and the way to the courtyard', async () => {
     for (const res of [
