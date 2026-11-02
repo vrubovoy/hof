@@ -704,13 +704,16 @@ install -m 755 hof-check.sh /usr/local/sbin/hof-check
 install -m 755 hof-backup-send.sh /usr/local/sbin/hof-backup-send
 install -m 644 hof-check.service hof-check.timer /etc/systemd/system/
 systemctl daemon-reload
-time hof-check
+systemd-run --wait --property=MemoryAccounting=yes --property=CPUAccounting=yes /usr/local/sbin/hof-check
+cat /var/lib/hof-check/status.txt
 systemctl enable --now hof-check.timer
 systemctl list-timers hof-check.timer
 ```
 
-`hof-check` выводит отчёт и записывает статус. Через час после включения timer — нагрузка
-проверки: в `journalctl -u hof-check -n 3` строка `Consumed … CPU time, … memory peak`.
+`systemd-run` выполняет одну проверку как служба и печатает её нагрузку: `Service runtime` —
+длительность, `CPU time consumed` — время процессора, `Memory peak` — пик памяти. Итог WARN или FAIL
+он показывает как `Finished with result: exit-code` с кодом 1 или 2. Сам отчёт — в `status.txt`;
+ручной запуск `hof-check` выводит его сразу.
 
 На Mac, из каталога репозитория:
 

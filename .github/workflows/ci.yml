@@ -120,13 +120,15 @@ jobs:
           sudo systemd-analyze verify /etc/systemd/system/hof-check.service /etc/systemd/system/hof-check.timer
           sudo systemctl daemon-reload
           sudo systemctl start hof-check.service
-          systemctl show hof-check.service --property=Result --property=ExecMainStatus
           test "$(systemctl show hof-check.service --property=Result --value)" = success
           sudo head -n 1 /var/lib/hof-check/status.txt | grep -qE '^FAIL [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
           test "$(sudo stat -c '%a %G' /var/lib/hof-check/status.txt)" = '640 hof-backup'
           sudo systemctl start hof-check.timer
           systemctl list-timers hof-check.timer
-          sudo journalctl -u hof-check.service -n 3 --no-pager
+          # The measurement of docs/OPERATIONS.md: runtime, CPU time and the memory peak of one check.
+          # Its FAIL is the exit code 2 of the service.
+          sudo systemd-run --wait --property=MemoryAccounting=yes --property=CPUAccounting=yes \
+            /usr/local/sbin/hof-check || true
 
       # The same probe against a stand-in server on the port of Hof that answers 500: the container
       # becomes unhealthy. Only the start period and the interval are shorter.
