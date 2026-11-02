@@ -1,0 +1,14 @@
+# The hourly check of the server of Hof (docs/OPERATIONS.md, section «Проверка сервера»).
+[Unit]
+Description=Hof: проверка сервера
+# Ordering only: a check must not start a Docker that was stopped.
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hof-check
+# WARN and FAIL are results the status shows. A failed unit means the check ran out of time or
+# could not write its status.
+SuccessExitStatus=1 2
+# Docker calls are limited to 30 s each; a check normally takes seconds.
+TimeoutStartSec=5min

@@ -1,5 +1,6 @@
 #!/bin/bash
-# Pulls the backups of Hof to the Mac (docs/OPERATIONS.md, section «Копия на Mac»).
+# Pulls the backups of Hof to the Mac (docs/OPERATIONS.md, section «Копия на Mac») and then the
+# status of the check of the server (section «Проверка сервера»).
 #
 # launchd starts it at load and every hour while the Mac is awake, and never starts a second run
 # during the first. A retry after a failure is the next hourly run. The server is the alias
@@ -12,6 +13,9 @@ DIR=$HOME/hof-backups
 HOST=hof-backup
 STAMP='[0-9]{8}T[0-9]{6}Z'
 NAME="^hof-(nightly|predeploy)-$STAMP\\.dump\$"
+CHECK=$DIR/.server-check
+# The first line of the status of hof-check: the result and the time of the check.
+CHECK_HEAD='^(OK|WARN|FAIL) [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
 
 say() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1"; }
 
@@ -23,11 +27,11 @@ remote() {
 # At most once in 12 hours for each kind of signal. The text holds only constant strings of this
 # file: no answer of the server reaches AppleScript.
 notify() {
-  local flag="$DIR/.notified-$1"
+  local flag="$DIR/.notified-$1" title="${3:-Hof: резервные копии}"
   say "$2"
   [ -n "$(find "$flag" -mmin -720 2>/dev/null)" ] && return 0
   # The mark only after it is shown: otherwise a failure would silence the retry for 12 hours.
-  if osascript -e "display notification \"$2\" with title \"Hof: резервные копии\"" >/dev/null; then
+  if osascript -e "display notification \"$2\" with title \"$title\"" >/dev/null; then
     touch "$flag"
   else
     say 'уведомление не показано'
@@ -41,6 +45,10 @@ local_copies() { ls -1 "$DIR" | grep -E "^hof-$1-$STAMP\\.dump\$" | sort; }
 
 hours_ago() {
   date -u -v-"$1"H +%Y%m%dT%H%M%SZ 2>/dev/null || date -u -d "$1 hours ago" +%Y%m%dT%H%M%SZ
+}
+
+epoch_of() {
+  date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s 2>/dev/null || date -u -d "$1" +%s 2>/dev/null
 }
 
 # A complete copy: the archive has a .meta with SHA-256 and the size written there. The contents
@@ -106,6 +114,43 @@ fetch_copy() {
   return 1
 }
 
+# Only a whole status replaces the one kept from an earlier run. A failure here touches neither
+# the copies nor the exit code of the pull.
+fetch_server_check() {
+  local text
+  if ! text=$(remote check); then
+    say 'статус проверки сервера не получен'
+  elif ! printf '%s\n' "$text" | head -n 1 | grep -Eq "$CHECK_HEAD"; then
+    say 'статус проверки сервера повреждён или неполон и не сохранён'
+  elif ! { printf '%s\n' "$text" >"$CHECK.part" && mv -f "$CHECK.part" "$CHECK"; }; then
+    say 'статус проверки сервера не сохранён'
+  fi
+}
+
+# The status is a snapshot with its own time. Older than 3 hours, whatever the reason, it is stale
+# and its result is not shown as current. Only the constant texts reach the notifications.
+show_server_check() {
+  local head='' checked age=
+  if [ -f "$CHECK" ]; then head=$(head -n 1 "$CHECK"); fi
+  if [[ $head =~ $CHECK_HEAD ]]; then
+    checked=$(epoch_of "${head#* }")
+    if [ -n "$checked" ]; then age=$((($(date -u +%s) - checked) / 60)); fi
+  fi
+  # A time ahead of the clock of the Mac would never grow old.
+  if [ -z "$age" ] || [ "$age" -gt 180 ] || [ "$age" -lt -10 ]; then
+    say "проверка сервера устарела: ${head:-статуса нет}"
+    notify check-stale 'Нет проверки моложе 3 часов: состояние сервера неизвестно' 'Hof: проверка сервера'
+    return
+  fi
+  say "проверка сервера: ${head%% *}, $age мин назад"
+  tail -n +2 "$CHECK" | grep -E '^(WARN|FAIL) ' | head -n 20 | cut -c1-300 | while IFS= read -r line; do
+    say "  $line"
+  done
+  if [ "${head%% *}" = FAIL ]; then
+    notify check-failed 'Результат FAIL, подробности в логе hof-backup-pull' 'Hof: проверка сервера'
+  fi
+}
+
 # Only after a new verified copy. Copies are counted, so a long downtime of the Mac does not delete
 # history. The newest copy is among the last 30 or 5 and stays.
 thin_copies() {
@@ -157,6 +202,7 @@ if [ "$?" -ne 0 ]; then
     notify unreachable 'Сервер недоступен больше суток'
   fi
   check_local_copies
+  show_server_check
   exit 1
 fi
 touch "$DIR/.last-contact"
@@ -195,6 +241,9 @@ FAIL*)
   notify failed 'Последняя копия на сервере не создана'
   ;;
 esac
+
+fetch_server_check
+show_server_check
 
 say "готово: забрано $fetched"
 exit "$result"

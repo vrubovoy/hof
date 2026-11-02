@@ -83,6 +83,51 @@ jobs:
           echo "hof: $status"
           test "$status" = healthy
 
+      # deploy/hof-check.sh on the real containers above. The runner has no nginx, copies or
+      # certificate, so the result is FAIL; the lines checked are those of Hof and its database.
+      # The PostgreSQL of compose.dev.yaml is another project with the same service name: one
+      # postgres found proves the filter by project. A PostgreSQL stopped by a signal from the host
+      # stays running for Docker but does not answer, while Hof still answers /healthz.
+      - name: hof-check, real containers and systemd
+        run: |
+          sudo groupadd --system hof-backup
+          sudo install -d -m 2750 -g hof-backup /var/lib/hof-check
+          sudo install -m 755 deploy/hof-check.sh /usr/local/sbin/hof-check
+          report="$RUNNER_TEMP/hof-check.txt"
+
+          code=0
+          sudo /usr/local/sbin/hof-check > "$report" || code=$?
+          cat "$report"
+          test "$code" = 2
+          grep -qx 'OK   контейнер postgres: running' "$report"
+          grep -qx 'OK   живость hof: healthy' "$report"
+          grep -qx 'OK   база: pg_isready и SELECT 1 выполнены' "$report"
+          grep -qx 'FAIL контейнер nginx: не найден' "$report"
+          grep -qE '^(OK   OOM ядра за 7 дней: нет|WARN OOM ядра за 7 дней: [0-9]+, .*)$' "$report"
+
+          postgres=$(docker compose ps -q postgres)
+          docker kill --signal=STOP "$postgres"
+          code=0
+          sudo /usr/local/sbin/hof-check > "$report" || code=$?
+          docker kill --signal=CONT "$postgres"
+          cat "$report"
+          test "$code" = 2
+          grep -qx 'OK   контейнер postgres: running' "$report"
+          grep -qx 'OK   живость hof: healthy' "$report"
+          grep -qx 'FAIL база: не отвечает, ни pg_isready, ни SELECT 1' "$report"
+
+          sudo install -m 644 deploy/hof-check.service deploy/hof-check.timer /etc/systemd/system/
+          sudo systemd-analyze verify /etc/systemd/system/hof-check.service /etc/systemd/system/hof-check.timer
+          sudo systemctl daemon-reload
+          sudo systemctl start hof-check.service
+          systemctl show hof-check.service --property=Result --property=ExecMainStatus
+          test "$(systemctl show hof-check.service --property=Result --value)" = success
+          sudo head -n 1 /var/lib/hof-check/status.txt | grep -qE '^FAIL [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+          test "$(sudo stat -c '%a %G' /var/lib/hof-check/status.txt)" = '640 hof-backup'
+          sudo systemctl start hof-check.timer
+          systemctl list-timers hof-check.timer
+          sudo journalctl -u hof-check.service -n 3 --no-pager
+
       # The same probe against a stand-in server on the port of Hof that answers 500: the container
       # becomes unhealthy. Only the start period and the interval are shorter.
       - name: Healthcheck, unhealthy on 500
