@@ -112,7 +112,9 @@ interface AccountForm {
 interface LoginForm {
   username: string;
   next: string;
-  failed: boolean;
+  // Above the form: the common refusal, the key taken away (only after the right password), or a
+  // session that has ended (M11.6).
+  note?: 'refused' | 'revoked' | 'ended';
 }
 
 // One person of the court, as «Приближённые» lists them.
@@ -254,7 +256,8 @@ const FORBIDDEN_PAGE = errorPage(403);
 // administrator, Мои покои and the way out; on the phone the bar at the top — the mark to the
 // courtyard, the candle to Мои покои. CSS shows one of the two, so the hidden one takes no focus.
 // «Покинуть двор» is a form: sign-out is POST only (§4.2); data-fx names the act for fx.js.
-// The mark at the top of the banner is an ordinary link, as in the prototypes.
+// The mark at the top of the banner is an ordinary link, as in the prototypes. data-session: fx.js
+// asks on such a page whether the session is still there (M11.6).
 function shell(
   user: CurrentUser,
   services: readonly Service[],
@@ -265,7 +268,7 @@ function shell(
   const current = (place: Place) => (place === here ? html`aria-current="page"` : '');
   return page(
     title,
-    html`<div class="shell">
+    html`<div class="shell" data-session>
       <nav class="banner" aria-label="Hof">
         <a class="logo" href="/">
           <img src="/static/img/hof-mark-white.svg" width="44" height="44" alt="" />
@@ -465,11 +468,18 @@ function cat(where: 'login' | 'setup' | 'map' | 'chambers' | '500') {
 
 // Texts and pictures from design/preview/Main.html and LoginMobile.html: the gate open, the cat
 // looking into the courtyard; the phone has a picture of its own. One error for every refusal,
-// so the page does not tell whether the login exists. The login is written back as typed, the
-// password never. On the phone the heading is not drawn, but stays for a screen reader. Shown only
-// to a person not signed in, it makes the browser forget the pages it kept (/forget.css).
+// so the page does not tell whether the login exists; only the right password learns that the key
+// was taken away. The login is written back as typed, the password never. On the phone the heading
+// is not drawn, but stays for a screen reader. Shown only to a person not signed in, it makes the
+// browser forget the pages it kept (/forget.css).
 function loginPage(form: LoginForm) {
-  const describedBy = form.failed ? html`aria-describedby="login-error"` : '';
+  const error =
+    form.note === 'refused'
+      ? 'Неверный логин или пароль.'
+      : form.note === 'revoked'
+        ? 'Ключ от двора забран. Чтобы вернуться, обратитесь к хозяину двора.'
+        : null;
+  const describedBy = error === null ? '' : html`aria-describedby="login-error"`;
   return page(
     'Hof — вход',
     html`<main class="gate gate-login">
@@ -478,11 +488,8 @@ function loginPage(form: LoginForm) {
           ${LOGO}
           <h1 class="title t-2 visually-hidden-phone">С возвращением во двор!</h1>
           <form method="post" action="/login" data-fx="login">
-            ${
-              form.failed
-                ? html`<p id="login-error" class="note note-error">Неверный логин или пароль.</p>`
-                : ''
-            }
+            ${error === null ? '' : html`<p id="login-error" class="note note-error">${error}</p>`}
+            ${form.note === 'ended' ? html`<p class="note">Сеанс завершён. Войдите снова.</p>` : ''}
             <input type="hidden" name="next" value="${form.next}" />
             <div class="field">
               <label for="username">Логин</label>
@@ -1304,13 +1311,17 @@ export function createCoreApp(
     return c.body('', 200, { 'Content-Type': 'text/css; charset=utf-8' });
   });
 
-  // Sign-in page. With a live session there is nothing to sign in to: straight on to `next`.
+  // Sign-in page. With a live session there is nothing to sign in to: straight on to `next`. A
+  // cookie without a live session has ended — signed out elsewhere, or the key taken away; the
+  // server no longer knows which, so the page does not say why. That cookie is cleared, so the
+  // note is shown once.
   core.get('/login', async (c) => {
     const next = safeNext(c.req.query('next'));
-    if ((await currentUser(pool, sessionToken(c.req.header('Cookie')))) !== null) {
-      return c.redirect(next, 303);
-    }
-    return c.html(loginPage({ username: '', next, failed: false }));
+    const token = sessionToken(c.req.header('Cookie'));
+    if ((await currentUser(pool, token)) !== null) return c.redirect(next, 303);
+    if (!token) return c.html(loginPage({ username: '', next }));
+    c.header('Set-Cookie', CLEARED_SESSION_COOKIE);
+    return c.html(loginPage({ username: '', next, note: 'ended' }));
   });
 
   // Sign-in (§4.2, §4.3, §4.8). Every refusal gets the same answer, and every refusal that
@@ -1327,16 +1338,19 @@ export function createCoreApp(
     const next = safeNext(text('next'));
     const ip = c.req.header('X-Real-IP') ?? '-';
 
-    const refuse = () => c.html(loginPage({ username: typedUsername, next, failed: true }), 400);
+    const refuse = (note: 'refused' | 'revoked' = 'refused') =>
+      c.html(loginPage({ username: typedUsername, next, note }), 400);
     // §4.10: what was typed as the login of an unknown user is not written down — people
     // type their password into that field.
     const refuseUnknown = () => {
       log('warn', 'login_failed', { reason: 'unknown_user', ip });
       return refuse();
     };
+    // `disabled` is reached only after the right password, in both of its places below: then the
+    // page says that the key was taken away (M11.6).
     const refuseUser = (id: number, username: string, reason: LoginFailure) => {
       log('warn', 'login_failed', { user_id: id, username, ip, reason });
-      return refuse();
+      return refuse(reason === 'disabled' ? 'revoked' : 'refused');
     };
 
     // A login of the wrong form cannot exist. The refusal says nothing about real logins, so
@@ -1421,6 +1435,15 @@ export function createCoreApp(
     await deleteSession(pool, sessionToken(c.req.header('Cookie')));
     c.header('Set-Cookie', CLEARED_SESSION_COOKIE);
     return c.redirect('/login', 303);
+  });
+
+  // The question of an open page (fx.js, M11.6): is its session still there? 204 or 401, no
+  // body. The same read as for any page: nothing is written, the session is not extended, the
+  // cookie is left as it is for /login to see, and no `next` is read.
+  core.get('/session', async (c) => {
+    const user = await currentUser(pool, sessionToken(c.req.header('Cookie')));
+    c.header('Cache-Control', 'no-store');
+    return c.body(null, user === null ? 401 : 204);
   });
 
   // 3. Protected paths: a signed-in user or the way to /login. The paths of the administrator

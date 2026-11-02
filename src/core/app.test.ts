@@ -571,6 +571,49 @@ describe('sign-in page', () => {
     assert.equal(without.headers.get('location'), '/');
   });
 
+  // M11.6: the server no longer knows why a session is gone, so the page names no reason.
+  test('a cookie without a live session: «Сеанс завершён», the cookie cleared', async (t) => {
+    const { app, cookie: owner } = await found(t);
+    const anna = await addUser('anna');
+    const expired = await addSession(anna, true);
+    const signedOut = await addSession(anna);
+    await post(app, '/logout', {}, { cookie: `__Host-hof=${signedOut}` });
+    // «Забрать ключ» while her page is open: her next request goes to the sign-in.
+    const revoked = await addSession(anna);
+    assert.equal(
+      (await post(app, `/admin/users/${anna}/disable`, {}, { cookie: owner })).status,
+      303,
+    );
+    const away = await get(app, '/saeckel/', { cookie: `__Host-hof=${revoked}` });
+    assert.equal(away.headers.get('location'), '/login?next=%2Fsaeckel%2F');
+    for (const token of [revoked, expired, signedOut, 'not-a-token']) {
+      const res = await get(app, '/login?next=%2Fsaeckel%2F', { cookie: `__Host-hof=${token}` });
+      assert.equal(res.status, 200, token);
+      assert.equal(res.headers.get('set-cookie'), CLEARED_COOKIE, token);
+      const page = await res.text();
+      assert.ok(page.includes('<p class="note">Сеанс завершён. Войдите снова.</p>'), token);
+      assert.ok(page.includes('name="next" value="/saeckel/"'), token);
+      for (const said of ['login-error', 'забран', 'Неверный'])
+        assert.ok(!page.includes(said), said);
+    }
+    // Without the cookie the page is the usual one.
+    const usual = await get(app, '/login');
+    assert.equal(usual.headers.get('set-cookie'), null);
+    assert.ok(!(await usual.text()).includes('Сеанс завершён'));
+  });
+
+  test('with that note next still goes through the one rule', async (t) => {
+    const { app } = await found(t);
+    for (const next of rejected) {
+      const res = await get(app, `/login?next=${encodeURIComponent(next)}`, {
+        cookie: '__Host-hof=not-a-token',
+      });
+      const page = await res.text();
+      assert.ok(page.includes('Сеанс завершён'), JSON.stringify(next));
+      assert.ok(page.includes('name="next" value="/"'), JSON.stringify(next));
+    }
+  });
+
   test('the way back from a protected page leads there after sign-in', async (t) => {
     const { app } = await found(t);
     const away = await get(app, '/?a=1');
@@ -694,11 +737,18 @@ describe('refused sign-in', () => {
       0,
     ],
     [
-      'disabled user, right password',
+      'disabled user, wrong password',
       'bors',
-      PASSWORD,
-      'warn login_failed user_id=3 username=bors ip=- reason=disabled',
+      'a wrong password, long enough',
+      'warn login_failed user_id=3 username=bors ip=- reason=wrong_password',
       1,
+    ],
+    [
+      'disabled user, password over 256',
+      'bors',
+      long,
+      'warn login_failed user_id=3 username=bors ip=- reason=wrong_password',
+      0,
     ],
     ['unreadable stored hash', 'vera', PASSWORD, 'error password_hash_unreadable user_id=4', 1],
   ];
@@ -726,13 +776,13 @@ describe('refused sign-in', () => {
     });
   }
 
-  test('unknown login, wrong password, disabled, unreadable: one and the same answer', async (t) => {
+  test('unknown login, wrong password, disabled with a wrong one, unreadable: one and the same answer', async (t) => {
     const { app } = await court(t);
     const answers = await Promise.all(
       [
         ['anna', 'a wrong password, long enough'],
         ['nemo', PASSWORD],
-        ['bors', PASSWORD],
+        ['bors', 'a wrong password, long enough'],
         ['vera', PASSWORD],
       ].map(async ([username, typed]) => {
         const res = await signIn(app, username!, typed!);
@@ -744,6 +794,30 @@ describe('refused sign-in', () => {
       }),
     );
     for (const answer of answers.slice(1)) assert.deepEqual(answer, answers[0]);
+  });
+
+  // M11.6: only the right password learns that the key was taken away.
+  test('disabled user, right password: 400, the key taken away, nothing written, 1 Argon2', async (t) => {
+    const { app, lines } = await court(t);
+    const before = await pool.query('SELECT * FROM users ORDER BY id');
+    const { result: res, argon2 } = await countArgon2(() => signIn(app, 'bors', PASSWORD));
+    assert.equal(argon2, 1);
+    assert.equal(res.status, 400);
+    assert.equal(res.headers.get('set-cookie'), null);
+    const page = await res.text();
+    assert.ok(
+      page.includes(
+        '<p id="login-error" class="note note-error">Ключ от двора забран. Чтобы вернуться, обратитесь к хозяину двора.</p>',
+      ),
+    );
+    assert.ok(!page.includes('Неверный логин или пароль'));
+    for (const field of ['username', 'password']) {
+      assert.match(page, new RegExp(`name="${field}"[^>]*aria-describedby="login-error"`), field);
+    }
+    assert.ok(!page.includes(PASSWORD));
+    assert.equal(lines.at(-1), 'warn login_failed user_id=3 username=bors ip=- reason=disabled');
+    assert.equal(await count('sessions'), 1);
+    assert.deepEqual((await pool.query('SELECT * FROM users ORDER BY id')).rows, before.rows);
   });
 
   test('the unknown login is not written to the log', async (t) => {
@@ -779,7 +853,7 @@ describe('dummy password hash', () => {
 describe('sign-in racing a password reset or a disable', () => {
   // The rival changes anna's row and holds the lock; sign-in has already checked the old
   // password with Argon2 and waits on FOR UPDATE until the rival commits.
-  async function race(t: TestContext, change: string) {
+  async function race(t: TestContext, change: string, message: string) {
     const { app, token: ownerSession, lines } = await found(t);
     const anna = await addUser('anna');
     const browser = await addSession(anna);
@@ -794,7 +868,7 @@ describe('sign-in racing a password reset or a disable', () => {
       const res = await pending;
       assert.equal(res.status, 400);
       assert.equal(res.headers.get('set-cookie'), null);
-      assert.ok((await res.text()).includes('Неверный логин или пароль.'));
+      assert.ok((await res.text()).includes(message));
     } finally {
       rival.release();
     }
@@ -809,16 +883,78 @@ describe('sign-in racing a password reset or a disable', () => {
 
   test('the password changed: 400, nothing deleted, no session', async (t) => {
     const otherHash = await hashPassword('another password for anna');
-    const lines = await race(t, `UPDATE users SET password_hash = '${otherHash}' WHERE id = $1`);
+    const lines = await race(
+      t,
+      `UPDATE users SET password_hash = '${otherHash}' WHERE id = $1`,
+      'Неверный логин или пароль.',
+    );
     assert.equal(
       lines.at(-1),
       'warn login_failed user_id=2 username=anna ip=- reason=password_changed',
     );
   });
 
-  test('the user was disabled: 400, nothing deleted, no session', async (t) => {
-    const lines = await race(t, 'UPDATE users SET is_disabled = true WHERE id = $1');
+  // M11.6: the password was right, so the page says that the key was taken away.
+  test('the user was disabled: 400, the key taken away, nothing deleted, no session', async (t) => {
+    const lines = await race(
+      t,
+      'UPDATE users SET is_disabled = true WHERE id = $1',
+      'Ключ от двора забран. Чтобы вернуться, обратитесь к хозяину двора.',
+    );
     assert.equal(lines.at(-1), 'warn login_failed user_id=2 username=anna ip=- reason=disabled');
+  });
+});
+
+describe('GET /session (M11.6)', () => {
+  async function sessionRows() {
+    const { rows } = await pool.query<{ token_hash: Buffer; user_id: number; expires_at: Date }>(
+      'SELECT token_hash, user_id, expires_at FROM sessions ORDER BY token_hash',
+    );
+    return rows;
+  }
+
+  test('a live session: 204, no body, no-store; nothing written, the session not extended', async (t) => {
+    const { app, cookie } = await found(t);
+    const before = await sessionRows();
+    for (const method of ['GET', 'HEAD']) {
+      const res = await app.request('/session?next=%2F%2Fevil.example', {
+        method,
+        headers: { host: HOST, cookie },
+      });
+      assert.equal(res.status, 204, method);
+      assert.equal(res.headers.get('cache-control'), 'no-store', method);
+      assert.equal(res.headers.get('set-cookie'), null, method);
+      assert.equal(res.headers.get('location'), null, method);
+      assert.equal(await res.text(), '', method);
+    }
+    assert.deepEqual(await sessionRows(), before);
+  });
+
+  test('expired, signed out, key taken away, none: 401, no-store, the cookie left for /login', async (t) => {
+    const { app, cookie: owner } = await found(t);
+    const anna = await addUser('anna');
+    const expired = await addSession(anna, true);
+    const signedOut = await addSession(anna);
+    await post(app, '/logout', {}, { cookie: `__Host-hof=${signedOut}` });
+    const revoked = await addSession(anna);
+    await post(app, `/admin/users/${anna}/disable`, {}, { cookie: owner });
+    const before = await sessionRows();
+    const asked: Record<string, string>[] = [
+      { cookie: `__Host-hof=${expired}` },
+      { cookie: `__Host-hof=${signedOut}` },
+      { cookie: `__Host-hof=${revoked}` },
+      { cookie: '__Host-hof=not-a-token' },
+      {},
+    ];
+    for (const headers of asked) {
+      const res = await get(app, '/session', headers);
+      assert.equal(res.status, 401, JSON.stringify(headers));
+      assert.equal(res.headers.get('cache-control'), 'no-store');
+      assert.equal(res.headers.get('set-cookie'), null);
+      assert.equal(res.headers.get('location'), null);
+      assert.equal(await res.text(), '');
+    }
+    assert.deepEqual(await sessionRows(), before);
   });
 });
 
@@ -2226,14 +2362,19 @@ describe('Забрать ключ', () => {
     });
     await assertNothingHeld(anna);
 
-    // anna is out at her next click, and her right password does not let her in again.
+    // anna is out at her next click, and her right password does not let her in again: it is
+    // told that the key was taken away (M11.6).
     for (const old of [annaBrowser, annaPhone]) {
       const away = await get(app, '/', { cookie: `__Host-hof=${old}` });
       assert.equal(away.headers.get('location'), '/login?next=%2F');
     }
     const refused = await signIn(app, 'anna', PASSWORD);
     assert.equal(refused.status, 400);
-    assert.ok((await refused.text()).includes('Неверный логин или пароль.'));
+    assert.ok(
+      (await refused.text()).includes(
+        'Ключ от двора забран. Чтобы вернуться, обратитесь к хозяину двора.',
+      ),
+    );
     assert.equal(lines.at(-1), 'warn login_failed user_id=2 username=anna ip=- reason=disabled');
 
     // The card after the redirect, and the list.
@@ -2466,6 +2607,11 @@ describe('the key racing a sign-in or a reset', () => {
       const refused = await login;
       assert.equal(refused.status, 400);
       assert.equal(refused.headers.get('set-cookie'), null);
+      assert.ok(
+        (await refused.text()).includes(
+          'Ключ от двора забран. Чтобы вернуться, обратитесь к хозяину двора.',
+        ),
+      );
     } finally {
       holder.release();
     }

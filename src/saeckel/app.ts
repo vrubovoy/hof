@@ -363,9 +363,11 @@ function saeckelPage(place: Place, body: HtmlEscapedString | Promise<HtmlEscaped
       ${body}
     </main>`;
   }
+  // data-session: every page of Säckel is a page of a signed-in person, so fx.js of Hof asks on it
+  // whether the session is still there (M11.6).
   return page(
     place.title,
-    html`<div class="${below ? 'sk sk-below' : 'sk'}">
+    html`<div class="${below ? 'sk sk-below' : 'sk'}" data-session>
       <header class="sk-head">
         <img
           class="sk-scene"

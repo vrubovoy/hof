@@ -51,6 +51,7 @@ export default defineConfig(
         addEventListener: 'readonly',
         clearTimeout: 'readonly',
         document: 'readonly',
+        fetch: 'readonly',
         getComputedStyle: 'readonly',
         innerHeight: 'readonly',
         innerWidth: 'readonly',

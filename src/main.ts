@@ -41,9 +41,10 @@ const SERVICES: readonly Service[] = [
   { name: 'Säckel', path: '/saeckel/', emblem: '/saeckel/static/img/emblem-saeckel-small.webp' },
 ];
 
-// §4.9: explicit header values, not Hono's secureHeaders preset.
+// §4.9: explicit header values, not Hono's secureHeaders preset. connect-src: fx.js asks
+// GET /session (M11.6).
 const CONTENT_SECURITY_POLICY =
-  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; media-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; media-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 
 // The common 404 page, drawn by Core (design/preview/States.html). Nothing from the request goes
 // into it.
