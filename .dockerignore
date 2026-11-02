@@ -1,4 +1,5 @@
-# Kept out of the build context: the image copies only package*.json and src/ (Dockerfile).
+# Kept out of the build context: the image copies only package*.json, src/, compose.yaml and
+# deploy/ (Dockerfile).
 .git/
 .env
 node_modules/

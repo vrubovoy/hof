@@ -1,5 +1,5 @@
 # Hof server image (ARCHITECTURE.md §7, §9). There is no build step: Node runs the .ts sources
-# directly, so the image holds runtime dependencies and src/ only.
+# directly, so the image holds runtime dependencies and src/, and the release configuration.
 FROM node:24.21.0-trixie-slim
 
 WORKDIR /app
@@ -14,6 +14,19 @@ COPY src ./src
 # with mode 600, and Node could read neither its code nor package.json ("type"). Nobody gets write
 # access.
 RUN chmod -R a+rX package.json src
+
+# The release configuration (docs/OPERATIONS.md, section «Образ в реестре»): the server takes
+# compose.yaml and deploy/ of the release from the image it runs. The application does not read
+# them. The modes are those of Git, 755 for scripts and 644 for the rest, whatever the umask.
+COPY compose.yaml ./release/compose.yaml
+COPY deploy ./release/deploy
+RUN chmod -R u=rwX,go=rX release
+
+# Where the image comes from and of which commit. CI passes the SHA; a local build leaves the
+# revision empty.
+ARG HOF_REVISION
+LABEL org.opencontainers.image.source=https://github.com/vrubovoy/hof \
+      org.opencontainers.image.revision=$HOF_REVISION
 
 # The node user (uid 1000) comes with the base image.
 USER node

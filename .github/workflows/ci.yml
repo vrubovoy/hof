@@ -1,6 +1,8 @@
 # Checks of every pull request and of every push to main (README.md, section «CI»): the commands of
 # `npm run check`, each a step of its own, against a throwaway PostgreSQL from compose.dev.yaml.
-# No secrets, no access to the server, nothing is published.
+# A push to main that passes them publishes the image it checked to GHCR (docs/OPERATIONS.md,
+# section «Образ в реестре»). No secrets of the repository, no access to the server, nothing is
+# deployed.
 name: CI
 
 on:
@@ -8,7 +10,7 @@ on:
   push:
     branches: [main]
 
-# The token of the job can only read the repository.
+# The token of a job can only read the repository, unless the job says otherwise.
 permissions:
   contents: read
 
@@ -69,8 +71,9 @@ jobs:
       - name: TypeScript
         run: npx tsc --noEmit
 
+      # The one build of the image: the steps below check it, and a push to main publishes it.
       - name: Docker image
-        run: docker compose build
+        run: docker compose build --build-arg HOF_REVISION="$GITHUB_SHA"
 
       - name: Tests
         run: npm test
@@ -149,3 +152,69 @@ jobs:
           status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q hof)")
           echo "hof: $status"
           test "$status" = unhealthy
+
+      # Only after every check of a push to main: the very image checked above goes to the publish
+      # job, with no second build. The artifact lives for a day.
+      - name: Image for the registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          docker tag hof-hof "ghcr.io/vrubovoy/hof:sha-$GITHUB_SHA"
+          docker save "ghcr.io/vrubovoy/hof:sha-$GITHUB_SHA" | gzip > "$RUNNER_TEMP/hof-image.tar.gz"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: hof-image
+          path: ${{ runner.temp }}/hof-image.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  # One image of each checked commit of main in GHCR, under the tag of its SHA. Deploying it is a
+  # separate decision; nothing here reaches the server.
+  publish:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # The only job that may write packages. It does not read the repository.
+    permissions:
+      packages: write
+    env:
+      IMAGE: ghcr.io/vrubovoy/hof:sha-${{ github.sha }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: hof-image
+          path: ${{ runner.temp }}
+
+      - name: The checked image of this commit
+        run: |
+          gunzip -c "$RUNNER_TEMP/hof-image.tar.gz" | docker load
+          revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")
+          echo "revision: $revision"
+          test "$revision" = "$GITHUB_SHA"
+
+      # A tag already published is never replaced: a run started again stops here.
+      - name: Publish
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          echo "$TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "$IMAGE уже опубликован, повторная публикация не выполняется"
+            docker logout ghcr.io
+            exit 1
+          fi
+          docker push "$IMAGE"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE")
+          docker logout ghcr.io
+          test -n "$digest"
+          echo "digest: $digest"
+          {
+            echo '### Образ Hof'
+            echo
+            echo "- Коммит: \`$GITHUB_SHA\`"
+            echo "- Тег: \`$IMAGE\`"
+            echo "- Для развёртывания — digest: \`$digest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
