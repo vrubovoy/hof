@@ -137,8 +137,8 @@ describe('the workflow publishes only from main', () => {
 
   test('pull requests run the checks; a push to main after them publishes', () => {
     assert.match(workflow, /^on:\n {2}pull_request:\n {2}push:\n {4}branches: \[main\]\n/m);
-    assert.deepEqual(Object.keys(jobs), ['check', 'publish']);
-    assert.match(jobs.publish!, /^ {4}needs: check$/m);
+    assert.deepEqual(Object.keys(jobs), ['check', 'deploy-stand', 'publish']);
+    assert.match(jobs.publish!, /^ {4}needs: \[check, deploy-stand\]$/m);
     assert.ok(jobs.publish!.includes(`    ${fromMain}\n`));
     // The image goes to the publish job only from a push to main.
     assert.equal(jobs.check!.split(fromMain).length - 1, 2);

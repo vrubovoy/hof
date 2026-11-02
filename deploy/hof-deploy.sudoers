@@ -1,0 +1,5 @@
+# The sudo rule of the update command (docs/OPERATIONS.md, section «Обновление»): the user
+# hof-deploy runs hof-deploy as root with these arguments only. Installed as
+# /etc/sudoers.d/hof-deploy, mode 440, after `visudo -cf`. The regular expression needs sudo 1.9.10
+# or newer; a colon in it is escaped for sudoers.
+hof-deploy ALL=(root) NOPASSWD: /usr/local/sbin/hof-deploy status, /usr/local/sbin/hof-deploy ^deploy sha256\:[0-9a-f]{64}$

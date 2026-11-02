@@ -170,10 +170,48 @@ jobs:
           retention-days: 1
           compression-level: 0
 
+  # The update command on a stand of its own (src/deploy-stand.test.ts): Docker Compose 2.40.3 as
+  # on the server, a local registry, the real hof-backup and made-up records. Nothing leaves the
+  # runner.
+  deploy-stand:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Node version from the Dockerfile
+        id: node
+        run: |
+          version=$(sed -n 's/^FROM node:\([0-9][0-9.]*\).*/\1/p' Dockerfile)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+          package-manager-cache: false
+
+      # The Compose of the server, checked by its checksum; this plugin folder comes before the one
+      # of the runner. The stand also needs an SSH server of its own.
+      - name: Docker Compose 2.40.3 and sshd
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/docker-compose" \
+            https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64
+          echo "dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372  $RUNNER_TEMP/docker-compose" | sha256sum --check
+          sudo install -D -m 755 "$RUNNER_TEMP/docker-compose" /usr/local/lib/docker/cli-plugins/docker-compose
+          sudo docker compose version
+          sudo --version | head -n 1
+          command -v sshd || { sudo apt-get update -q && sudo apt-get install -y -q openssh-server; }
+
+      - name: The update command on the stand
+        run: HOF_DEPLOY_STAND=1 node --test --test-reporter=spec src/deploy-stand.test.ts
+
   # One image of each checked commit of main in GHCR, under the tag of its SHA. Deploying it is a
   # separate decision; nothing here reaches the server.
   publish:
-    needs: check
+    needs: [check, deploy-stand]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
