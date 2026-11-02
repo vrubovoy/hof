@@ -16,6 +16,8 @@ NAME="^hof-(nightly|predeploy)-$STAMP\\.dump\$"
 CHECK=$DIR/.server-check
 # The first line of the status of hof-check: the result and the time of the check.
 CHECK_HEAD='^(OK|WARN|FAIL) [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+# Every other line is a finding, its level padded to four characters.
+CHECK_LINE='^(OK  |WARN|FAIL) [^ ]'
 
 say() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1"; }
 
@@ -114,13 +116,15 @@ fetch_copy() {
   return 1
 }
 
-# Only a whole status replaces the one kept from an earlier run. A failure here touches neither
-# the copies nor the exit code of the pull.
+# Only a whole status replaces the one kept from an earlier run: the header and at least one
+# finding, since a check always reports some. A failure here touches neither the copies nor the
+# exit code of the pull.
 fetch_server_check() {
   local text
   if ! text=$(remote check); then
     say 'статус проверки сервера не получен'
-  elif ! printf '%s\n' "$text" | head -n 1 | grep -Eq "$CHECK_HEAD"; then
+  elif ! printf '%s\n' "$text" | head -n 1 | grep -Eq "$CHECK_HEAD" ||
+    ! printf '%s\n' "$text" | tail -n +2 | grep -Eq "$CHECK_LINE"; then
     say 'статус проверки сервера повреждён или неполон и не сохранён'
   elif ! { printf '%s\n' "$text" >"$CHECK.part" && mv -f "$CHECK.part" "$CHECK"; }; then
     say 'статус проверки сервера не сохранён'

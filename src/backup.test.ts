@@ -841,6 +841,20 @@ describe('Mac: hof-backup-pull', () => {
     assert.ok(!notifications().includes('Сервер недоступен'));
   });
 
+  test('a status of the header only is not kept: the earlier one stays with its own age', () => {
+    writeFileSync(join(copiesDir, '.server-check'), checkStatus('WARN', 2));
+    const kept = readFileSync(join(copiesDir, '.server-check'), 'utf8');
+    writeFileSync(join(base, 'check-status'), checkStatus('OK', 0, ''));
+    const result = pull();
+    assert.equal(result.status, 0);
+    assert.ok(
+      result.stdout.includes('статус проверки сервера повреждён или неполон и не сохранён'),
+    );
+    assert.equal(readFileSync(join(copiesDir, '.server-check'), 'utf8'), kept);
+    assert.match(result.stdout, / проверка сервера: WARN, 120 мин назад\n/);
+    assert.ok(!result.stdout.includes('проверка сервера: OK'));
+  });
+
   test('no status from the server leaves the pull of copies as it was', () => {
     const name = `hof-nightly-${stamp(1)}.dump`;
     serverCopy(name);
