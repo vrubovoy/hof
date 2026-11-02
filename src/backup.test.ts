@@ -128,7 +128,7 @@ esac
     });
     assert.equal(stub.status, 0, stub.stderr);
     ok(`chmod 755 /usr/bin/docker /usr/local/sbin/hof-backup /usr/local/sbin/hof-backup-send
-        mkdir -p ${DIR} /var/lib/hof-backup/state /run/lock /tmp/stub
+        mkdir -p ${DIR} /var/lib/hof-backup/state /var/lib/hof-check /run/lock /tmp/stub
         groupadd --system hof-backup
         chgrp hof-backup ${DIR}
         chmod 2750 ${DIR}
@@ -143,7 +143,7 @@ esac
 
   beforeEach(() => {
     ok(`rm -rf ${DIR}/* ${DIR}/.[!.]* /tmp/fail-dump /tmp/cut-dump /tmp/docker-calls /tmp/stub/*
-        rm -f ${LOCK} /var/lib/hof-backup/state/last-pull`);
+        rm -f ${LOCK} /var/lib/hof-backup/state/last-pull /var/lib/hof-check/status.txt`);
   });
 
   test('a ready copy: the archive reads, .meta matches, mode 640, status OK', () => {
@@ -371,6 +371,16 @@ E
     assert.match(send('status').stdout, /^OK /);
   });
 
+  test('hof-backup-send: check shows the status of hof-check', () => {
+    assert.equal(send('check').stdout, 'NONE\n');
+    ok(
+      "printf 'WARN 2026-11-02T10:00:00Z\\nWARN память: доступно 90 МБ\\n' > /var/lib/hof-check/status.txt",
+    );
+    const result = send('check');
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout, 'WARN 2026-11-02T10:00:00Z\nWARN память: доступно 90 МБ\n');
+  });
+
   test('hof-backup-send: anything else is refused with no data', () => {
     seed('nightly', [1]);
     const good = 'hof-nightly-20260101T000000Z.dump';
@@ -380,6 +390,8 @@ E
       'ls',
       'list extra',
       'status extra',
+      'check extra',
+      'check;id',
       'fetch',
       'fetch ',
       'fetch ../x',
@@ -443,6 +455,12 @@ describe('Mac: hof-backup-pull', () => {
     });
   }
 
+  // A status of hof-check made hoursAgo hours ago.
+  function checkStatus(result: string, hoursAgo: number, findings = 'OK   база: выполнены\n') {
+    const time = new Date(Date.now() - hoursAgo * 3600_000).toISOString().replace(/\.\d+Z$/, 'Z');
+    return `${result} ${time}\n${findings}`;
+  }
+
   function notifications(): string {
     const file = join(base, 'notified');
     return existsSync(file) ? readFileSync(file, 'utf8') : '';
@@ -466,6 +484,7 @@ describe('Mac: hof-backup-pull', () => {
     mkdirSync(copiesDir, { recursive: true });
     mkdirSync(join(base, 'bin'));
     writeFileSync(join(base, 'server-status'), 'OK now x\n');
+    writeFileSync(join(base, 'check-status'), checkStatus('OK', 0));
     writeFileSync(join(base, 'filevault'), 'FileVault is On.\n');
     const stubs: Record<string, string> = {
       // Drops the -o options and the host; behaves like hof-backup-send on the server.
@@ -480,6 +499,10 @@ describe('Mac: hof-backup-pull', () => {
               if [ -f "$BASE/list-extra" ]; then cat "$BASE/list-extra"; fi
               ;;
             status) cat "$BASE/server-status" ;;
+            check)
+              if [ -f "$BASE/check-down" ]; then exit 255; fi
+              if [ ! -f "$BASE/check-status" ]; then echo 'hof-backup-send: команда не разрешена' >&2; exit 2; fi
+              cat "$BASE/check-status" ;;
             fetch)
               if [ -f "$BASE/cut-$2" ]; then head -c 3 "$BASE/server/$2"; exit 255; fi
               cat "$BASE/server/$2" ;;
@@ -699,6 +722,7 @@ describe('Mac: hof-backup-pull', () => {
 
   test('the server is down: no notification at first, one after a day, the Mac retries', () => {
     localCopy(`hof-nightly-${stamp(2)}.dump`);
+    writeFileSync(join(copiesDir, '.server-check'), checkStatus('OK', 0));
     writeFileSync(join(base, 'ssh-down'), '');
     assert.equal(pull().status, 1);
     assert.equal(notifications(), '');
@@ -721,6 +745,136 @@ describe('Mac: hof-backup-pull', () => {
     assert.equal(pull().status, 0);
     assert.ok(notifications().includes('Последняя копия на сервере не создана'));
     assert.ok(!notifications().includes('shell script'));
+  });
+
+  test('the check of the server: shown with its age; FAIL notifies with constant text only', () => {
+    serverCopy(`hof-nightly-${stamp(1)}.dump`);
+    let result = pull();
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, / проверка сервера: OK, 0 мин назад\n/);
+    assert.equal(notifications(), '');
+    assert.match(readFileSync(join(copiesDir, '.server-check'), 'utf8'), /^OK \S+\nOK   база/);
+
+    writeFileSync(
+      join(base, 'check-status'),
+      checkStatus('WARN', 0.5, 'OK   контейнер hof: running\nWARN память: доступно 90 МБ\n'),
+    );
+    result = pull();
+    assert.match(
+      result.stdout,
+      / проверка сервера: WARN, 30 мин назад\n.* {3}WARN память: доступно 90 МБ\n/,
+    );
+    assert.ok(!result.stdout.includes('контейнер hof'));
+    assert.equal(notifications(), '');
+
+    writeFileSync(
+      join(base, 'check-status'),
+      checkStatus('FAIL', 1, 'FAIL база: не отвечает "; do shell script "id"\n'),
+    );
+    result = pull();
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, / проверка сервера: FAIL, 60 мин назад\n/);
+    assert.ok(result.stdout.includes('FAIL база: не отвечает'));
+    assert.ok(notifications().includes('Результат FAIL, подробности в логе hof-backup-pull'));
+    assert.ok(notifications().includes('with title "Hof: проверка сервера"'));
+    assert.ok(!notifications().includes('shell script'));
+  });
+
+  test('a status older than 3 hours is stale: its OK is not shown, a notification comes', () => {
+    for (const [title, hoursAgo] of [
+      ['old', 4],
+      ['ahead of the clock', -1],
+    ] as const) {
+      rmSync(join(copiesDir, '.notified-check-stale'), { force: true });
+      writeFileSync(join(base, 'check-status'), checkStatus('OK', hoursAgo));
+      const result = pull();
+      assert.equal(result.status, 0, title);
+      assert.match(result.stdout, / проверка сервера устарела: OK \S+\n/, title);
+      assert.ok(!result.stdout.includes('проверка сервера: OK'), title);
+      assert.ok(notifications().includes('Нет проверки моложе 3 часов'), title);
+    }
+    // Not stale yet: 2 h 50 min.
+    rmSync(join(copiesDir, '.notified-check-stale'));
+    rmSync(join(base, 'notified'));
+    writeFileSync(join(base, 'check-status'), checkStatus('OK', 2 + 50 / 60));
+    assert.match(pull().stdout, / проверка сервера: OK, 170 мин назад\n/);
+    assert.equal(notifications(), '');
+  });
+
+  test('a damaged or cut status is not kept; the kept one goes stale by its own time', () => {
+    pull();
+    const kept = readFileSync(join(copiesDir, '.server-check'), 'utf8');
+    for (const damaged of [
+      'OK 2026-11-0',
+      'NONE\n',
+      '',
+      'OK   база: выполнены\n',
+      'GOOD 2026-11-02T10:00:00Z\n',
+    ]) {
+      writeFileSync(join(base, 'check-status'), damaged);
+      const result = pull();
+      assert.equal(result.status, 0);
+      assert.ok(result.stdout.includes('статус проверки сервера повреждён или неполон'), damaged);
+      assert.equal(readFileSync(join(copiesDir, '.server-check'), 'utf8'), kept);
+      assert.match(result.stdout, / проверка сервера: OK, 0 мин назад\n/);
+    }
+    assert.deepEqual(hidden(), []);
+
+    writeFileSync(join(copiesDir, '.server-check'), checkStatus('OK', 4));
+    pull();
+    assert.ok(notifications().includes('Нет проверки моложе 3 часов'));
+  });
+
+  test('the server is down: the kept status goes stale, the pull ends as before', () => {
+    localCopy(`hof-nightly-${stamp(2)}.dump`);
+    writeFileSync(join(copiesDir, '.server-check'), checkStatus('OK', 1));
+    writeFileSync(join(base, 'ssh-down'), '');
+    let result = pull();
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, / проверка сервера: OK, 60 мин назад\n/);
+    assert.equal(notifications(), '');
+
+    writeFileSync(join(copiesDir, '.server-check'), checkStatus('OK', 4));
+    result = pull();
+    assert.equal(result.status, 1);
+    assert.ok(notifications().includes('Нет проверки моложе 3 часов'));
+    assert.ok(!notifications().includes('Сервер недоступен'));
+  });
+
+  test('a status of the header only is not kept: the earlier one stays with its own age', () => {
+    writeFileSync(join(copiesDir, '.server-check'), checkStatus('WARN', 2));
+    const kept = readFileSync(join(copiesDir, '.server-check'), 'utf8');
+    writeFileSync(join(base, 'check-status'), checkStatus('OK', 0, ''));
+    const result = pull();
+    assert.equal(result.status, 0);
+    assert.ok(
+      result.stdout.includes('статус проверки сервера повреждён или неполон и не сохранён'),
+    );
+    assert.equal(readFileSync(join(copiesDir, '.server-check'), 'utf8'), kept);
+    assert.match(result.stdout, / проверка сервера: WARN, 120 мин назад\n/);
+    assert.ok(!result.stdout.includes('проверка сервера: OK'));
+  });
+
+  test('no status from the server leaves the pull of copies as it was', () => {
+    const name = `hof-nightly-${stamp(1)}.dump`;
+    serverCopy(name);
+    // A server without hof-check refuses the command; then the connection breaks on it.
+    rmSync(join(base, 'check-status'));
+    let result = pull();
+    assert.equal(result.status, 0);
+    assert.deepEqual(working(), [name, `${name}.meta`]);
+    assert.ok(result.stdout.includes('статус проверки сервера не получен'));
+    assert.ok(result.stdout.includes('готово: забрано 1'));
+    assert.ok(!existsSync(join(copiesDir, '.server-check')));
+    assert.ok(notifications().includes('Нет проверки моложе 3 часов'));
+
+    const second = `hof-nightly-${stamp(0)}.dump`;
+    serverCopy(second);
+    writeFileSync(join(base, 'check-down'), '');
+    result = pull();
+    assert.equal(result.status, 0);
+    assert.ok(working().includes(second));
+    assert.ok(result.stdout.includes('статус проверки сервера не получен'));
   });
 
   test('retention: 30 nightly, one a month for 12 months, 5 before updates', () => {

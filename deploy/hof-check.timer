@@ -1,0 +1,10 @@
+# The schedule of hof-check.service. A missed check is not caught up: the next one comes within an
+# hour, and the status shows its own time.
+[Unit]
+Description=Hof: расписание проверки сервера
+
+[Timer]
+OnCalendar=hourly
+
+[Install]
+WantedBy=timers.target

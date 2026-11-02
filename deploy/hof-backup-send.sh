@@ -4,6 +4,7 @@
 #   list          the names of the ready copies, one per line
 #   fetch <name>  a copy or its .meta file
 #   status        the result of the last attempt to make a copy
+#   check         the status of the last check of the server, by hof-check
 #
 # No shell parses the input: SSH_ORIGINAL_COMMAND is compared with exact forms and the file name
 # with a strict pattern. It takes no lock: a copy appears under its name atomically, and a file
@@ -13,6 +14,7 @@ export LC_ALL=C
 
 DIR=/var/backups/hof
 LAST_PULL=/var/lib/hof-backup/state/last-pull
+CHECK=/var/lib/hof-check/status.txt
 NAME='^hof-(nightly|predeploy)-[0-9]{8}T[0-9]{6}Z\.dump(\.meta)?$'
 
 request=${SSH_ORIGINAL_COMMAND:-}
@@ -26,6 +28,9 @@ list)
   ;;
 status)
   if [ -f "$DIR/backup-status.txt" ]; then cat "$DIR/backup-status.txt"; else echo 'NONE'; fi
+  ;;
+check)
+  if [ -f "$CHECK" ]; then cat "$CHECK"; else echo 'NONE'; fi
   ;;
 'fetch '*)
   name=${request#fetch }
