@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -54,7 +54,7 @@ function composeConfig(files: string[], env = FAKE_ENV): ComposeConfig {
     const envFile = join(dir, 'fake.env');
     const lines = Object.entries(env).map(([name, value]) => `${name}=${value}\n`);
     writeFileSync(envFile, lines.join(''));
-    const fileArgs = files.flatMap((file) => ['--file', join(ROOT, file)]);
+    const fileArgs = files.flatMap((file) => ['--file', resolve(ROOT, file)]);
     const args = ['compose', '--project-directory', ROOT, '--env-file', envFile, ...fileArgs];
     const result = spawnSync('docker', [...args, 'config', '--format', 'json'], {
       env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '' },
@@ -71,6 +71,23 @@ function service(config: ComposeConfig, name: string): Service {
   const found = config.services[name];
   assert.ok(found, `no service ${name}`);
   return found;
+}
+
+// How this Compose prints create_host_path of a bind mount set to the given value. Compose 2.38
+// leaves false out and prints true, Compose 5 prints false and leaves true out, so a mount is
+// compared with what the same Compose prints, not with the literal false.
+function printedCreateHostPath(value: boolean): boolean | undefined {
+  const dir = mkdtempSync(join(tmpdir(), 'hof-compose-bind-'));
+  try {
+    const file = join(dir, 'compose.yaml');
+    writeFileSync(
+      file,
+      `services:\n  probe:\n    image: busybox\n    volumes:\n      - type: bind\n        source: /nonexistent\n        target: /probe\n        bind:\n          create_host_path: ${value}\n`,
+    );
+    return service(composeConfig([file]), 'probe').volumes?.[0]?.bind?.create_host_path;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 const STANDARD = composeConfig(['compose.yaml']);
@@ -142,9 +159,11 @@ test('nginx reads the template and the certificate of the domain, never creates 
       ['/etc/letsencrypt/archive/hof.invalid', '/etc/letsencrypt/archive/hof.invalid', true],
     ],
   );
+  // Without this Docker creates an empty directory, and certbot refuses to issue into it.
+  const notCreated = printedCreateHostPath(false);
+  assert.notEqual(notCreated, printedCreateHostPath(true), 'Compose prints false and true alike');
   for (const m of mounts.slice(1)) {
-    // Without this Docker creates an empty directory, and certbot refuses to issue into it.
-    assert.equal(m.bind?.create_host_path, false, `${m.source} may be created`);
+    assert.equal(m.bind?.create_host_path, notCreated, `${m.source} may be created`);
   }
   // nginx finds hof by name when it starts, so it starts again after hof is recreated.
   assert.deepEqual(service(STANDARD, 'nginx').depends_on, {
