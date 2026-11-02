@@ -637,54 +637,96 @@ docker image rm hof-drill-<случайное>-hof
 Ручная процедура, только по отдельному решению владельца. Копия разворачивается в соседнюю базу
 `hof_restore`, и только после проверки базы меняются именами. Рабочая база не удаляется и не
 перезаписывается: она остаётся рядом как `hof_before_restore`, и пока с новой базой никто не работал,
-к ней можно вернуться (шаг 19). **Всё, что записали после создания копии, в новой базе `hof` отсутствует** и остаётся только в
-`hof_before_restore`.
+к ней можно вернуться (шаг 19). **Всё, что записали после создания копии, в новой базе `hof`
+отсутствует** и остаётся только в `hof_before_restore`.
 
 Команды выполняются от root в каталоге Hof одним сеансом терминала: в нём живут блокировка, функция
-`props` и переменная `copy`. Если сеанс оборвался, блокировка снята: в новом сеансе снова берут её
-командами шага 1, сверяют имена баз и задают `props` и `copy` заново.
+`props`, переменная `copy` и отметки `lock_ok`, `space_ok`, `copy_ok`. Отметку ставит только успешный
+шаг 1, 2 или 3. Блоки, которые останавливают Hof, создают `hof_restore`, восстанавливают в неё копию
+или меняют имена баз, без нужных отметок ничего не делают и печатают «СТОП». `exit` и `set -e` не
+используются: они закрыли бы терминал и сняли блокировку.
+
+Если сеанс оборвался, блокировка снята, а отметки пропали. В новом сеансе снова выполняют шаги 1–3 и
+задают `props`. Если имена баз уже поменялись (шаг 15), для обратного переключения достаточно шага 1.
 
 ### Подготовка
 
 1. Записать причину решения и взять блокировку. Её удерживают на всё время процедуры. Если она занята,
-   дальше не идут:
+   блок печатает «СТОП» и того, кто её держит; дожидаются конца той операции и повторяют блок:
 
    ```sh
+   lock_ok= space_ok= copy_ok=
    echo "$(date '+%F %T') восстановление: <причина и решение владельца>" >> ~/hof-backups/updates.log
    exec 9>>/run/lock/hof-ops.lock
-   flock --nonblock 9 && { : >/run/lock/hof-ops.lock; echo "восстановление, с $(date -u +%FT%TZ)" >&9; echo 'Блокировка взята'; } \
-     || echo "БЛОКИРОВКА ЗАНЯТА: $(cat /run/lock/hof-ops.lock)"
+   if flock --nonblock 9; then
+     : >/run/lock/hof-ops.lock
+     echo "восстановление, с $(date -u +%FT%TZ)" >&9
+     lock_ok=yes
+     echo 'Блокировка взята'
+   else
+     echo "СТОП: блокировка занята: $(cat /run/lock/hof-ops.lock)"
+   fi
    ```
 
    Затем остановить таймеры и Hof и посмотреть имена баз. Должна быть только база `hof`; база от
    прошлого восстановления удаляется только решением владельца (шаг 22).
 
    ```sh
-   systemctl stop hof-backup.timer
-   systemctl stop hof-check.timer     # если установлен
-   docker compose stop hof
-   docker compose exec -T postgres psql --username=postgres --dbname=postgres --no-psqlrc -At \
-     -c "SELECT datname FROM pg_database WHERE datname LIKE 'hof%' ORDER BY 1"
+   if [ "$lock_ok" = yes ]; then
+     systemctl stop hof-backup.timer
+     systemctl stop hof-check.timer     # если установлен
+     docker compose stop hof
+     docker compose exec -T postgres psql --username=postgres --dbname=postgres --no-psqlrc -At \
+       -c "SELECT datname FROM pg_database WHERE datname LIKE 'hof%' ORDER BY 1"
+   else
+     echo 'СТОП: блокировка не взята'
+   fi
    ```
 
-2. Свободно не меньше двойного размера текущей базы плюс 1,5 ГБ, иначе не начинают:
+2. Свободно не меньше двойного размера текущей базы плюс 1,5 ГБ. Если места мало или размер базы либо
+   свободное место не получены, `space_ok` не ставится:
 
    ```sh
-   size=$(docker compose exec -T postgres psql --username=postgres --dbname=postgres -At -c "SELECT pg_database_size('hof')")
+   space_ok=
+   size=$(docker compose exec -T postgres psql --username=postgres --dbname=postgres --no-psqlrc -At --set ON_ERROR_STOP=1 -c "SELECT pg_database_size('hof')")
    free=$(df --output=avail -B1 "$(docker info --format '{{.DockerRootDir}}')" | tail -n 1 | tr -d ' ')
-   need=$((2 * size + 1536 * 1024 * 1024))
-   [ "$free" -ge "$need" ] && echo "Места хватает: свободно $free, нужно $need" || echo "МАЛО МЕСТА: свободно $free, нужно $need"
+   if [[ ! $size =~ ^[0-9]+$ || ! $free =~ ^[0-9]+$ ]]; then
+     echo "СТОП: не получены размер базы или свободное место: size='$size' free='$free'"
+   elif (( free < 2 * size + 1536 * 1024 * 1024 )); then
+     echo "СТОП: мало места: свободно $free байт, база $size байт"
+   else
+     space_ok=yes
+     echo "Места хватает: свободно $free байт, база $size байт"
+   fi
    ```
 
-3. Выбранная копия прошла учения (раздел «Проверить копию»), её сумма совпадает с `.meta`. Копию,
-   которой нет на сервере, переносят вместе с `.meta` через `scp`. Затем делают свежую копию текущей
-   базы, если та читается:
+3. Выбранная копия прошла учения (раздел «Проверить копию»). Её вместе с `.meta` сначала кладут в
+   `~/hof-backups` на сервере: `cp` из `/var/backups/hof` или `scp` с Mac. Оттуда её не удалит
+   очистка старых копий, в том числе в `hof-backup` ниже: он оставляет только 3 последние
+   предрелизные копии. Блок сверяет SHA-256 с `.meta` и только при совпадении делает свежую копию
+   текущей базы. Нет `.meta`, сумма не посчитана, не совпала или свежая копия не создана —
+   `copy_ok` не ставится, а архивы и рабочая база не меняются:
 
    ```sh
-   copy=/var/backups/hof/<файл>.dump
-   grep -qx "sha256=$(sha256sum "$copy" | cut -d' ' -f1)" "$copy.meta" && echo 'Сумма совпала' || echo 'СУММА НЕ СОВПАЛА'
-   hof-backup --pre-deploy --lock-held
+   copy_ok=
+   copy=~/hof-backups/<файл>.dump
+   expected=$(sed -n 's/^sha256=//p' "$copy.meta")
+   actual=$(sha256sum "$copy" | cut -d' ' -f1)
+   if [ "$lock_ok$space_ok" != yesyes ]; then
+     echo 'СТОП: шаги 1–2 не пройдены'
+   elif [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+     echo "СТОП: SHA-256 не совпала или не получена: .meta '$expected', файл '$actual'"
+   elif ! hof-backup --pre-deploy --lock-held; then
+     echo 'СТОП: свежая копия текущей базы не создана'
+   else
+     copy_ok=yes
+     echo 'Сумма совпала, свежая копия создана'
+   fi
    ```
+
+   Если рабочая база не читается и свежую копию сделать нельзя, дальше идут только по отдельному
+   решению владельца: его записывают в `updates.log`, а `copy_ok=yes` после совпадения суммы задают
+   вручную.
 
    Код сервера должен знать миграции копии и не приносить новых: в отчёте учений на этом коде —
    «новые миграции этого кода: none». Если код новее копии, например после неудачного обновления,
@@ -713,9 +755,11 @@ docker image rm hof-drill-<случайное>-hof
    ```
 
 5. Создать `hof_restore` с теми же свойствами. `template0` гарантирует чистую базу без локальных
-   добавлений `template1`. Имя занято — команда завершится ошибкой:
+   добавлений `template1`. Имя занято — команда завершится ошибкой. Без всех трёх отметок блок
+   ничего не делает:
 
    ```sh
+   if [ "$lock_ok$space_ok$copy_ok" = yesyesyes ]; then
    docker compose exec -T postgres psql --username=postgres --dbname=postgres --no-psqlrc --set ON_ERROR_STOP=1 <<'SQL'
    SELECT format('CREATE DATABASE hof_restore TEMPLATE template0 OWNER %I ENCODING %L LOCALE_PROVIDER %s LC_COLLATE %L LC_CTYPE %L%s',
             pg_get_userbyid(datdba), pg_encoding_to_char(encoding),
@@ -726,12 +770,19 @@ docker image rm hof-drill-<случайное>-hof
      FROM pg_database WHERE datname = 'hof'
    \gexec
    SQL
+   else
+     echo 'СТОП: шаги 1–3 не пройдены'
+   fi
    ```
 
 6. Восстановить копию, без `--create`, `--clean`, `--no-owner` и `--no-privileges`:
 
    ```sh
-   docker compose exec -T postgres pg_restore --username=postgres --dbname=hof_restore --single-transaction < "$copy"
+   if [ "$lock_ok$space_ok$copy_ok" = yesyesyes ]; then
+     docker compose exec -T postgres pg_restore --username=postgres --dbname=hof_restore --single-transaction < "$copy"
+   else
+     echo 'СТОП: шаги 1–3 не пройдены'
+   fi
    ```
 
    `--single-transaction` — всё или ничего, частичных данных не остаётся. Без `--no-owner`:
@@ -802,15 +853,19 @@ a=$(props hof) && b=$(props hof_restore) && [ -n "$a" ] && [ -n "$b" ] \
       -c "SELECT datname, pid, usename, application_name, client_addr, state FROM pg_stat_activity WHERE datname LIKE 'hof%'"
     ```
 
-15. Поменять имена одной транзакцией:
+15. Поменять имена одной транзакцией, только при всех трёх отметках:
 
     ```sh
+    if [ "$lock_ok$space_ok$copy_ok" = yesyesyes ]; then
     docker compose exec -T postgres psql --username=postgres --dbname=postgres --no-psqlrc --set ON_ERROR_STOP=1 <<'SQL'
     BEGIN;
     ALTER DATABASE hof RENAME TO hof_before_restore;
     ALTER DATABASE hof_restore RENAME TO hof;
     COMMIT;
     SQL
+    else
+      echo 'СТОП: шаги 1–3 не пройдены'
+    fi
     ```
 
 16. Если соединение появилось, PostgreSQL ждёт 5 с и отказывает:
@@ -836,6 +891,7 @@ a=$(props hof) && b=$(props hof_restore) && [ -n "$a" ] && [ -n "$b" ] \
 
     ```sh
     exec 9>&-
+    lock_ok= space_ok= copy_ok=
     systemctl start hof-backup.timer
     systemctl start hof-check.timer     # если установлен
     ```
@@ -851,16 +907,20 @@ a=$(props hof) && b=$(props hof_restore) && [ -n "$a" ] && [ -n "$b" ] \
 
 19. Допустимо сразу, если Hof не стартовал или проверка не прошла и пользователи с восстановленной
     базой не работали.
-20. Условия: Hof остановлен (`docker compose stop hof`), соединений нет (шаг 14), `hof_before_restore`
-    на месте. Затем одной транзакцией:
+20. Условия: блокировка взята (шаг 1), Hof остановлен (`docker compose stop hof`), соединений нет (шаг
+    14), `hof_before_restore` на месте. Затем одной транзакцией:
 
     ```sh
+    if [ "$lock_ok" = yes ]; then
     docker compose exec -T postgres psql --username=postgres --dbname=postgres --no-psqlrc --set ON_ERROR_STOP=1 <<'SQL'
     BEGIN;
     ALTER DATABASE hof RENAME TO hof_restore_failed;
     ALTER DATABASE hof_before_restore RENAME TO hof;
     COMMIT;
     SQL
+    else
+      echo 'СТОП: блокировка не взята'
+    fi
     ```
 
     После `COMMIT` сверяют имена (шаг 17), запускают Hof, снимают блокировку и возвращают таймеры, как
@@ -876,9 +936,12 @@ a=$(props hof) && b=$(props hof_restore) && [ -n "$a" ] && [ -n "$b" ] \
     ```
 
 Процедура проверена на временном стенде с искусственными данными: успех, упавший `pg_restore`,
-отличие свойств, активное соединение (отказ через 5 с), обратное переключение. На сервере она не
-выполнялась; таймеры, блокировка и `hof-backup` на стенде заменялись заглушками, а блокировка и `df`
-проверены отдельно в контейнере Linux.
+отличие свойств, активное соединение (отказ через 5 с), обратное переключение. Таймеры, блокировка и
+`hof-backup` на стенде заменялись заглушками. Отказы шагов 1–3 проверены отдельно в контейнере Linux
+с настоящими `flock`, `df`, `sha256sum` и `hof-backup`: блокировка занята, мало места, размер базы или
+свободное место не получены, сумма не совпала, нет `.meta` или архива, свежая копия не создана. Во
+всех случаях Hof не останавливался или блоки создания, восстановления и переключения ничего не
+делали, архивы не менялись. На сервере процедура не выполнялась.
 
 ## Обновление
 
@@ -1013,8 +1076,9 @@ git checkout "$old"
 docker compose build hof
 ```
 
-Затем — раздел «Восстановление из копии» целиком; `copy` уже задан, поэтому в шаге 3 первую строку
-пропускают. Свежую копию текущего состояния делает тот же шаг 3.
+Затем — раздел «Восстановление из копии» целиком; `copy` уже задан и лежит в `~/hof-backups`, поэтому
+в шаге 3 строку `copy=…` пропускают. Для ручной копии `.meta` создают по разделу «Проверить копию».
+Свежую копию текущего состояния делает тот же шаг 3.
 
 После любого отката в логе `hof` должно быть `info start … migrations=none`. Затем в браузере
 проверяют вход, Мешки с остатками и Летопись.
