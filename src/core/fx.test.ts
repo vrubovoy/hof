@@ -744,7 +744,8 @@ describe('fx: the session of an open page (M11.6)', () => {
     const watch = createSessionWatch(
       () => {
         asked.push(now);
-        const answer = answers.shift() ?? 204;
+        // 204 only once the answers run out: a `null` given by the test is no answer at all.
+        const answer = answers.length === 0 ? 204 : (answers.shift() as number | null);
         return answer === null
           ? Promise.reject(new TypeError('Failed to fetch'))
           : Promise.resolve(answer);
@@ -824,6 +825,20 @@ describe('fx: the session of an open page (M11.6)', () => {
     await run(10 * 60_000);
     assert.equal(asked.length, 8, 'nothing more is asked');
     assert.equal(left(), 1);
+  });
+
+  test('no answer at all: the page stays, and a 401 after it still leaves once', async () => {
+    const { watch, timers, asked, answers, left, run } = setup();
+    answers.push(null, null, 401, 401);
+    watch.seen(false);
+    await run(2 * 60_000);
+    assert.equal(asked.length, 2);
+    assert.equal(left(), 0);
+    assert.equal(timers.size, 1, 'still asking');
+    await run(2 * 60_000);
+    assert.equal(asked.length, 3);
+    assert.equal(left(), 1);
+    assert.equal(timers.size, 0);
   });
 });
 
