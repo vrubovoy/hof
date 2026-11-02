@@ -53,6 +53,23 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Whether the process answers: GET /healthz on its own port, not through nginx. The image has no
+    # curl or wget, and a probe through Node takes about 59 MB against 3 MB for bash. The status is
+    # only shown; nothing restarts on it. $$ is a $ for bash.
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/3000 &&
+          printf 'GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          IFS= read -r line <&3 &&
+          [[ $$line == 'HTTP/1.1 200 '* ]]
+      start_period: 60s
+      interval: 30s
+      timeout: 3s
+      retries: 3
     logging:
       driver: json-file
       options:

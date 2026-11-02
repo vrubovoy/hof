@@ -74,3 +74,31 @@ jobs:
 
       - name: Tests
         run: npm test
+
+      # The healthcheck of compose.yaml on the image built above: a started Hof becomes healthy.
+      - name: Healthcheck, healthy
+        run: |
+          docker compose up -d --no-build --wait --wait-timeout 120 postgres hof
+          status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q hof)")
+          echo "hof: $status"
+          test "$status" = healthy
+
+      # The same probe against a stand-in server on the port of Hof that answers 500: the container
+      # becomes unhealthy. Only the start period and the interval are shorter.
+      - name: Healthcheck, unhealthy on 500
+        run: |
+          cat > "$RUNNER_TEMP/answer-500.yaml" <<'EOF'
+          services:
+            hof:
+              command: [node, -e, "require('node:http').createServer((req, res) => { res.statusCode = 500; res.end(); }).listen(3000)"]
+              healthcheck:
+                start_period: 0s
+                interval: 2s
+          EOF
+          if docker compose -f compose.yaml -f "$RUNNER_TEMP/answer-500.yaml" up -d --no-build --no-deps --wait --wait-timeout 60 hof; then
+            echo 'The healthcheck passed an answer 500'
+            exit 1
+          fi
+          status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q hof)")
+          echo "hof: $status"
+          test "$status" = unhealthy

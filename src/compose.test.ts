@@ -40,6 +40,13 @@ interface Service {
     bind?: { create_host_path?: boolean };
   }[];
   depends_on?: Record<string, { condition: string; restart?: boolean }>;
+  healthcheck?: {
+    test?: string[];
+    interval?: string;
+    timeout?: string;
+    retries?: number;
+    start_period?: string;
+  };
 }
 
 interface ComposeConfig {
@@ -147,6 +154,28 @@ test('every service comes back by itself and keeps three log files of 10 MB at m
 
 test('hof runs under the init of Docker, which passes SIGTERM on to Node', () => {
   assert.equal(service(STANDARD, 'hof').init, true);
+});
+
+test('hof answers its own healthcheck through bash every 30 s; nothing restarts on it', () => {
+  const { healthcheck, restart } = service(STANDARD, 'hof');
+  const [cmd, shell, flag, probe = ''] = healthcheck?.test ?? [];
+  assert.deepEqual([cmd, shell, flag], ['CMD', 'bash', '-c']);
+  // The port of Hof inside its container, not nginx; only a 200 status line passes.
+  assert.match(
+    probe,
+    /^exec 3<>\/dev\/tcp\/127\.0\.0\.1\/3000 && printf 'GET \/healthz HTTP\/1\.1\\r\\n/,
+  );
+  assert.match(probe, / == 'HTTP\/1\.1 200 '\* \]\]$/);
+  assert.deepEqual(
+    {
+      interval: healthcheck?.interval,
+      timeout: healthcheck?.timeout,
+      retries: healthcheck?.retries,
+    },
+    { interval: '30s', timeout: '3s', retries: 3 },
+  );
+  assert.equal(healthcheck?.start_period, '1m0s');
+  assert.equal(restart, 'unless-stopped');
 });
 
 test('nginx reads the template and the certificate of the domain, never creates a directory', () => {
