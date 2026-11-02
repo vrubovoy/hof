@@ -50,8 +50,12 @@ jobs:
 
       # Not a service of the job: services start before the checkout, so the init script of the
       # repository could not be mounted into the container.
+      # The versions in the log: the output of `docker compose config` differs between them.
       - name: PostgreSQL for the tests
-        run: docker compose -f compose.dev.yaml up -d --wait
+        run: |
+          docker version --format 'Docker {{.Server.Version}}'
+          docker compose version
+          docker compose -f compose.dev.yaml up -d --wait
 
       - name: npm ci
         run: npm ci
