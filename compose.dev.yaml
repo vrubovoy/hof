@@ -4,7 +4,8 @@ name: hof-dev
 
 services:
   postgres:
-    image: postgres:18
+    # The same image as in compose.yaml.
+    image: postgres:18.6-trixie
     environment:
       POSTGRES_DB: hof
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env}
@@ -18,6 +19,15 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql
       - ./deploy/postgres-init.sh:/docker-entrypoint-initdb.d/postgres-init.sh:ro
+    # For `up --wait` (CI): ready only when the final server accepts TCP connections, that is after
+    # the init script. During first-start initialisation the temporary server listens on the local
+    # socket only.
+    healthcheck:
+      test: ['CMD', 'pg_isready', '--host=127.0.0.1', '--username=postgres', '--dbname=hof']
+      start_period: 60s
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
 volumes:
   pgdata:

@@ -1,0 +1,72 @@
+# Checks of every pull request and of every push to main (README.md, section «CI»): the commands of
+# `npm run check`, each a step of its own, against a throwaway PostgreSQL from compose.dev.yaml.
+# No secrets, no access to the server, nothing is published.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# The token of the job can only read the repository.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # Actions are pinned to full commit SHAs: a tag can be moved to other code.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The version of the image, so that it is written in the Dockerfile only.
+      - name: Node version from the Dockerfile
+        id: node
+        run: |
+          version=$(sed -n 's/^FROM node:\([0-9][0-9.]*\).*/\1/p' Dockerfile)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+          package-manager-cache: false
+
+      # Passwords of this run only; the database gets nothing but the made-up data of the tests.
+      - name: .env with random values
+        run: |
+          umask 077
+          {
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
+            echo "HOF_CORE_DB_PASSWORD=$(openssl rand -hex 24)"
+            echo "HOF_SAECKEL_DB_PASSWORD=$(openssl rand -hex 24)"
+            echo CURRENCY=RUB
+            echo TZ=Europe/Moscow
+            echo PGPORT=5433
+          } > .env
+
+      # Not a service of the job: services start before the checkout, so the init script of the
+      # repository could not be mounted into the container.
+      - name: PostgreSQL for the tests
+        run: docker compose -f compose.dev.yaml up -d --wait
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Prettier
+        run: npx prettier --check .
+
+      - name: ESLint
+        run: npx eslint .
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Docker image
+        run: docker compose build
+
+      - name: Tests
+        run: npm test
