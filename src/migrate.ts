@@ -6,14 +6,32 @@
 // the role's search_path places in the module's own schema.
 //
 // A migration file contains plain SQL statements without BEGIN or COMMIT: the transaction
-// around the file is opened and closed here. There is no rollback of migrations; going back
-// means restoring the backup made before the update.
+// around the file is opened and closed here. There is no rollback of migrations and no transaction
+// around the whole set: a failure undoes only the failed file (docs/OPERATIONS.md).
 
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Pool } from 'pg';
 
 const FILE_NAME = /^\d{3}_[a-z0-9_]+\.sql$/;
+
+// Refuses a database with applied migrations that the folder does not hold: this code has never
+// seen such a schema. Compares names only, so it says nothing about compatibility (§5.7). Changes
+// nothing: on a clean database schema_migrations does not exist yet and the set is empty.
+export async function checkApplied(pool: Pool, dir: string): Promise<void> {
+  const { rows: tables } = await pool.query<{ found: boolean }>(
+    "SELECT to_regclass('schema_migrations') IS NOT NULL AS found",
+  );
+  if (!tables[0]!.found) return;
+  const { rows } = await pool.query<{ name: string }>(
+    'SELECT name FROM schema_migrations ORDER BY name',
+  );
+  const files = new Set(await readdir(dir));
+  const unknown = rows.map((row) => row.name).filter((name) => !files.has(name));
+  if (unknown.length > 0) {
+    throw new Error(`applied migrations missing from ${dir}: ${unknown.join(', ')}`);
+  }
+}
 
 // Applies the migrations not yet recorded and returns their file names, in order.
 // Throws on the first failure; the failed file leaves no trace, earlier files stay applied.

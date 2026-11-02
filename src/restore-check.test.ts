@@ -313,6 +313,19 @@ test('a copy Hof cannot start on fails with the reason from its log', () => {
   assert.ok(result.stderr.includes('001_pouches.sql'), result.stderr);
 });
 
+test('a copy newer than the code: Hof refuses it and names the migration', () => {
+  const file = writeVariant(
+    'newer_copy',
+    `INSERT INTO saeckel.schema_migrations (name) VALUES ('999_from_the_future.sql');`,
+  );
+  const result = check(file);
+  assert.equal(result.status, 1);
+  assert.ok(result.stderr.includes('Hof не запустился'), result.stderr);
+  assert.ok(result.stderr.includes('startup_failed'), result.stderr);
+  assert.ok(result.stderr.includes('applied migrations missing from'), result.stderr);
+  assert.ok(result.stderr.includes('999_from_the_future.sql'), result.stderr);
+});
+
 test('an interrupted run removes what it made', async () => {
   const file = writeCopy('interrupted', 'hof');
   const child = spawn('bash', [SCRIPT, file], { env: ENV, stdio: ['ignore', 'ignore', 'pipe'] });

@@ -11,7 +11,7 @@ import { createCoreApp, errorPage, requestUser, type Service } from './core/app.
 import { startFirstRun, type FirstRun } from './core/gate-key.ts';
 import { hashPassword } from './core/password.ts';
 import { describeError, log } from './log.ts';
-import { migrate } from './migrate.ts';
+import { checkApplied, migrate } from './migrate.ts';
 import { handleConnectionErrors } from './postgres.ts';
 import {
   createSaeckelApp,
@@ -171,8 +171,24 @@ export function createApp(
   return app;
 }
 
-// Startup order: configuration, migrations of Core and then of Säckel, the currency of the
-// records, first-run state, the dummy password hash, and only then the HTTP port.
+// Each module's migrations under its own role; the file names say which module they are. Both
+// modules are checked before either of them changes anything (§5.7).
+export async function migrateModules(
+  corePool: Pool,
+  coreDir: string,
+  saeckelPool: Pool,
+  saeckelDir: string,
+): Promise<string[]> {
+  await checkApplied(corePool, coreDir);
+  await checkApplied(saeckelPool, saeckelDir);
+  const core = await migrate(corePool, coreDir);
+  const saeckel = await migrate(saeckelPool, saeckelDir);
+  return [...core.map((name) => `core/${name}`), ...saeckel.map((name) => `saeckel/${name}`)];
+}
+
+// Startup order: configuration, the check of applied migrations in both modules, migrations of
+// Core and then of Säckel, the currency of the records, first-run state, the dummy password hash,
+// and only then the HTTP port.
 // Any failure before listen is logged and ends the process with exit code 1.
 async function start(): Promise<void> {
   const corePassword = process.env.HOF_CORE_DB_PASSWORD;
@@ -215,10 +231,7 @@ async function start(): Promise<void> {
   let firstRun: FirstRun;
   let dummyPasswordHash: string;
   try {
-    // Each module's migrations under its own role; the file names say which module they are.
-    const core = await migrate(corePool, CORE_MIGRATIONS);
-    const saeckel = await migrate(saeckelPool, SAECKEL_MIGRATIONS);
-    applied = [...core.map((name) => `core/${name}`), ...saeckel.map((name) => `saeckel/${name}`)];
+    applied = await migrateModules(corePool, CORE_MIGRATIONS, saeckelPool, SAECKEL_MIGRATIONS);
     // §5.6: the first record fixes the currency; another one in .env would change what every
     // amount means, so the server does not start.
     const recorded = await otherRecordedCurrency(saeckelPool, saeckelSettings.currency);
