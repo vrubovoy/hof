@@ -445,6 +445,63 @@ export function createGuard() {
   };
 }
 
+/** M11.6: how often a seen page of a signed-in person asks whether its session is still there. */
+export const SESSION_EVERY = 60_000;
+
+/**
+ * M11.6: the session of an open page. The server cannot tell a page that the key was taken away,
+ * so the page asks: ask() gives the status of GET /session, or throws when there is no answer.
+ * Only an exact 401 ends the page, and once: no answer, a 502 while the server is updated or any
+ * other status leaves it where it is. seen() asks every minute from now, and at once as well when
+ * `now` (back to the tab, back from the back/forward cache); hidden() stops asking. One question
+ * at a time.
+ * @param {() => Promise<number>} ask
+ * @param {() => void} leave
+ * @param {{ set: (go: () => void, ms: number) => unknown, clear: (timer: unknown) => void }} clock
+ */
+export function createSessionWatch(ask, leave, clock) {
+  /** @type {unknown} */
+  let timer = null;
+  let asking = false;
+  let over = false;
+  const hidden = () => {
+    if (timer === null) return;
+    clock.clear(timer);
+    timer = null;
+  };
+  const check = async () => {
+    if (asking || over) return;
+    asking = true;
+    let status = 0;
+    try {
+      status = await ask();
+    } catch {
+      // No answer: the network, or the server between two versions.
+    }
+    asking = false;
+    if (status !== 401 || over) return;
+    over = true;
+    hidden();
+    leave();
+  };
+  const wait = () => {
+    timer = clock.set(() => {
+      wait();
+      void check();
+    }, SESSION_EVERY);
+  };
+  return {
+    /** @param {boolean} now */
+    seen(now) {
+      if (over) return;
+      hidden();
+      wait();
+      if (now) void check();
+    },
+    hidden,
+  };
+}
+
 // ---------- the page ----------
 
 function start() {
@@ -876,6 +933,31 @@ function start() {
     if (event.animationName === 'pose') event.target.classList.remove('meow');
     if (event.animationName === 'sniff-b') event.target.classList.remove('sniffing');
   });
+
+  // ---- M11.6: a page of a signed-in person (data-session) learns within a minute of being seen
+  // that its session has ended, and goes to the sign-in, which then says so. The address back is
+  // only the path and query of this page; /login takes it through safeNext.
+  if (document.querySelector('[data-session]') !== null) {
+    const watch = createSessionWatch(
+      async () => (await fetch('/session', { cache: 'no-store' })).status,
+      () =>
+        location.replace(`/login?next=${encodeURIComponent(location.pathname + location.search)}`),
+      {
+        set: (go, ms) => setTimeout(go, ms),
+        clear: (timer) => clearTimeout(/** @type {ReturnType<typeof setTimeout>} */ (timer)),
+      },
+    );
+    // The page has just come from the server with a live session: the first question in a minute.
+    if (!document.hidden) watch.seen(false);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) watch.hidden();
+      else watch.seen(true);
+    });
+    addEventListener('pagehide', watch.hidden);
+    addEventListener('pageshow', (event) => {
+      if (event.persisted) watch.seen(true);
+    });
+  }
 
   // ---- back from the back/forward cache: the page is as it was left, the world may not be.
   addEventListener('pageshow', (event) => {

@@ -24,12 +24,14 @@ import {
   MONEY,
   MUSIC_KEY,
   PIECES,
+  SESSION_EVERY,
   SETTINGS_KEY,
   SOUNDS,
   between,
   canMove,
   createChain,
   createGuard,
+  createSessionWatch,
   doorWay,
   firstPiece,
   leaving,
@@ -719,6 +721,124 @@ describe('fx: Säckel (M10.5)', () => {
         assert.match(entry ?? '', source, file);
       }
     }
+  });
+});
+
+describe('fx: the session of an open page (M11.6)', () => {
+  // A clock of the test with the timers pending, and a server whose answers the test gives one by
+  // one: a status, or `null` for no answer at all.
+  function setup() {
+    let now = 0;
+    let next = 1;
+    const timers = new Map<number, { at: number; go: () => void }>();
+    const clock = {
+      set: (go: () => void, ms: number) => {
+        timers.set(next, { at: now + ms, go });
+        return next++;
+      },
+      clear: (timer: unknown) => void timers.delete(timer as number),
+    };
+    const asked: number[] = [];
+    const answers: (number | null)[] = [];
+    let left = 0;
+    const watch = createSessionWatch(
+      () => {
+        asked.push(now);
+        // 204 only once the answers run out: a `null` given by the test is no answer at all.
+        const answer = answers.length === 0 ? 204 : (answers.shift() as number | null);
+        return answer === null
+          ? Promise.reject(new TypeError('Failed to fetch'))
+          : Promise.resolve(answer);
+      },
+      () => left++,
+      clock,
+    );
+    return {
+      watch,
+      timers,
+      asked,
+      answers,
+      left: () => left,
+      // Time goes on by `ms`; due timers fire in their order, and each question gets its answer.
+      run: async (ms: number) => {
+        const end = now + ms;
+        for (;;) {
+          const [id, due] = [...timers].sort((a, b) => a[1].at - b[1].at)[0] ?? [];
+          if (due === undefined || due.at > end) break;
+          timers.delete(id!);
+          now = due.at;
+          due.go();
+          await settle();
+        }
+        now = end;
+      },
+    };
+  }
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+  test('a page just come: the first question in a minute, then every minute', async () => {
+    const { watch, timers, asked, run } = setup();
+    assert.equal(SESSION_EVERY, 60_000);
+    watch.seen(false);
+    await settle();
+    assert.deepEqual(asked, []);
+    await run(3 * 60_000);
+    assert.deepEqual(asked, [60_000, 120_000, 180_000]);
+    assert.equal(timers.size, 1, 'never more than one timer');
+  });
+
+  test('a hidden tab asks nothing; back to it: one question at once, then every minute', async () => {
+    const { watch, timers, asked, run } = setup();
+    watch.seen(false);
+    await run(30_000);
+    watch.hidden();
+    assert.equal(timers.size, 0);
+    await run(10 * 60_000);
+    assert.deepEqual(asked, []);
+    watch.seen(true);
+    await settle();
+    await run(60_000);
+    assert.deepEqual(asked, [630_000, 690_000]);
+  });
+
+  test('back from the back/forward cache, the tab seen twice at once: one question', async () => {
+    const { watch, timers, asked } = setup();
+    watch.seen(true);
+    watch.seen(true);
+    await settle();
+    assert.deepEqual(asked, [0]);
+    assert.equal(timers.size, 1);
+  });
+
+  test('only an exact 401 leaves, and once', async () => {
+    const { watch, timers, asked, answers, left, run } = setup();
+    answers.push(500, 502, 503, 0, 403, 303, null);
+    watch.seen(false);
+    await run(7 * 60_000);
+    assert.equal(asked.length, 7);
+    assert.equal(left(), 0, 'no answer, 5xx and the rest leave the page where it is');
+    answers.push(401, 401);
+    await run(60_000);
+    assert.equal(left(), 1);
+    assert.equal(timers.size, 0);
+    watch.seen(true);
+    await run(10 * 60_000);
+    assert.equal(asked.length, 8, 'nothing more is asked');
+    assert.equal(left(), 1);
+  });
+
+  test('no answer at all: the page stays, and a 401 after it still leaves once', async () => {
+    const { watch, timers, asked, answers, left, run } = setup();
+    answers.push(null, null, 401, 401);
+    watch.seen(false);
+    await run(2 * 60_000);
+    assert.equal(asked.length, 2);
+    assert.equal(left(), 0);
+    assert.equal(timers.size, 1, 'still asking');
+    await run(2 * 60_000);
+    assert.equal(asked.length, 3);
+    assert.equal(left(), 1);
+    assert.equal(timers.size, 0);
   });
 });
 

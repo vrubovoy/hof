@@ -22,7 +22,7 @@ const FORM = 'application/x-www-form-urlencoded';
 
 // Copied from ARCHITECTURE.md §4.9 on purpose: the test must not share the constant with the code.
 const CSP =
-  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; media-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; media-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 
 // The common checks need no database: the court counts as founded, and /anything is not a Core
 // route, so a request that passes every check ends in the common 404. The pool and the dummy
@@ -613,6 +613,19 @@ describe('Säckel in the court', () => {
     const named = new Set([...page.matchAll(/="(\/saeckel\/static\/[^"]*)"/g)].map((m) => m[1]!));
     assert.deepEqual([...named], ['/saeckel/static/img/emblem-saeckel-small.webp']);
     assert.equal((await get('/saeckel/static/img/emblem-saeckel-small.webp')).status, 200);
+  });
+
+  // M11.6: fx.js asks GET /session only on the pages of a signed-in person, which carry
+  // data-session — the courtyard of Core and every page of Säckel; the sign-in page does not.
+  test('the pages of a signed-in person carry data-session, the sign-in page does not', async () => {
+    const { cookie } = await person('anna');
+    const pouch = await makePouch('Продукты', cookie);
+    for (const path of ['/', '/account', '/saeckel/', pouch, '/saeckel/history']) {
+      const page = await (await get(path, cookie)).text();
+      assert.equal(page.match(/ data-session[ >]/g)?.length, 1, path);
+    }
+    const signIn = await (await get('/login')).text();
+    assert.ok(!signIn.includes('data-session'));
   });
 
   test('Säckel gets id and login only, not the role', async () => {
