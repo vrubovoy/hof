@@ -1,0 +1,303 @@
+# Deployment of a published image of Hof to production, by hand only (docs/OPERATIONS.md, section
+# «Развёртывание из GitHub»). The owner starts it with a commit of main or a tag and approves each
+# job of the environment production: first `status`, then, after the image and its new migrations
+# are shown, `deploy`. The workflow updates nothing itself: it calls hof-deploy through the key of
+# the user hof-deploy, which runs only `status` and `deploy sha256:<digest>`. The secrets of the
+# server live in the environment production only.
+name: Deploy
+run-name: ${{ inputs.command }} ${{ inputs.target }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'status — только посмотреть сервер; deploy — обновить Hof'
+        type: choice
+        options: [status, deploy]
+        default: status
+      target:
+        description: 'Полный SHA коммита main или тег; для status необязателен'
+        type: string
+        required: false
+
+# The token reads the repository only; the jobs with the secrets of the server get no rights.
+permissions:
+  contents: read
+
+# One run at a time: the next one waits until the current is over, a newer waiting run replaces an
+# older waiting one. A running one is never cancelled.
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # The release that runs now. After the first approval; changes nothing.
+  server:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    permissions: {}
+    outputs:
+      current: ${{ steps.status.outputs.current }}
+    steps:
+      - name: hof-deploy status
+        id: status
+        env:
+          SSH_KEY: ${{ secrets.HOF_DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.HOF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.HOF_DEPLOY_HOST }}
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Развёртывание запускается только из main; сервер не затрагивался"
+            exit 1
+          fi
+          if ! [[ $HOST =~ ^[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || [ -z "$SSH_KEY" ] || [ -z "$KNOWN_HOSTS" ]; then
+            echo '::error::Нет секретов HOF_DEPLOY_* окружения production, или адрес не вида host или host:port'
+            exit 1
+          fi
+          umask 077
+          key=$(mktemp "$RUNNER_TEMP/hof-deploy.XXXXXX")
+          known=$(mktemp "$RUNNER_TEMP/hof-deploy.XXXXXX")
+          out=$(mktemp "$RUNNER_TEMP/hof-deploy.XXXXXX")
+          trap 'rm -f "$key" "$known" "$out"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$known"
+          # Only the key and the host key given here; no agent, no terminal, no forwarding.
+          remote() {
+            ssh -F /dev/null -T -i "$key" -o IdentitiesOnly=yes -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known" -o GlobalKnownHostsFile=/dev/null \
+              -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
+              "ssh://hof-deploy@$HOST" "$1"
+          }
+
+          code=0
+          remote status 2>&1 | tee "$out" || code=$?
+          if [ "$code" != 0 ]; then
+            echo "::error::hof-deploy status не выполнен, код $code (255 — SSH не удался); сервер ничего не менял"
+            exit 1
+          fi
+          current=$(sed -n 's/^Выпуск: \(sha256:[0-9a-f]\{64\}\)$/\1/p' "$out")
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          {
+            echo '### Сервер'
+            echo
+            echo "- Работает: \`${current:-образ, собранный из Git}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The image of the target, without the secrets of the server: a commit of main that CI checked,
+  # on the stand too, and published, and what it would change against the release that runs.
+  image:
+    needs: server
+    if: inputs.command == 'deploy' || inputs.target != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      sha: ${{ steps.image.outputs.sha }}
+      digest: ${{ steps.image.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: The image and its new migrations
+        id: image
+        env:
+          TARGET: ${{ inputs.target }}
+          CURRENT: ${{ needs.server.outputs.current }}
+          REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ghcr.io/vrubovoy/hof
+        run: |
+          refuse() {
+            echo "::error::$1"
+            printf '### Образ\n\nОтказ: %s\n' "$1" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          # The migrations of a commit as module/file, as hof-deploy names them.
+          migrations() {
+            git ls-tree -r --name-only "$1" -- src/core/migrations src/saeckel/migrations |
+              sed -n 's|^src/\([a-z]*\)/migrations/\([^/]*\.sql\)$|\1/\2|p' | LC_ALL=C sort
+          }
+          revision_of() {
+            docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$1"
+          }
+
+          if [ "$GITHUB_REF" != refs/heads/main ]; then refuse 'развёртывание запускается только из main'; fi
+          # The input is checked before it goes anywhere: a full SHA or a plain tag name.
+          if [[ $TARGET =~ ^[0-9a-f]{40}$ ]]; then
+            sha=$(git rev-parse --verify --quiet "$TARGET^{commit}") || refuse "коммита $TARGET нет в репозитории"
+          elif [[ $TARGET =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ ]]; then
+            sha=$(git rev-parse --verify --quiet "refs/tags/$TARGET^{commit}") || refuse "тега $TARGET нет в репозитории"
+          else
+            refuse 'цель — полный SHA коммита (40 строчных шестнадцатеричных знаков) или имя тега'
+          fi
+          if ! git merge-base --is-ancestor "$sha" "$GITHUB_SHA"; then refuse "коммит $sha не входит в main"; fi
+
+          # CI of the push of this commit to main: every job passed, the image was published.
+          run=$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$sha&event=push&branch=main&status=success&per_page=1" \
+            --jq '.workflow_runs[0].id // empty') || refuse 'GitHub API не ответил'
+          if [ -z "$run" ]; then refuse "у коммита $sha нет успешного запуска CI на push в main"; fi
+          jobs=$(gh api "repos/$REPOSITORY/actions/runs/$run/jobs" --jq '.jobs[] | "\(.name) \(.conclusion)"') ||
+            refuse 'GitHub API не ответил'
+          for job in check deploy-stand publish; do
+            if ! grep -qxF "$job success" <<< "$jobs"; then refuse "в запуске CI $run нет успешного задания $job"; fi
+          done
+
+          # The image of the tag of this commit, its digest and its label.
+          tag=$IMAGE:sha-$sha
+          if ! docker pull --quiet "$tag" > /dev/null; then refuse "образа $tag нет в реестре"; fi
+          digest=$(docker image inspect --format '{{join .RepoDigests "\n"}}' "$tag" |
+            sed -n "s|^$IMAGE@\(sha256:[0-9a-f]\{64\}\)\$|\1|p")
+          if ! [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]]; then refuse "у образа $tag нет digest в $IMAGE"; fi
+          if [ "$(revision_of "$tag")" != "$sha" ]; then refuse "метка revision образа $tag — не коммит $sha"; fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+          # New migrations against the image that runs. The set of the database itself is checked
+          # by hof-deploy before the copy.
+          target=$(migrations "$sha")
+          changes="не определены: на сервере образ, собранный из Git; их покажет hof-deploy строкой «Новые миграции»"
+          if [[ $CURRENT =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            changes="не определены: коммит работающего образа не найден в main; их покажет hof-deploy строкой «Новые миграции»"
+            if docker pull --quiet "$IMAGE@$CURRENT" > /dev/null &&
+              running=$(revision_of "$IMAGE@$CURRENT") && [[ $running =~ ^[0-9a-f]{40}$ ]] &&
+              git merge-base --is-ancestor "$running" "$GITHUB_SHA" 2> /dev/null; then
+              before=$(migrations "$running")
+              new=$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$target") | grep . | paste -sd ' ' -) || true
+              gone=$(comm -23 <(printf '%s\n' "$before") <(printf '%s\n' "$target") | grep . | paste -sd ' ' -) || true
+              if [ -n "$gone" ]; then
+                changes="в работающем выпуске есть миграции, которых нет в образе: $gone — hof-deploy откажет"
+              elif [ -n "$new" ]; then
+                changes="$new — после них прежний digest не запустится"
+              else
+                changes='нет: прежний digest можно вернуть той же командой'
+              fi
+            fi
+          fi
+          {
+            echo '### Образ'
+            echo
+            echo "- Цель: \`$TARGET\` — коммит \`$sha\`, «$(git log -1 --format=%s "$sha")»"
+            echo "- Проверен и опубликован CI: https://github.com/$REPOSITORY/actions/runs/$run"
+            echo "- Образ: \`$IMAGE@$digest\`"
+            echo "- Новые миграции: $changes"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Образ $IMAGE@$digest, коммит $sha; новые миграции: $changes"
+
+  # The update itself, after the second approval: hof-deploy with the digest checked above.
+  production:
+    needs: [server, image]
+    if: inputs.command == 'deploy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    permissions: {}
+    steps:
+      - name: hof-deploy deploy
+        env:
+          SSH_KEY: ${{ secrets.HOF_DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.HOF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.HOF_DEPLOY_HOST }}
+          CURRENT: ${{ needs.server.outputs.current }}
+          SHA: ${{ needs.image.outputs.sha }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Развёртывание запускается только из main; сервер не затрагивался"
+            exit 1
+          fi
+          if ! [[ $HOST =~ ^[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || [ -z "$SSH_KEY" ] || [ -z "$KNOWN_HOSTS" ]; then
+            echo '::error::Нет секретов HOF_DEPLOY_* окружения production, или адрес не вида host или host:port'
+            exit 1
+          fi
+          if ! [[ $DIGEST =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo '::error::Нет проверенного digest образа; сервер не затрагивался'
+            exit 1
+          fi
+          umask 077
+          key=$(mktemp "$RUNNER_TEMP/hof-deploy.XXXXXX")
+          known=$(mktemp "$RUNNER_TEMP/hof-deploy.XXXXXX")
+          out=$(mktemp "$RUNNER_TEMP/hof-deploy.XXXXXX")
+          trap 'rm -f "$key" "$known" "$out"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$known"
+          # Only the key and the host key given here; no agent, no terminal, no forwarding.
+          remote() {
+            ssh -F /dev/null -T -i "$key" -o IdentitiesOnly=yes -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known" -o GlobalKnownHostsFile=/dev/null \
+              -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
+              "ssh://hof-deploy@$HOST" "$1"
+          }
+          report() {
+            {
+              echo '### Развёртывание'
+              echo
+              echo "- Образ: \`$DIGEST\`, коммит \`$SHA\`"
+              echo "- Было: \`${CURRENT:-образ, собранный из Git}\`"
+              echo "- Результат: $1"
+              if [ -n "$2" ]; then echo "- Сервер: $2"; fi
+              echo "- Дальше: $3"
+            } >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          # The new migrations were shown against this release: it must still be the one that runs.
+          code=0
+          remote status > "$out" 2>&1 || code=$?
+          now=$(sed -n 's/^Выпуск: \(sha256:[0-9a-f]\{64\}\)$/\1/p' "$out")
+          if [ "$code" != 0 ] || [ "$now" != "$CURRENT" ]; then
+            cat "$out"
+            next='запустить заново: status и новые миграции нужно увидеть по выпуску, который работает'
+            report 'не запускалось: status не выполнен или выпуск сменился после проверки' '' "$next"
+            echo "::error::Обновление не запускалось: status, код $code; выпуск ${now:-из Git} вместо ${CURRENT:-из Git}"
+            exit 1
+          fi
+
+          code=0
+          remote "deploy $DIGEST" 2>&1 | tee "$out" || code=$?
+          summary=$(grep '^итог: ' "$out" | tail -n 1) || true
+          if [ "$code" = 0 ] && grep -q "^итог: обновлено .* -> $DIGEST; " "$out"; then
+            report 'обновлено' "$summary" 'ничего; прежний выпуск и предрелизная копия остаются на сервере'
+            exit 0
+          fi
+          case $code in
+          0)
+            result='команда завершилась без итога обновления: это не успех'
+            next='проверить сервер запуском status; ничего не повторять до выяснения'
+            ;;
+          1)
+            if [[ $summary == 'итог: отказ'* ]]; then
+              result='отказ до остановки: Hof не останавливался, конфигурация не менялась'
+              next='устранить причину из строки ОТКАЗ выше и запустить снова'
+            else
+              result='сбой после остановки Hof'
+              next='ничего не повторять; по строке «Состояние» выше — раздел «Если обновление не удалось» docs/OPERATIONS.md'
+            fi
+            ;;
+          2)
+            result='сервер отклонил запрос'
+            next='сервер ничего не менял; сверить hof-deploy-ssh на сервере с репозиторием'
+            ;;
+          3)
+            result='блокировка занята: идёт копия или другое обновление'
+            next='сервер ничего не менял; запустить снова позже'
+            ;;
+          255)
+            result='SSH не удался: соединение не установлено или прервалось'
+            next='если строк hof-deploy выше нет, сервер ничего не менял; если есть — обновление могло не завершиться: сначала status, ничего не повторять до выяснения'
+            ;;
+          *)
+            result="код $code"
+            next='проверить сервер запуском status; ничего не повторять до выяснения'
+            ;;
+          esac
+          report "$result" "$summary" "$next"
+          echo "::error::Hof не обновлён: $result. Дальше: $next"
+          exit 1

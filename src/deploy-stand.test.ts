@@ -6,11 +6,12 @@
 // self-signed certificate, the real hof-backup, made-up records, and containers of another project.
 // The images of the releases go to a local registry: the image of this repository and images made
 // from it that fail at start, apply a part of two migrations, fix the second one or change the
-// service postgres.
+// service postgres. The last test runs the steps of .github/workflows/deploy.yml that reach the
+// server, through the same SSH key.
 
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
@@ -53,6 +54,18 @@ function identity(name: string): string {
 
 function release(): string {
   return sh('readlink /opt/hof/release').stdout.trim();
+}
+
+// The script of a step of .github/workflows/deploy.yml, as the runner gets it.
+function workflowStep(name: string): string {
+  const lines = readFileSync(join(ROOT, '.github', 'workflows', 'deploy.yml'), 'utf8').split('\n');
+  const run = lines.indexOf('        run: |', lines.indexOf(`      - name: ${name}`));
+  const body: string[] = [];
+  for (const line of lines.slice(run + 1)) {
+    if (line !== '' && !line.startsWith('          ')) break;
+    body.push(line.slice(10));
+  }
+  return body.join('\n');
 }
 
 function copies(): string {
@@ -103,6 +116,7 @@ describe('hof-deploy on the stand', { skip: !STAND && 'only on the stand of CI' 
       '005_stand.sql': 'CREATE TABLE stand_fifth (id integer);\n',
     });
     variant('fifth-broken', `FROM ${REGISTRY}:fifth\nCMD ["node", "-e", "process.exit(1)"]\n`);
+    variant('sixth', `FROM ${REGISTRY}:fifth\nLABEL hof.stand=sixth\n`);
     // A release whose PostgreSQL would be recreated: its healthcheck is checked every 3 s.
     const compose = ok('cat compose.yaml').replace('      interval: 2s\n', '      interval: 3s\n');
     assert.ok(compose.includes('interval: 3s'));
@@ -566,5 +580,115 @@ STUB
     assert.equal(deploy(digests.fifth!).status, 0);
     assert.equal(ok("docker inspect --format '{{.State.Health.Status}}' hof-hof-1"), 'healthy');
     untouched();
+  });
+
+  // The steps of deploy.yml that reach the server, as the runner runs them, with the key of the
+  // SSH test above: the real hof-deploy-ssh, sudo and hof-deploy behind them.
+  test('deploy.yml over SSH: status and an update; refusals change nothing', () => {
+    const temp = mkdtempSync(join(tmpdir(), 'hof-stand-workflow-'));
+    ok(`ssh-keygen -q -t ed25519 -N '' -f /tmp/stand-other-host-key`);
+    const secrets = {
+      SSH_KEY: ok('cat /tmp/stand-key'),
+      KNOWN_HOSTS: `[127.0.0.1]:2222 ${ok('cat /etc/hof-stand-host-key.pub')}`,
+      HOST: '127.0.0.1:2222',
+    };
+    function step(name: string, env: Record<string, string>) {
+      for (const file of ['output', 'summary']) writeFileSync(join(temp, file), '');
+      writeFileSync(join(temp, 'step.sh'), workflowStep(name));
+      const result = spawnSync(
+        'bash',
+        ['--noprofile', '--norc', '-eo', 'pipefail', join(temp, 'step.sh')],
+        {
+          encoding: 'utf8',
+          timeout: 600_000,
+          env: {
+            PATH: process.env.PATH,
+            HOME: process.env.HOME,
+            RUNNER_TEMP: temp,
+            GITHUB_OUTPUT: join(temp, 'output'),
+            GITHUB_STEP_SUMMARY: join(temp, 'summary'),
+            GITHUB_REF: 'refs/heads/main',
+            ...secrets,
+            ...env,
+          },
+        },
+      );
+      console.log(result.stdout + result.stderr);
+      return {
+        ...result,
+        output: readFileSync(join(temp, 'output'), 'utf8'),
+        summary: readFileSync(join(temp, 'summary'), 'utf8'),
+      };
+    }
+    const log = () => sh('wc -l < /var/log/hof-deploy.log').stdout;
+
+    try {
+      let result = step('hof-deploy status', {});
+      assert.equal(result.status, 0);
+      assert.equal(result.output, `current=${digests.fifth}\n`);
+
+      result = step('hof-deploy deploy', {
+        CURRENT: digests.fifth!,
+        DIGEST: digests.sixth!,
+        SHA: 'stand',
+      });
+      assert.equal(result.status, 0);
+      assert.match(result.summary, /- Результат: обновлено\n/);
+      assert.equal(
+        ok("docker inspect --format '{{.Config.Image}} {{.State.Health.Status}}' hof-hof-1"),
+        `${REGISTRY}@${digests.sixth} healthy`,
+      );
+      untouched();
+
+      // The release shown before the approval no longer runs: hof-deploy is not called.
+      const hof = identity('hof-hof-1');
+      let lines = log();
+      result = step('hof-deploy deploy', {
+        CURRENT: digests.fifth!,
+        DIGEST: digests.fifth!,
+        SHA: 'stand',
+      });
+      assert.equal(result.status, 1);
+      assert.match(result.summary, /не запускалось: status не выполнен или выпуск сменился/);
+      assert.equal(log(), lines);
+      assert.equal(identity('hof-hof-1'), hof);
+
+      // hof-deploy refuses: the database has a migration the image does not know.
+      result = step('hof-deploy deploy', {
+        CURRENT: digests.sixth!,
+        DIGEST: digests.later!,
+        SHA: 'stand',
+      });
+      assert.equal(result.status, 1);
+      assert.match(
+        result.stdout,
+        /ОТКАЗ: в базе есть миграции, которых нет в образе: saeckel\/005_stand\.sql/,
+      );
+      assert.match(result.summary, /- Результат: отказ до остановки: Hof не останавливался/);
+      assert.ok(!result.summary.includes('Результат: обновлено'));
+      assert.equal(identity('hof-hof-1'), hof);
+
+      // A host key that is not the server's: SSH stops before anything runs.
+      const stranger = {
+        KNOWN_HOSTS: `[127.0.0.1]:2222 ${ok('cat /tmp/stand-other-host-key.pub')}`,
+      };
+      lines = log();
+      result = step('hof-deploy status', stranger);
+      assert.equal(result.status, 1);
+      assert.match(result.stdout, /status не выполнен, код 255/);
+      result = step('hof-deploy deploy', {
+        ...stranger,
+        CURRENT: digests.sixth!,
+        DIGEST: digests.fifth!,
+        SHA: 'stand',
+      });
+      assert.equal(result.status, 1);
+      assert.match(result.summary, /не запускалось/);
+      assert.equal(log(), lines);
+      assert.equal(identity('hof-hof-1'), hof);
+      untouched();
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
   });
 });
