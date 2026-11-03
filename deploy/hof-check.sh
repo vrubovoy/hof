@@ -105,10 +105,11 @@ if ids=$(run_docker ps --all --quiet \
 fi
 containers=''
 if $docker_ok && [ -n "$ids" ]; then
-  # The IDs are hex strings separated by line breaks.
+  # The IDs are hex strings separated by line breaks. Health is read with index: a container
+  # without a healthcheck has no such key, and Docker 29 fails the whole call on .State.Health.
   # shellcheck disable=SC2086
   if ! containers=$(run_docker inspect --format \
-    '{{index .Config.Labels "com.docker.compose.service"}}|{{.Id}}|{{.State.Status}}|{{.RestartCount}}|{{.State.OOMKilled}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.State.StartedAt}}|{{.HostConfig.LogConfig.Type}}|{{index .HostConfig.LogConfig.Config "max-size"}}|{{index .HostConfig.LogConfig.Config "max-file"}}' \
+    '{{index .Config.Labels "com.docker.compose.service"}}|{{.Id}}|{{.State.Status}}|{{.RestartCount}}|{{.State.OOMKilled}}|{{with index .State "Health"}}{{.Status}}{{else}}none{{end}}|{{.State.StartedAt}}|{{.HostConfig.LogConfig.Type}}|{{index .HostConfig.LogConfig.Config "max-size"}}|{{index .HostConfig.LogConfig.Config "max-file"}}' \
     $ids 2>/dev/null); then
     docker_ok=false
   fi
