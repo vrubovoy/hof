@@ -5,7 +5,8 @@
 // `inspect` answer from a table of made-up containers, Hof and those of another project among
 // them, and `exec` runs the command right in that container. A stand-in on port 3000 answers the
 // request of the healthcheck. free, df, journalctl and systemctl are stubs too. Real containers on
-// a real Docker are checked in CI.
+// a real Docker are checked in CI; the template of `docker inspect` of the script also runs here on
+// the Docker of this machine, against containers with and without a healthcheck.
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -430,11 +431,16 @@ describe('server: hof-check', () => {
   });
 
   test('a container without a healthcheck, made before M11.5: a clear transitional state', () => {
+    // As on the server: postgres with a healthcheck, hof and nginx without one.
     containers({ hof: { health: 'none' } });
 
     standIn('answer');
     let { status, lines } = check();
     assert.equal(status, 1, lines.join('\n'));
+    assert.ok(!lines.some((line) => line.includes('Docker не ответил')), lines.join('\n'));
+    for (const service of ['postgres', 'hof', 'nginx']) {
+      assert.equal(finding(lines, `контейнер ${service}:`), `OK   контейнер ${service}: running`);
+    }
     assert.equal(
       finding(lines, 'живость hof:'),
       'WARN живость hof: процесс отвечает по HTTP; healthcheck в контейнере не настроен, контейнер создан до M11.5',
@@ -677,6 +683,14 @@ describe('server: hof-check only reads', () => {
     assert.match(execs[2]!, /^-e PGCONNECT_TIMEOUT=5 "\$\{id\[postgres\]\}" psql .* -c 'SELECT 1'/);
   });
 
+  // A container without a healthcheck has no State.Health: Docker 29 fails the whole `inspect` on a
+  // direct .State.Health, whatever the Docker of CI does.
+  test('the health of a container is read only through index', () => {
+    assert.ok(!/\.State\.Health/.test(source));
+    assert.equal(all(/index \.State "Health"/g).length, 1);
+    assert.ok(source.includes('{{with index .State "Health"}}{{.Status}}{{else}}none{{end}}'));
+  });
+
   // As commands, not as words of a message.
   test('systemctl and journalctl only read', () => {
     assert.deepEqual(all(/(?:^|\$\(|\|)\s*systemctl ([^\n)]*)/gm), [
@@ -730,5 +744,128 @@ describe('server: hof-check only reads', () => {
     for (const word of ['prune', 'restart', 'start', 'stop', 'vacuum', 'rotate', 'flush']) {
       assert.ok(!new RegExp(`\\b${word}\\b`).test(code), word);
     }
+  });
+});
+
+describe('server: the template of docker inspect of hof-check on a real Docker', () => {
+  const FORMAT = /run_docker inspect --format \\\n\s*'([^']*)'/.exec(
+    readFileSync(SCRIPT, 'utf8'),
+  )![1]!;
+  const PROJECT = `hof-check-template-${process.pid}`;
+  // Real containers of a made-up project: the healthcheck as on the server, or none.
+  const CONTAINERS = {
+    postgres: ['--health-cmd', 'true', '--health-interval', '1s', '--health-start-period', '0s'],
+    hof: ['--no-healthcheck'],
+    nginx: ['--no-healthcheck', '--log-opt', 'max-size=10m', '--log-opt', 'max-file=3'],
+    sick: ['--health-cmd', 'false', '--health-interval', '1s', '--health-retries', '1'],
+  };
+  const ids: Record<string, string> = {};
+
+  function docker(...args: string[]) {
+    return spawnSync('docker', args, { encoding: 'utf8' });
+  }
+
+  function inspect(...names: string[]) {
+    return docker('inspect', '--format', FORMAT, ...names.map((name) => ids[name] ?? name));
+  }
+
+  before(async () => {
+    for (const [service, options] of Object.entries(CONTAINERS)) {
+      const result = docker(
+        'run',
+        '-d',
+        '--name',
+        `${PROJECT}-${service}`,
+        '--label',
+        `com.docker.compose.project=${PROJECT}`,
+        '--label',
+        `com.docker.compose.service=${service}`,
+        '--label',
+        'com.docker.compose.oneoff=False',
+        ...options,
+        '--entrypoint',
+        'sleep',
+        'postgres:18.6-trixie',
+        'infinity',
+      );
+      assert.equal(result.status, 0, result.stderr);
+      ids[service] = result.stdout.trim();
+    }
+    // The healthchecks settle within seconds.
+    for (let i = 0; i < 60; i++) {
+      const health = docker(
+        'inspect',
+        '--format',
+        '{{json .State.Health}}',
+        ids.postgres!,
+        ids.sick!,
+      );
+      if (/"Status":"healthy"[\s\S]*"Status":"unhealthy"/.test(health.stdout)) return;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    assert.fail('the healthchecks did not settle');
+  });
+
+  after(() => {
+    docker('rm', '-f', ...Object.keys(CONTAINERS).map((service) => `${PROJECT}-${service}`));
+  });
+
+  // The columns the script reads: service, ID, state, restarts, OOM, health, start, logs.
+  function rows(output: string) {
+    return output
+      .trim()
+      .split('\n')
+      .map((line) => line.split('|'))
+      .map(([service, id, state, restarts, oom, health, , logType, maxSize, maxFile]) => ({
+        service,
+        id,
+        state,
+        restarts,
+        oom,
+        health,
+        logs: `${logType} ${maxSize} ${maxFile}`,
+      }));
+  }
+
+  for (const [service, health] of [
+    ['hof', 'none'],
+    ['postgres', 'healthy'],
+    ['sick', 'unhealthy'],
+  ] as const) {
+    test(`one container, ${health}: the call succeeds`, () => {
+      const result = inspect(service);
+      assert.equal(result.status, 0, result.stderr);
+      assert.deepEqual(rows(result.stdout), [
+        {
+          service,
+          id: ids[service],
+          state: 'running',
+          restarts: '0',
+          oom: 'false',
+          health,
+          logs: 'json-file <no value> <no value>',
+        },
+      ]);
+    });
+  }
+
+  test('the set of the server in one call: postgres with a healthcheck, hof and nginx without', () => {
+    const result = inspect('postgres', 'hof', 'nginx', 'sick');
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(
+      rows(result.stdout).map((row) => `${row.service} ${row.health} ${row.logs}`),
+      [
+        'postgres healthy json-file <no value> <no value>',
+        'hof none json-file <no value> <no value>',
+        'nginx none json-file 10m 3',
+        'sick unhealthy json-file <no value> <no value>',
+      ],
+    );
+  });
+
+  test('a real error of Docker still fails the call, so the script reports FAIL', () => {
+    const result = inspect('postgres', 'hof', `${PROJECT}-missing`);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /no such object/i);
   });
 });
