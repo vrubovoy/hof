@@ -272,17 +272,38 @@ snapshot=${copy#hof-predeploy-}
 snapshot=${snapshot%.dump}
 say "Копия: $copy, снимок $snapshot"
 
-hof=$(container hof | head -n 1)
+# Stops every container of the service hof. Success only when Docker answered and shows each of
+# them stopped: a Hof that may still run must not see the switch or the migrations.
+stop_hof() {
+  local ids id result=0
+  ids=$(container hof) || return 1
+  for id in $ids; do
+    docker stop "$id" >/dev/null || result=1
+    case $(docker inspect --format '{{.State.Status}}' "$id" 2>/dev/null) in
+    exited | created) ;;
+    *) result=1 ;;
+    esac
+  done
+  return "$result"
+}
+
 stopped=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-if [ -n "$hof" ]; then docker stop "$hof" >/dev/null; fi
+if ! stop_hof; then
+  say 'СБОЙ: остановка Hof не подтверждена; выпуск не переключён, миграции не запускались'
+  say "итог: сбой, нужно ручное вмешательство: состояние Hof — docker compose ps в $DIR; конфигурация не менялась; копия $copy"
+  exit 1
+fi
 say "Hof остановлен $stopped: записи после снимка $snapshot есть в базе, но не в копии"
 
 # From here on a failure stops Hof and reports the migrations; it restores nothing.
 failed() {
-  local after state hof_now error
+  local after state hof_now error halted=true
   say "СБОЙ: $1"
+  if ! stop_hof; then
+    halted=false
+    say 'ВНИМАНИЕ: остановка Hof не подтверждена, он может перезапускаться и повторять миграции'
+  fi
   hof_now=$(container hof | head -n 1)
-  if [ -n "$hof_now" ]; then docker stop "$hof_now" >/dev/null; fi
   error=$(docker logs --since "$stopped" "${hof_now:-none}" 2>&1 | grep -o 'migration [^ ]* failed' | tail -n 1)
   if after=$(applied "$postgres") && [ -n "$after" ]; then
     state=$(classify "$before" "$after" "$image_set")
@@ -310,7 +331,11 @@ failed() {
     say 'Состояние: не распознано, дальнейшие действия только вручную'
     ;;
   esac
-  say "итог: сбой, Hof остановлен, данные не трогались; копия $copy"
+  if $halted; then
+    say "итог: сбой, Hof остановлен, данные не трогались; копия $copy"
+  else
+    say "итог: сбой, остановка Hof не подтверждена, нужно ручное вмешательство: docker compose ps в $DIR; данные не трогались; копия $copy"
+  fi
   exit 1
 }
 

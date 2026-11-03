@@ -99,6 +99,10 @@ describe('hof-deploy on the stand', { skip: !STAND && 'only on the stand of CI' 
       '004_stand.sql': 'CREATE TABLE stand_fourth (id integer);\n',
     });
     variant('later', `FROM ${REGISTRY}:fixed\nLABEL hof.stand=later\n`);
+    variant('fifth', `FROM ${REGISTRY}:later\nCOPY 005_stand.sql /app/src/saeckel/migrations/\n`, {
+      '005_stand.sql': 'CREATE TABLE stand_fifth (id integer);\n',
+    });
+    variant('fifth-broken', `FROM ${REGISTRY}:fifth\nCMD ["node", "-e", "process.exit(1)"]\n`);
     // A release whose PostgreSQL would be recreated: its healthcheck is checked every 3 s.
     const compose = ok('cat compose.yaml').replace('      interval: 2s\n', '      interval: 3s\n');
     assert.ok(compose.includes('interval: 3s'));
@@ -475,6 +479,92 @@ describe('hof-deploy on the stand', { skip: !STAND && 'only on the stand of CI' 
       ok("docker inspect --format '{{.Config.Image}}' hof-hof-1"),
       `${REGISTRY}@${digests.later}`,
     );
+    untouched();
+  });
+
+  // docker stop that fails: a stub before /usr/bin/docker in the PATH of hof-deploy. It fails for
+  // the containers of the image named in /tmp/stand-stop-fails, or for all when the file is empty.
+  function stopFails(image: string) {
+    ok(`cat > /usr/local/bin/docker <<'STUB'
+#!/bin/bash
+if [ "$1" = stop ] && [ -f /tmp/stand-stop-fails ]; then
+  want=$(cat /tmp/stand-stop-fails)
+  image=$(/usr/bin/docker inspect --format '{{.Config.Image}}' "$2" 2>/dev/null)
+  if [ -z "$want" ] || [ "\${image#*@}" = "$want" ]; then
+    echo 'stand: docker stop fails' >&2
+    exit 1
+  fi
+fi
+exec /usr/bin/docker "$@"
+STUB
+        chmod 755 /usr/local/bin/docker
+        printf '%s' '${image}' > /tmp/stand-stop-fails`);
+  }
+
+  function stopWorks() {
+    ok('rm -f /usr/local/bin/docker /tmp/stand-stop-fails');
+  }
+
+  test('docker stop fails after the copy: the release stays, no migration runs', () => {
+    const hof = identity('hof-hof-1');
+    const current = release();
+    stopFails('');
+    let result: Result;
+    try {
+      result = deploy(digests.fifth!);
+    } finally {
+      stopWorks();
+    }
+    assert.equal(result.status, 1);
+    const copy = /Копия: (hof-predeploy-\S+\.dump)/.exec(result.stdout)![1]!;
+    assert.ok(copies().split('\n').includes(copy));
+    assert.match(
+      result.stdout,
+      /СБОЙ: остановка Hof не подтверждена; выпуск не переключён, миграции не запускались/,
+    );
+    assert.match(result.stdout, /итог: сбой, нужно ручное вмешательство/);
+    assert.ok(!result.stdout.includes('Hof остановлен'));
+    assert.equal(release(), current);
+    assert.equal(identity('hof-hof-1'), hof);
+    assert.equal(ok("docker inspect --format '{{.State.Status}}' hof-hof-1"), 'running');
+    assert.equal(psql("SELECT to_regclass('saeckel.stand_fifth') IS NULL"), 't');
+    assert.equal(
+      psql("SELECT count(*) FROM saeckel.schema_migrations WHERE name = '005_stand.sql'"),
+      '0',
+    );
+    untouched();
+
+    // The same update with docker stop working.
+    result = deploy(digests.fifth!);
+    assert.equal(result.status, 0);
+    assert.equal(psql("SELECT to_regclass('saeckel.stand_fifth') IS NOT NULL"), 't');
+    untouched();
+  });
+
+  test('a failed start whose Hof does not stop: the log does not call it stopped', () => {
+    stopFails(digests['fifth-broken']!);
+    let result: Result;
+    let state: string;
+    try {
+      result = deploy(digests['fifth-broken']!);
+      state = ok("docker inspect --format '{{.State.Status}}' hof-hof-1");
+    } finally {
+      stopWorks();
+      sh('docker stop hof-hof-1');
+    }
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /Hof остановлен .*: записи после снимка/);
+    assert.match(result.stdout, /ВНИМАНИЕ: остановка Hof не подтверждена/);
+    assert.match(
+      result.stdout,
+      /итог: сбой, остановка Hof не подтверждена, нужно ручное вмешательство/,
+    );
+    assert.ok(!result.stdout.includes('итог: сбой, Hof остановлен'));
+    assert.notEqual(state, 'exited');
+    untouched();
+
+    assert.equal(deploy(digests.fifth!).status, 0);
+    assert.equal(ok("docker inspect --format '{{.State.Health.Status}}' hof-hof-1"), 'healthy');
     untouched();
   });
 });

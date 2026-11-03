@@ -139,7 +139,7 @@ describe('hof-deploy: only allowed operations', () => {
     assert.deepEqual(all(/docker compose up ([^;\n]*)/g), [
       '-d --no-build --no-deps --pull never --wait --wait-timeout 120 hof nginx',
     ]);
-    assert.deepEqual(all(/docker stop ([^ >]*)/g), ['"$hof"', '"$hof_now"']);
+    assert.deepEqual(all(/docker stop ([^ >]*)/g), ['"$id"']);
     assert.deepEqual(all(/docker rm ([^ >]*)/g), ['"$extract"', '"$extract"']);
     assert.deepEqual(all(/docker image rm ([^ >]*)/g), ['"$image@$old_digest"']);
     assert.deepEqual(all(/rm -rf -- ([^\s;]*)/g), ['"$stage"', 'releases/.stage.*', '"$dir"']);
@@ -152,7 +152,7 @@ describe('hof-deploy: only allowed operations', () => {
 
     const order = [
       'hof-backup --pre-deploy --lock-held',
-      'docker stop "$hof"',
+      'if ! stop_hof; then',
       'mv -T .release.new release',
       'docker compose up',
     ].map((text) => code.indexOf(text));
