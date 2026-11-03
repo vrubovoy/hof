@@ -232,7 +232,8 @@ describe('hof-deploy-ssh', () => {
   });
 
   after(() => {
-    spawnSync('docker', ['rm', '-f', NAME]);
+    // -v: the anonymous volume the image declares goes with the container.
+    spawnSync('docker', ['rm', '-fv', NAME]);
   });
 
   test('status and deploy go to sudo, with nothing else', () => {

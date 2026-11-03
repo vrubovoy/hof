@@ -138,7 +138,8 @@ esac
   });
 
   after(() => {
-    docker('rm', '-f', NAME);
+    // -v: the anonymous volume the image declares goes with the container.
+    docker('rm', '-fv', NAME);
   });
 
   beforeEach(() => {

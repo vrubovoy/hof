@@ -370,7 +370,7 @@ exec "${real}" "$@"
 
   // The data really stayed; the commands of the documentation remove them, and only them.
   assert.ok(drillResources().includes(`${project}_pgdata`));
-  docker(['rm', '-f', `${project}-hof-1`, `${project}-postgres-1`]);
+  docker(['rm', '-fv', `${project}-hof-1`, `${project}-postgres-1`]);
   docker(['network', 'rm', `${project}_default`]);
   docker(['volume', 'rm', `${project}_pgdata`]);
   docker(['image', 'rm', `${project}-hof`]);

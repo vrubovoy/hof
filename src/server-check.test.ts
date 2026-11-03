@@ -270,7 +270,8 @@ describe('server: hof-check', () => {
   });
 
   after(() => {
-    docker('rm', '-f', NAME);
+    // -v: the anonymous volume the image declares goes with the container.
+    docker('rm', '-fv', NAME);
   });
 
   beforeEach(() => {
@@ -807,7 +808,7 @@ describe('server: the template of docker inspect of hof-check on a real Docker',
   });
 
   after(() => {
-    docker('rm', '-f', ...Object.keys(CONTAINERS).map((service) => `${PROJECT}-${service}`));
+    docker('rm', '-fv', ...Object.keys(CONTAINERS).map((service) => `${PROJECT}-${service}`));
   });
 
   // The columns the script reads: service, ID, state, restarts, OOM, health, start, logs.
