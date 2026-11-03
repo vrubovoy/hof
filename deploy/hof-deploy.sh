@@ -13,8 +13,14 @@
 # changed: only hof and nginx are recreated, with --no-deps. On a failure Hof is stopped and the
 # command tells what happened to the migrations; it restores nothing.
 #
+# The update runs as the transient unit hof-deploy-run of systemd, apart from the SSH session or
+# terminal that asked for it: when they close, it still goes on to its summary in the log. The
+# caller shows the lines of the update from the log and returns its exit code; `status` tells
+# whether it still runs and how the last one ended.
+#
 # Exit code: 0 updated; 1 refused or failed, the message says what changed; 2 a wrong argument;
-# 3 the lock is taken, nothing changed.
+# 3 nothing began, nothing changed: the lock is taken, another update runs or systemd did not start
+# this one.
 
 # Nothing of the caller's environment: a fixed PATH, and no COMPOSE_*, DOCKER_* or BASH_ENV.
 if [ "${HOF_DEPLOY_CLEAN:-}" != 1 ]; then
@@ -30,6 +36,7 @@ VOLUME=hof_pgdata
 IMAGE_FILE=/etc/hof-deploy/image
 LOCK=/run/lock/hof-ops.lock
 LOG=/var/log/hof-deploy.log
+UNIT=hof-deploy-run
 HOOK_FLAG=/run/hof-certbot-nginx-$PROJECT
 # The 1.5 GiB that hof-backup keeps for its copy, and room for the new image, about 300 MB.
 MIN_FREE_MB=2048
@@ -98,8 +105,21 @@ current_digest() {
   fi
 }
 
+# Whether an update runs now: its unit is there and has not ended.
+updating() {
+  case $(systemctl is-active "$UNIT" 2>/dev/null) in
+  active | activating | deactivating | reloading | refreshing) return 0 ;;
+  *) return 1 ;;
+  esac
+}
+
 if [ "$action" = status ]; then
   echo "Выпуск: $(current_digest | grep . || echo 'образ собран из Git, hof-deploy ещё не запускался')"
+  if updating; then
+    echo "Обновление: идёт; ход — journalctl -u $UNIT, итог появится ниже"
+  else
+    echo 'Обновление: не идёт'
+  fi
   for service in postgres hof nginx; do
     id=$(container "$service" | head -n 1)
     if [ -z "$id" ]; then
@@ -109,19 +129,48 @@ if [ "$action" = status ]; then
     fi
   done
   echo 'Последнее обновление:'
-  if [ -f "$LOG" ]; then
-    awk '/^=== /{block=""} {block = block $0 "\n"} END {printf "%s", block}' "$LOG"
-  else
+  last=$(awk '/^=== /{block=""} {block = block $0 "\n"} END {printf "%s", block}' "$LOG" 2>/dev/null)
+  if [ -z "$last" ]; then
     echo 'не было'
+  else
+    printf '%s\n' "$last"
+    if ! updating && ! grep -q '^итог: ' <<<"$last"; then
+      echo "Итога нет: обновление прервано, состояние только вручную — journalctl -u $UNIT, docker compose ps в $DIR"
+    fi
   fi
   exit 0
 fi
 
-exec 9>>"$LOCK"
-if ! flock --wait 60 9; then
-  echo "hof-deploy: блокировка занята дольше 60 с (последняя запись в ней: $(cat "$LOCK")); ничего не менялось" >&2
-  exit 3
+# The caller: it starts the unit, shows the lines of this update from the log and waits for its
+# end. If the caller goes away, the unit goes on. The unit takes the lock itself, for the whole
+# update; its name lets one update run at a time.
+if [[ $(cat /proc/self/cgroup) != *"/$UNIT.service" ]]; then
+  if updating; then
+    echo 'hof-deploy: обновление уже идёт, его ход и итог — hof-deploy status; ничего не менялось' >&2
+    exit 3
+  fi
+  touch "$LOG" && chmod 640 "$LOG"
+  from=$(($(stat -c %s "$LOG") + 1))
+  systemd-run --unit="$UNIT" --description="hof-deploy deploy $digest" --collect --wait --quiet \
+    "$(readlink -f "$0")" deploy "$digest" &
+  run=$!
+  tail --bytes=+"$from" --follow --pid="$run" "$LOG" &
+  wait "$run"
+  code=$?
+  wait
+  if [ "$code" = 3 ]; then
+    echo "hof-deploy: блокировка занята дольше 60 с (последняя запись в ней: $(cat "$LOCK")); ничего не менялось" >&2
+  elif ! tail --bytes=+"$from" "$LOG" | grep -q '^=== '; then
+    # No header of this update in the log: it never began.
+    echo 'hof-deploy: обновление не запущено, причина — в сообщении systemd-run выше; ничего не менялось' >&2
+    code=3
+  fi
+  exit "$code"
 fi
+
+# From here on: the update itself, in the unit.
+exec 9>>"$LOCK"
+if ! flock --wait 60 9; then exit 3; fi
 : >"$LOCK"
 echo "hof-deploy $digest, pid $$, с $(date -u +%Y-%m-%dT%H:%M:%SZ)" >&9
 
