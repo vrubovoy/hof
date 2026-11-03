@@ -11,6 +11,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -37,9 +38,16 @@ function ok(script: string): string {
   return result.stdout.trim();
 }
 
+// The output of the commands under test, for the log of CI. Lines like ::error:: in it are what those
+// commands print, not commands to the runner: workflow commands are stopped around it.
+function print(output: string) {
+  const token = randomBytes(16).toString('hex');
+  console.log(`::stop-commands::${token}\n${output}\n::${token}::`);
+}
+
 function deploy(digest: string): Result {
   const result = sh(`/usr/local/sbin/hof-deploy deploy ${digest}`);
-  console.log(result.stdout + result.stderr);
+  print(result.stdout + result.stderr);
   return result;
 }
 
@@ -489,7 +497,7 @@ describe('hof-deploy on the stand', { skip: !STAND && 'only on the stand of CI' 
 
     // A whole update through the key.
     const result = ssh(['hof-deploy@127.0.0.1', `deploy ${digests.later}`]);
-    console.log(result.stdout + result.stderr);
+    print(result.stdout + result.stderr);
     assert.equal(result.status, 0);
     assert.equal(
       ok("docker inspect --format '{{.Config.Image}}' hof-hof-1"),
@@ -615,7 +623,7 @@ STUB
           },
         },
       );
-      console.log(result.stdout + result.stderr);
+      print(result.stdout + result.stderr);
       return {
         ...result,
         output: readFileSync(join(temp, 'output'), 'utf8'),
@@ -784,7 +792,7 @@ STUB
       // client of the step loses the connection as on a network failure.
       assert.equal(sh('pkill -KILL -f "[s]shd(-session)?: hof-deploy"').status, 0);
       assert.equal(await step.exit, 1);
-      console.log(step.output());
+      print(step.output());
       const summary = readFileSync(join(temp, 'summary'), 'utf8');
       assert.match(summary, /- Результат: результат неизвестен: соединение SSH потеряно\n/);
       assert.match(summary, /ничего не повторять, не откатывать и не восстанавливать/);
@@ -810,7 +818,7 @@ STUB
 
     // After a new connection: the summary of the update.
     const status = remote('status').stdout;
-    console.log(status);
+    print(status);
     assert.match(status, /^Обновление: не идёт$/m);
     assert.ok(status.includes(`итог: обновлено ${digests.sixth} -> ${digests.seventh};`), status);
     assert.equal(
@@ -848,7 +856,7 @@ STUB
     }
 
     const status = remote('status').stdout;
-    console.log(status);
+    print(status);
     assert.ok(status.includes(`итог: обновлено ${digests.seventh} -> ${digests.eighth};`), status);
     assert.equal(
       ok("docker inspect --format '{{.Config.Image}} {{.State.Health.Status}}' hof-hof-1"),
@@ -874,7 +882,7 @@ STUB
     }
 
     const status = remote('status').stdout;
-    console.log(status);
+    print(status);
     assert.match(status, /^Обновление: не идёт$/m);
     assert.match(status, /Состояние: миграции не применялись/);
     assert.ok(

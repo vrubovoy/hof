@@ -151,6 +151,16 @@ describe('deploy.yml: by hand, with approval, without rights', () => {
   });
 });
 
+// The stand runs these steps and prints what they print, ::error:: lines included. In the log of CI
+// such a line would become an annotation of the stand, so the stand stops workflow commands first.
+test('the stand prints the output of the steps with workflow commands stopped', () => {
+  const stand = readFileSync(join(ROOT, 'src', 'deploy-stand.test.ts'), 'utf8');
+  assert.deepEqual(
+    [...stand.matchAll(/console\.log\((.*)\);/g)].map((match) => match[1]),
+    ['`::stop-commands::${token}\\n${output}\\n::${token}::`', '`downtime: ${downtime} s`'],
+  );
+});
+
 describe('deploy.yml: the steps that reach the server', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hof-deploy-workflow-'));
   const stub = join(dir, 'stub');
