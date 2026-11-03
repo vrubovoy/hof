@@ -6,8 +6,8 @@
 // self-signed certificate, the real hof-backup, made-up records, and containers of another project.
 // The images of the releases go to a local registry: the image of this repository and images made
 // from it that fail at start, apply a part of two migrations, fix the second one or change the
-// service postgres. The last test runs the steps of .github/workflows/deploy.yml that reach the
-// server, through the same SSH key.
+// service postgres. The last tests run the steps of .github/workflows/deploy.yml that reach the
+// server, through the same SSH key, and break that connection while an update runs.
 
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
@@ -117,6 +117,8 @@ describe('hof-deploy on the stand', { skip: !STAND && 'only on the stand of CI' 
     });
     variant('fifth-broken', `FROM ${REGISTRY}:fifth\nCMD ["node", "-e", "process.exit(1)"]\n`);
     variant('sixth', `FROM ${REGISTRY}:fifth\nLABEL hof.stand=sixth\n`);
+    variant('seventh', `FROM ${REGISTRY}:sixth\nLABEL hof.stand=seventh\n`);
+    variant('eighth', `FROM ${REGISTRY}:seventh\nLABEL hof.stand=eighth\n`);
     // A release whose PostgreSQL would be recreated: its healthcheck is checked every 3 s.
     const compose = ok('cat compose.yaml').replace('      interval: 2s\n', '      interval: 3s\n');
     assert.ok(compose.includes('interval: 3s'));
@@ -649,7 +651,7 @@ STUB
         SHA: 'stand',
       });
       assert.equal(result.status, 1);
-      assert.match(result.summary, /не запускалось: status не выполнен или выпуск сменился/);
+      assert.match(result.summary, /не запускалось: .*выпуск сменился после проверки/);
       assert.equal(log(), lines);
       assert.equal(identity('hof-hof-1'), hof);
 
@@ -690,5 +692,202 @@ STUB
     } finally {
       rmSync(temp, { recursive: true, force: true });
     }
+  });
+
+  // The connection goes away while an update runs. docker before /usr/bin/docker holds the update
+  // at a point — before `docker pull`, the image, or `docker compose up`, the start after the copy,
+  // the stop and the switch — until /tmp/stand-gate is removed; meanwhile the SSH client is killed.
+  function gate(prefix: string) {
+    ok(`cat > /usr/local/bin/docker <<'STUB'
+#!/bin/bash
+if [ -f /tmp/stand-gate ] && [[ "$*" == "$(cat /tmp/stand-gate)"* ]]; then
+  touch /tmp/stand-gate-reached
+  while [ -f /tmp/stand-gate ]; do sleep 0.2; done
+fi
+exec /usr/bin/docker "$@"
+STUB
+        chmod 755 /usr/local/bin/docker
+        rm -f /tmp/stand-gate-reached
+        printf '%s' '${prefix}' > /tmp/stand-gate`);
+  }
+
+  function ungate() {
+    ok('rm -f /usr/local/bin/docker /tmp/stand-gate /tmp/stand-gate-reached');
+  }
+
+  async function until(what: string, check: () => boolean, seconds: number) {
+    for (let i = 0; i < seconds * 2; i++) {
+      if (check()) return;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    assert.fail(`${what}: not within ${seconds} s`);
+  }
+
+  const reached = () => sh('test -f /tmp/stand-gate-reached').status === 0;
+  const unit = () => sh('systemctl is-active hof-deploy-run').stdout.trim();
+  const ended = () => !['active', 'activating', 'deactivating'].includes(unit());
+
+  const SSH = [
+    '-p',
+    '2222',
+    '-i',
+    '/tmp/stand-key',
+    '-o',
+    'BatchMode=yes',
+    '-o',
+    'StrictHostKeyChecking=no',
+    '-o',
+    'UserKnownHostsFile=/dev/null',
+    'hof-deploy@127.0.0.1',
+  ];
+  const remote = (request: string) =>
+    spawnSync('ssh', [...SSH, request], { encoding: 'utf8', timeout: 600_000 });
+
+  // A process with its output collected and its exit awaited.
+  function started(command: string, args: string[], env?: NodeJS.ProcessEnv) {
+    const child = spawn(command, args, { env });
+    let output = '';
+    child.stdout.on('data', (data: Buffer) => (output += data.toString()));
+    child.stderr.on('data', (data: Buffer) => (output += data.toString()));
+    const exit = new Promise<number | null>((resolve) => child.on('exit', resolve));
+    return { child, exit, output: () => output };
+  }
+
+  test('deploy.yml loses SSH before Hof stops: the update goes on alone, a second is refused', async () => {
+    const temp = mkdtempSync(join(tmpdir(), 'hof-stand-workflow-'));
+    const hof = identity('hof-hof-1');
+    const records = psql('SELECT count(*) FROM saeckel.operations');
+    gate('pull --quiet');
+    try {
+      for (const file of ['output', 'summary']) writeFileSync(join(temp, file), '');
+      writeFileSync(join(temp, 'step.sh'), workflowStep('hof-deploy deploy'));
+      const step = started(
+        'bash',
+        ['--noprofile', '--norc', '-eo', 'pipefail', join(temp, 'step.sh')],
+        {
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
+          RUNNER_TEMP: temp,
+          GITHUB_OUTPUT: join(temp, 'output'),
+          GITHUB_STEP_SUMMARY: join(temp, 'summary'),
+          GITHUB_REF: 'refs/heads/main',
+          SSH_KEY: ok('cat /tmp/stand-key'),
+          KNOWN_HOSTS: `[127.0.0.1]:2222 ${ok('cat /etc/hof-stand-host-key.pub')}`,
+          HOST: '127.0.0.1:2222',
+          CURRENT: digests.sixth!,
+          DIGEST: digests.seventh!,
+          SHA: 'stand',
+        },
+      );
+      await until('the update reaches docker pull', reached, 180);
+      // The connection breaks on the side of the server: its sshd session is killed, and the ssh
+      // client of the step loses the connection as on a network failure.
+      assert.equal(sh('pkill -KILL -f "[s]shd(-session)?: hof-deploy"').status, 0);
+      assert.equal(await step.exit, 1);
+      console.log(step.output());
+      const summary = readFileSync(join(temp, 'summary'), 'utf8');
+      assert.match(summary, /- Результат: результат неизвестен: соединение SSH потеряно\n/);
+      assert.match(summary, /ничего не повторять, не откатывать и не восстанавливать/);
+
+      // The update goes on without the connection, holding the lock of the copies.
+      assert.equal(unit(), 'active');
+      assert.equal(sh('flock --nonblock /run/lock/hof-ops.lock true').status, 1);
+      const status = remote('status').stdout;
+      assert.match(status, /^Обновление: идёт;/m);
+      assert.ok(!status.includes('Итога нет'));
+      // A second update, through the key or by hand, does not begin.
+      const second = remote(`deploy ${digests.eighth}`);
+      assert.equal(second.status, 3);
+      assert.match(second.stderr, /обновление уже идёт.*ничего не менялось/);
+      assert.equal(sh(`/usr/local/sbin/hof-deploy deploy ${digests.eighth}`).status, 3);
+      assert.equal(identity('hof-hof-1'), hof);
+    } finally {
+      ok('rm -f /tmp/stand-gate');
+      rmSync(temp, { recursive: true, force: true });
+      await until('the update ends', ended, 300);
+      ungate();
+    }
+
+    // After a new connection: the summary of the update.
+    const status = remote('status').stdout;
+    console.log(status);
+    assert.match(status, /^Обновление: не идёт$/m);
+    assert.ok(status.includes(`итог: обновлено ${digests.sixth} -> ${digests.seventh};`), status);
+    assert.equal(
+      ok("docker inspect --format '{{.Config.Image}} {{.State.Health.Status}}' hof-hof-1"),
+      `${REGISTRY}@${digests.seventh} healthy`,
+    );
+    assert.equal(psql('SELECT count(*) FROM saeckel.operations'), records);
+    untouched();
+  });
+
+  test('SSH lost after the copy and the stop: the update goes on, Hof comes back with the records', async () => {
+    const id = psql(
+      "INSERT INTO saeckel.operations (user_id, kind, amount, currency, date, note) VALUES (1, 'income', 7, 'RUB', '2026-11-03', 'before the drop') RETURNING id",
+    );
+    const records = psql('SELECT count(*) FROM saeckel.operations');
+    gate('compose up');
+    try {
+      const client = started('ssh', [...SSH, `deploy ${digests.eighth}`]);
+      await until('the update reaches docker compose up', reached, 300);
+      assert.match(client.output(), /Копия: hof-predeploy-\S+\.dump/);
+      assert.match(client.output(), /Hof остановлен/);
+      assert.equal(ok("docker inspect --format '{{.State.Status}}' hof-hof-1"), 'exited');
+      // The client goes, as on Ctrl+C or a cancelled job.
+      client.child.kill('SIGKILL');
+      await client.exit;
+      // What a hangup from sshd would do to the caller on the server: the unit does not depend on it.
+      // The brackets keep pkill off the shell that runs it.
+      sh('pkill -TERM -f "[s]ystemd-run --unit=hof-deploy-run"; pkill -TERM -f "[t]ail --bytes=+"');
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      assert.equal(unit(), 'active');
+    } finally {
+      ok('rm -f /tmp/stand-gate');
+      await until('the update ends', ended, 300);
+      ungate();
+    }
+
+    const status = remote('status').stdout;
+    console.log(status);
+    assert.ok(status.includes(`итог: обновлено ${digests.seventh} -> ${digests.eighth};`), status);
+    assert.equal(
+      ok("docker inspect --format '{{.Config.Image}} {{.State.Health.Status}}' hof-hof-1"),
+      `${REGISTRY}@${digests.eighth} healthy`,
+    );
+    assert.equal(psql(`SELECT note FROM saeckel.operations WHERE id = ${id}`), 'before the drop');
+    assert.equal(psql('SELECT count(*) FROM saeckel.operations'), records);
+    untouched();
+  });
+
+  test('SSH lost, then the new release fails: the log, the data and the next step stay', async () => {
+    const records = psql('SELECT count(*) FROM saeckel.operations');
+    gate('compose up');
+    try {
+      const client = started('ssh', [...SSH, `deploy ${digests['fifth-broken']}`]);
+      await until('the update reaches docker compose up', reached, 300);
+      client.child.kill('SIGKILL');
+      await client.exit;
+    } finally {
+      ok('rm -f /tmp/stand-gate');
+      await until('the update ends', ended, 300);
+      ungate();
+    }
+
+    const status = remote('status').stdout;
+    console.log(status);
+    assert.match(status, /^Обновление: не идёт$/m);
+    assert.match(status, /Состояние: миграции не применялись/);
+    assert.ok(
+      status.includes(`Дальше: возврат прежнего кода командой hof-deploy deploy ${digests.eighth}`),
+    );
+    assert.match(status, /итог: сбой, Hof остановлен, данные не трогались/);
+    assert.equal(ok("docker inspect --format '{{.State.Status}}' hof-hof-1"), 'exited');
+    assert.equal(psql('SELECT count(*) FROM saeckel.operations'), records);
+    untouched();
+
+    // The next step it names.
+    assert.equal(deploy(digests.eighth!).status, 0);
+    assert.equal(ok("docker inspect --format '{{.State.Health.Status}}' hof-hof-1"), 'healthy');
+    untouched();
   });
 });

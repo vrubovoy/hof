@@ -137,6 +137,8 @@ describe('deploy.yml: by hand, with approval, without rights', () => {
       const ssh = script(name).match(/remote\(\) \{\n([\s\S]*?)\n\}/)![1]!;
       assert.equal(ssh, script('hof-deploy status').match(/remote\(\) \{\n([\s\S]*?)\n\}/)![1]!);
       assert.match(ssh, /"ssh:\/\/hof-deploy@\$HOST" "\$1"$/);
+      const read = /\n(read_status\(\) \{\n[\s\S]*?\n\})/;
+      assert.equal(script(name).match(read)![1], script('hof-deploy status').match(read)![1]);
       if (name === 'hof-deploy status') {
         assert.deepEqual(calls, ['status 2>&1 | tee "$out" || code=$?']);
       } else {
@@ -188,9 +190,11 @@ exit "$(cat "$STUB/$name.code" 2> /dev/null || echo 0)"
     answer(
       'status',
       0,
-      `Выпуск: ${NOW}\npostgres: running, healthy, запущен 2026-11-01T00:00:00Z\n`,
+      `Выпуск: ${NOW}\nОбновление: не идёт\npostgres: running, healthy, запущен 2026-11-01T00:00:00Z\n`,
     );
   });
+
+  const GIT = 'Выпуск: образ собран из Git, hof-deploy ещё не запускался\nОбновление: не идёт\n';
 
   function answer(command: string, code: number, out: string) {
     writeFileSync(join(stub, `${command}.out`), out);
@@ -201,6 +205,7 @@ exit "$(cat "$STUB/$name.code" 2> /dev/null || echo 0)"
     const file = join(stub, 'step.sh');
     writeFileSync(file, script(name));
     for (const output of ['output', 'summary']) writeFileSync(join(stub, output), '');
+    rmSync(join(stub, 'calls'), { force: true });
     const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', file], {
       encoding: 'utf8',
       env: {
@@ -253,13 +258,47 @@ exit "$(cat "$STUB/$name.code" 2> /dev/null || echo 0)"
     assert.deepEqual(result.left, []);
   });
 
-  test('status of a server still built from Git: no current digest', () => {
-    answer('status', 0, 'Выпуск: образ собран из Git, hof-deploy ещё не запускался\n');
+  test('status of a server still built from Git: said so, not guessed', () => {
+    answer('status', 0, GIT);
     const result = run('hof-deploy status');
     assert.equal(result.status, 0);
-    assert.equal(result.output, 'current=\n');
-    assert.ok(result.summary.includes('образ, собранный из Git'));
+    assert.equal(result.output, 'current=git\n');
+    assert.ok(result.summary.includes('- Работает: образ, собранный из Git'));
   });
+
+  test('status while an update runs: shown, not refused', () => {
+    answer('status', 0, `Выпуск: ${NOW}\nОбновление: идёт; ход — journalctl -u hof-deploy-run\n`);
+    const result = run('hof-deploy status');
+    assert.equal(result.status, 0);
+    assert.equal(result.output, `current=${NOW}\n`);
+    assert.ok(result.summary.includes('- Обновление: идёт'));
+  });
+
+  // An answer that is not the one of status: nothing is passed on, the deployment does not start.
+  for (const [title, out] of [
+    ['empty', ''],
+    ['no release', 'Обновление: не идёт\n'],
+    ['no line of the update: cut short', `Выпуск: ${NOW}\n`],
+    ['an empty release', 'Выпуск: \nОбновление: не идёт\n'],
+    ['a short digest', `Выпуск: sha256:${HEX('1').slice(1)}\nОбновление: не идёт\n`],
+    ['a cut message of Git', 'Выпуск: образ собран из Git\nОбновление: не идёт\n'],
+    ['two releases', `Выпуск: ${NOW}\nВыпуск: ${NEXT}\nОбновление: не идёт\n`],
+    ['two lines of the update', `Выпуск: ${NOW}\nОбновление: не идёт\nОбновление: идёт; x\n`],
+    ['an unknown state', `Выпуск: ${NOW}\nОбновление: может быть\n`],
+  ] as const) {
+    test(`an answer of status not recognised: ${title}`, () => {
+      answer('status', 0, out);
+      const result = run('hof-deploy status');
+      assert.equal(result.status, 1);
+      assert.match(result.stdout, /::error::Ответ hof-deploy status не распознан/);
+      assert.equal(result.output, '');
+
+      const deploying = deploy();
+      assert.equal(deploying.status, 1);
+      assert.equal(deploying.calls.length, 1, 'no deploy after status');
+      assert.match(deploying.summary, /не запускалось: status не выполнен или не распознан/);
+    });
+  }
 
   test('SSH fails: the job fails and says so', () => {
     answer('status', 255, 'Host key verification failed.\n');
@@ -328,11 +367,19 @@ exit "$(cat "$STUB/$name.code" 2> /dev/null || echo 0)"
   });
 
   test('deploy: the release changed after the check — nothing runs', () => {
-    answer('status', 0, `Выпуск: sha256:${HEX('3')}\n`);
+    answer('status', 0, `Выпуск: sha256:${HEX('3')}\nОбновление: не идёт\n`);
     const result = deploy();
     assert.equal(result.status, 1);
     assert.deepEqual(result.calls.map(shape), [`${OPTIONS} status`]);
-    assert.match(result.summary, /не запускалось: status не выполнен или выпуск сменился/);
+    assert.match(result.summary, /не запускалось: .*выпуск сменился после проверки/);
+  });
+
+  test('deploy: another update runs — nothing runs', () => {
+    answer('status', 0, `Выпуск: ${NOW}\nОбновление: идёт; ход — journalctl -u hof-deploy-run\n`);
+    const result = deploy();
+    assert.equal(result.status, 1);
+    assert.equal(result.calls.length, 1);
+    assert.match(result.summary, /не запускалось: .*идёт другое обновление/);
   });
 
   test('deploy: status fails — nothing runs', () => {
@@ -342,12 +389,16 @@ exit "$(cat "$STUB/$name.code" 2> /dev/null || echo 0)"
     assert.equal(result.calls.length, 1);
   });
 
-  test('deploy on a server built from Git: the empty current release matches', () => {
-    answer('status', 0, 'Выпуск: образ собран из Git, hof-deploy ещё не запускался\n');
+  test('deploy on a server built from Git: the release said so before and now', () => {
+    answer('status', 0, GIT);
     answer('deploy', 0, `итог: обновлено образ из Git -> ${NEXT}; копия x\n`);
-    const result = deploy({ CURRENT: '' });
+    const result = deploy({ CURRENT: 'git' });
     assert.equal(result.status, 0, result.stdout);
     assert.equal(result.calls.length, 2);
+    assert.ok(result.summary.includes('- Было: образ, собранный из Git'));
+
+    // A server that says Git now, while a digest was shown before: nothing runs.
+    assert.equal(deploy({ CURRENT: NOW }).calls.length, 1);
   });
 
   for (const [title, code, out, result, next] of [
@@ -355,15 +406,22 @@ exit "$(cat "$STUB/$name.code" 2> /dev/null || echo 0)"
       'exit 0 without the summary of the update',
       0,
       'Новых миграций нет\n',
-      'команда завершилась без итога обновления: это не успех',
-      'проверить сервер запуском status',
+      'результат неизвестен: код 0 без итога обновления',
+      'ничего не повторять, не откатывать и не восстанавливать',
     ],
     [
       'exit 0 with the summary of another digest',
       0,
       `итог: обновлено ${NOW} -> sha256:${HEX('4')}; копия x\n`,
-      'команда завершилась без итога обновления: это не успех',
-      'проверить сервер запуском status',
+      'результат неизвестен: код 0 без итога обновления',
+      'ничего не повторять, не откатывать и не восстанавливать',
+    ],
+    [
+      'exit 1 without a summary',
+      1,
+      'Загрузка ghcr.io/vrubovoy/hof@x\n',
+      'результат неизвестен: код 1 без итога обновления',
+      'дождаться «Обновление: не идёт» и прочитать итог',
     ],
     [
       'a refusal before the stop',
@@ -388,18 +446,25 @@ exit "$(cat "$STUB/$name.code" 2> /dev/null || echo 0)"
     ],
     ['the request refused', 2, '', 'сервер отклонил запрос', 'сервер ничего не менял'],
     [
-      'the lock is taken',
+      'nothing began',
       3,
-      'hof-deploy: блокировка занята дольше 60 с\n',
-      'блокировка занята: идёт копия или другое обновление',
-      'сервер ничего не менял; запустить снова позже',
+      'hof-deploy: обновление уже идёт, его ход и итог — hof-deploy status; ничего не менялось\n',
+      'обновление не начиналось: занята блокировка, идёт другое обновление или systemd его не запустил',
+      'сервер ничего не менял',
     ],
     [
       'SSH breaks off',
       255,
       'Загрузка ghcr.io/vrubovoy/hof@x\n',
-      'SSH не удался: соединение не установлено или прервалось',
-      'сначала status, ничего не повторять до выяснения',
+      'результат неизвестен: соединение SSH потеряно',
+      'на сервере обновление могло начаться и идёт без SSH',
+    ],
+    [
+      'SSH breaks off after the summary',
+      255,
+      `итог: обновлено ${NOW} -> ${NEXT}; копия x\n`,
+      'результат неизвестен: соединение SSH потеряно',
+      'ничего не повторять, не откатывать и не восстанавливать',
     ],
   ] as const) {
     test(`deploy: ${title} — the job fails and names the next step`, () => {
@@ -610,7 +675,7 @@ esac
   });
 
   test('a server built from Git, or a running image outside main: the migrations are left to hof-deploy', () => {
-    let result = run(shas.second!, { CURRENT: '' });
+    let result = run(shas.second!, { CURRENT: 'git' });
     assert.equal(result.status, 0);
     assert.ok(result.summary.includes('не определены: на сервере образ, собранный из Git'));
 
@@ -618,6 +683,12 @@ esac
     result = run(shas.second!, { CURRENT: `sha256:${HEX('9')}` });
     assert.equal(result.status, 0);
     assert.ok(result.summary.includes('не определены: коммит работающего образа не найден в main'));
+  });
+
+  test('refused: no answer of status from the job server', () => {
+    const result = run(shas.second!, { CURRENT: '' });
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /работающий выпуск неизвестен/);
   });
 
   for (const target of ['', '$(id)', 'm1;id', 'm1 m2', '-m1', '../m1', 'refs/tags/m1', 'm1\nid']) {

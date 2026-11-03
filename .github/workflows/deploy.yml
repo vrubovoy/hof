@@ -73,6 +73,28 @@ jobs:
               -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
               "ssh://hof-deploy@$HOST" "$1"
           }
+          # The answer of status: the release that runs, a digest or git for the image built from
+          # Git, and whether an update runs. Anything else is not an answer to rely on.
+          read_status() {
+            current=
+            busy=
+            local release update
+            release=$(sed -n 's/^Выпуск: //p' "$1")
+            update=$(sed -n 's/^Обновление: //p' "$1")
+            if [[ $release =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              current=$release
+            elif [ "$release" = 'образ собран из Git, hof-deploy ещё не запускался' ]; then
+              current=git
+            else
+              return 1
+            fi
+            case $update in
+            *$'\n'*) return 1 ;;
+            'не идёт') busy=false ;;
+            'идёт;'*) busy=true ;;
+            *) return 1 ;;
+            esac
+          }
 
           code=0
           remote status 2>&1 | tee "$out" || code=$?
@@ -80,12 +102,16 @@ jobs:
             echo "::error::hof-deploy status не выполнен, код $code (255 — SSH не удался); сервер ничего не менял"
             exit 1
           fi
-          current=$(sed -n 's/^Выпуск: \(sha256:[0-9a-f]\{64\}\)$/\1/p' "$out")
+          if ! read_status "$out"; then
+            echo '::error::Ответ hof-deploy status не распознан: нет строк «Выпуск:» и «Обновление:» нужного вида; дальше ничего не запускается'
+            exit 1
+          fi
           echo "current=$current" >> "$GITHUB_OUTPUT"
           {
             echo '### Сервер'
             echo
-            echo "- Работает: \`${current:-образ, собранный из Git}\`"
+            if [ "$current" = git ]; then echo '- Работает: образ, собранный из Git'; else echo "- Работает: \`$current\`"; fi
+            if $busy; then echo '- Обновление: идёт'; else echo '- Обновление: не идёт'; fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   # The image of the target, without the secrets of the server: a commit of main that CI checked,
@@ -164,8 +190,9 @@ jobs:
           # New migrations against the image that runs. The set of the database itself is checked
           # by hof-deploy before the copy.
           target=$(migrations "$sha")
-          changes="не определены: на сервере образ, собранный из Git; их покажет hof-deploy строкой «Новые миграции»"
-          if [[ $CURRENT =~ ^sha256:[0-9a-f]{64}$ ]]; then
+          if [ "$CURRENT" = git ]; then
+            changes="не определены: на сервере образ, собранный из Git; их покажет hof-deploy строкой «Новые миграции»"
+          elif [[ $CURRENT =~ ^sha256:[0-9a-f]{64}$ ]]; then
             changes="не определены: коммит работающего образа не найден в main; их покажет hof-deploy строкой «Новые миграции»"
             if docker pull --quiet "$IMAGE@$CURRENT" > /dev/null &&
               running=$(revision_of "$IMAGE@$CURRENT") && [[ $running =~ ^[0-9a-f]{40}$ ]] &&
@@ -181,6 +208,8 @@ jobs:
                 changes='нет: прежний digest можно вернуть той же командой'
               fi
             fi
+          else
+            refuse 'работающий выпуск неизвестен: задание server не передало ответ status'
           fi
           {
             echo '### Образ'
@@ -236,27 +265,49 @@ jobs:
               -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
               "ssh://hof-deploy@$HOST" "$1"
           }
+          # The answer of status: the release that runs, a digest or git for the image built from
+          # Git, and whether an update runs. Anything else is not an answer to rely on.
+          read_status() {
+            current=
+            busy=
+            local release update
+            release=$(sed -n 's/^Выпуск: //p' "$1")
+            update=$(sed -n 's/^Обновление: //p' "$1")
+            if [[ $release =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              current=$release
+            elif [ "$release" = 'образ собран из Git, hof-deploy ещё не запускался' ]; then
+              current=git
+            else
+              return 1
+            fi
+            case $update in
+            *$'\n'*) return 1 ;;
+            'не идёт') busy=false ;;
+            'идёт;'*) busy=true ;;
+            *) return 1 ;;
+            esac
+          }
           report() {
             {
               echo '### Развёртывание'
               echo
               echo "- Образ: \`$DIGEST\`, коммит \`$SHA\`"
-              echo "- Было: \`${CURRENT:-образ, собранный из Git}\`"
+              if [ "$CURRENT" = git ]; then echo '- Было: образ, собранный из Git'; else echo "- Было: \`$CURRENT\`"; fi
               echo "- Результат: $1"
               if [ -n "$2" ]; then echo "- Сервер: $2"; fi
               echo "- Дальше: $3"
             } >> "$GITHUB_STEP_SUMMARY"
           }
 
-          # The new migrations were shown against this release: it must still be the one that runs.
+          # The new migrations were shown against this release: it must still be the one that runs,
+          # and no other update may run.
           code=0
           remote status > "$out" 2>&1 || code=$?
-          now=$(sed -n 's/^Выпуск: \(sha256:[0-9a-f]\{64\}\)$/\1/p' "$out")
-          if [ "$code" != 0 ] || [ "$now" != "$CURRENT" ]; then
+          if [ "$code" != 0 ] || ! read_status "$out" || [ "$current" != "$CURRENT" ] || $busy; then
             cat "$out"
             next='запустить заново: status и новые миграции нужно увидеть по выпуску, который работает'
-            report 'не запускалось: status не выполнен или выпуск сменился после проверки' '' "$next"
-            echo "::error::Обновление не запускалось: status, код $code; выпуск ${now:-из Git} вместо ${CURRENT:-из Git}"
+            report 'не запускалось: status не выполнен или не распознан, выпуск сменился после проверки или идёт другое обновление' '' "$next"
+            echo "::error::Обновление не запускалось: status, код $code; выпуск ${current:-не распознан} вместо $CURRENT; идёт другое: ${busy:-?}"
             exit 1
           fi
 
@@ -267,35 +318,33 @@ jobs:
             report 'обновлено' "$summary" 'ничего; прежний выпуск и предрелизная копия остаются на сервере'
             exit 0
           fi
-          case $code in
-          0)
-            result='команда завершилась без итога обновления: это не успех'
-            next='проверить сервер запуском status; ничего не повторять до выяснения'
+          # Only a summary of the server confirms a result. Without it the update may still run on
+          # the server, which no longer needs this connection.
+          unknown='на сервере обновление могло начаться и идёт без SSH: запуском status дождаться «Обновление: не идёт» и прочитать итог; ничего не повторять, не откатывать и не восстанавливать до этого'
+          case "$code:$summary" in
+          1:'итог: отказ'*)
+            result='отказ до остановки: Hof не останавливался, конфигурация не менялась'
+            next='устранить причину из строки ОТКАЗ выше и запустить снова'
             ;;
-          1)
-            if [[ $summary == 'итог: отказ'* ]]; then
-              result='отказ до остановки: Hof не останавливался, конфигурация не менялась'
-              next='устранить причину из строки ОТКАЗ выше и запустить снова'
-            else
-              result='сбой после остановки Hof'
-              next='ничего не повторять; по строке «Состояние» выше — раздел «Если обновление не удалось» docs/OPERATIONS.md'
-            fi
+          1:'итог: сбой'*)
+            result='сбой после остановки Hof'
+            next='ничего не повторять; по строке «Состояние» выше — раздел «Если обновление не удалось» docs/OPERATIONS.md'
             ;;
-          2)
+          2:*)
             result='сервер отклонил запрос'
             next='сервер ничего не менял; сверить hof-deploy-ssh на сервере с репозиторием'
             ;;
-          3)
-            result='блокировка занята: идёт копия или другое обновление'
-            next='сервер ничего не менял; запустить снова позже'
+          3:*)
+            result='обновление не начиналось: занята блокировка, идёт другое обновление или systemd его не запустил'
+            next='сервер ничего не менял; причина — в строке hof-deploy выше; запустить снова позже'
             ;;
-          255)
-            result='SSH не удался: соединение не установлено или прервалось'
-            next='если строк hof-deploy выше нет, сервер ничего не менял; если есть — обновление могло не завершиться: сначала status, ничего не повторять до выяснения'
+          255:*)
+            result='результат неизвестен: соединение SSH потеряно'
+            next=$unknown
             ;;
           *)
-            result="код $code"
-            next='проверить сервер запуском status; ничего не повторять до выяснения'
+            result="результат неизвестен: код $code без итога обновления"
+            next=$unknown
             ;;
           esac
           report "$result" "$summary" "$next"
