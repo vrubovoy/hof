@@ -166,6 +166,19 @@ describe('hof-deploy: only allowed operations', () => {
     );
   });
 
+  test('the update runs in the unit hof-deploy-run, which takes the lock itself', () => {
+    assert.match(code, /^UNIT=hof-deploy-run$/m);
+    assert.deepEqual(all(/systemd-run ([^\n]*)/g), [
+      '--unit="$UNIT" --description="hof-deploy deploy $digest" --collect --wait --quiet "$(readlink -f "$0")" deploy "$digest" &',
+    ]);
+    // The caller starts the unit and only waits; the lock and everything after it are the unit's.
+    const caller = code.indexOf('if [[ $(cat /proc/self/cgroup) != *"/$UNIT.service" ]]; then');
+    assert.ok(caller > code.indexOf('if [ "$action" = status ]; then'));
+    assert.ok(caller < code.indexOf('systemd-run'));
+    assert.ok(code.indexOf('systemd-run') < code.indexOf('exec 9>>"$LOCK"'));
+    assert.equal(code.split('flock').length - 1, 1);
+  });
+
   test('a clean environment and the image from the file of root', () => {
     assert.match(
       code,
