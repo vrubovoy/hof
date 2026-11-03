@@ -25,6 +25,7 @@ const FAKE_ENV: Record<string, string> = {
 
 // The part of the resolved configuration the tests look at.
 interface Service {
+  image?: string;
   environment?: Record<string, string>;
   ports?: unknown[];
   restart?: string;
@@ -221,6 +222,16 @@ test('the data live in the named volume hof_pgdata', () => {
     ),
     'postgres does not keep its data in pgdata',
   );
+});
+
+// postgres keeps its tag: another reference would change the hash of its configuration, and
+// hof-deploy refuses a release that changes postgres.
+test('nginx is one build, pinned by digest; postgres keeps its tag', () => {
+  assert.equal(
+    service(STANDARD, 'nginx').image,
+    'nginx:1.30.6-alpine3.24@sha256:0e52bd054126cdc040b1276c0af347aeb02a41b9cfe305d6094767ac30e97949',
+  );
+  assert.equal(service(STANDARD, 'postgres').image, 'postgres:18.6-trixie');
 });
 
 test('a standard installation has no memory limits', () => {
