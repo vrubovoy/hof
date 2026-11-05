@@ -18,8 +18,8 @@
 // each of them gets the version of its file, and the CSS is served from memory, its own version
 // counted over that text. A url() of anything that is not a file of the folder stops the start.
 // Any other file is streamed from disk and never held in memory. Files are read once, at the
-// start: a file added or changed afterwards needs a restart (`npm run dev` restarts on any change
-// under src); a file removed or replaced by a link is no longer served.
+// start: a file added or changed afterwards needs a restart (on macOS `npm run dev` restarts on any
+// change under src); a file removed or replaced by a link is no longer served, from disk or memory.
 //
 // One byte range of a GET (RFC 9110 §14) is answered with 206 and only those bytes are read from
 // disk: Safari plays <audio> only from a server that answers ranges, and music goes on from the
@@ -174,14 +174,11 @@ export function staticFolder(prefix: string, dir: string): StaticFolder {
   const serve: MiddlewareHandler = async (c, next) => {
     if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return next();
     const file = files.get(c.req.path.slice(prefix.length));
-    if (file === undefined) return c.notFound();
-    let size = file.text?.length;
-    if (size === undefined) {
-      // Looked at again: a file removed or replaced by a link since the start is not served.
-      const stats = await lstat(file.path).catch(() => undefined);
-      if (stats === undefined || !stats.isFile()) return c.notFound();
-      size = stats.size;
-    }
+    // Looked at again: a file removed or replaced by a link since the start is not served, a CSS
+    // file kept in memory neither.
+    const stats = file === undefined ? undefined : await lstat(file.path).catch(() => undefined);
+    if (file === undefined || stats === undefined || !stats.isFile()) return c.notFound();
+    const size = file.text?.length ?? stats.size;
 
     const etag = `"${file.version}"`;
     c.header('ETag', etag);

@@ -61,9 +61,10 @@ writeFileSync(join(dir, 'img', 'photo.png'), 'png');
 writeFileSync(join(outside, 'secret.css'), 'secret');
 symlinkSync(join(outside, 'secret.css'), join(dir, 'link.css'));
 symlinkSync(outside, join(dir, 'linked'));
-// Listed at the start, removed or replaced afterwards (below).
-writeFileSync(join(dir, 'later-link.svg'), '<svg/>');
-writeFileSync(join(dir, 'later-gone.svg'), '<svg/>');
+// Listed at the start, removed or replaced afterwards (below); a CSS file is kept in memory.
+for (const name of ['later-link.svg', 'later-gone.svg', 'later-link.css', 'later-gone.css']) {
+  writeFileSync(join(dir, name), name.endsWith('.css') ? 'a { color: red; }' : '<svg/>');
+}
 
 const folder = staticFolder('/static/', dir);
 const app = new Hono();
@@ -209,12 +210,15 @@ describe('static files', () => {
     });
   }
 
-  test('a file removed or replaced by a link after the start: 404', async () => {
-    unlinkSync(join(dir, 'later-gone.svg'));
-    unlinkSync(join(dir, 'later-link.svg'));
-    symlinkSync(join(outside, 'secret.css'), join(dir, 'later-link.svg'));
-    for (const path of ['/static/later-gone.svg', '/static/later-link.svg']) {
-      assert.equal((await get(path)).status, 404, path);
+  test('a file removed or replaced by a link after the start: 404, a CSS file in memory too', async () => {
+    for (const type of ['svg', 'css']) {
+      unlinkSync(join(dir, `later-gone.${type}`));
+      unlinkSync(join(dir, `later-link.${type}`));
+      symlinkSync(join(outside, 'secret.css'), join(dir, `later-link.${type}`));
+      for (const name of [`later-gone.${type}`, `later-link.${type}`]) {
+        assert.equal((await get(`/static/${name}`)).status, 404, name);
+        assert.equal((await get(folder.url(name))).status, 404, name);
+      }
     }
   });
 
