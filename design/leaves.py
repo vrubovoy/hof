@@ -78,12 +78,17 @@ def foliage(img, inside, largest_hole):
 
 
 def fill(img, hole, rounds=8):
-    """The pixels of `hole` from their known neighbours, ring by ring from its edge."""
+    """The pixels of `hole` from their known neighbours, ring by ring from its edge. A pixel at the
+    edge of the frame has no neighbour beyond it."""
     img = img.copy(); known = ~hole
+    H, W = hole.shape
     for _ in range(rounds):
         acc = np.zeros_like(img); cnt = np.zeros(hole.shape, np.float32)
-        for shift in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            k = np.roll(known, shift, (0, 1)); acc += np.roll(img, shift, (0, 1)) * k[..., None]; cnt += k
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            # each pixel takes its neighbour at (y - dy, x - dx), where there is one
+            to = (slice(max(dy, 0), H + min(dy, 0)), slice(max(dx, 0), W + min(dx, 0)))
+            fro = (slice(max(-dy, 0), H + min(-dy, 0)), slice(max(-dx, 0), W + min(-dx, 0)))
+            k = known[fro]; acc[to] += img[fro] * k[..., None]; cnt[to] += k
         new = ~known & (cnt > 0)
         img[new] = acc[new] / cnt[new][:, None]; known |= new
     return img
