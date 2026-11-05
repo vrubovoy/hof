@@ -27,8 +27,15 @@
 // ranges, another unit, a wrong form, If-Range, HEAD — gets the whole file, as RFC 9110 allows.
 
 import type { MiddlewareHandler } from 'hono';
-import { createHash } from 'node:crypto';
-import { createReadStream, readdirSync, readFileSync } from 'node:fs';
+import { createHash, type Hash } from 'node:crypto';
+import {
+  closeSync,
+  createReadStream,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+} from 'node:fs';
 import { lstat } from 'node:fs/promises';
 import { extname, join, posix } from 'node:path';
 import { Readable } from 'node:stream';
@@ -59,8 +66,21 @@ interface StaticFile {
   text?: Uint8Array<ArrayBuffer>;
 }
 
-function versionOf(content: Uint8Array) {
-  return createHash('sha256').update(content).digest('hex').slice(0, 12);
+const versionOf = (hash: Hash) => hash.digest('hex').slice(0, 12);
+
+// A file is hashed through one small buffer, never read whole: the start reads every file of the
+// folder, and the process would keep the memory of all of them.
+const CHUNK = Buffer.alloc(64 * 1024);
+
+function fileVersion(path: string) {
+  const hash = createHash('sha256');
+  const fd = openSync(path, 'r');
+  try {
+    for (let read; (read = readSync(fd, CHUNK)) > 0;) hash.update(CHUNK.subarray(0, read));
+  } finally {
+    closeSync(fd);
+  }
+  return versionOf(hash);
 }
 
 // Every regular file of `dir` and its subfolders with a known type, by its name in the address
@@ -73,7 +93,7 @@ function listFiles(dir: string, prefix = '', files = new Map<string, StaticFile>
     if (entry.isDirectory()) listFiles(path, `${prefix}${entry.name}/`, files);
     const type = CONTENT_TYPES[extname(entry.name)];
     if (entry.isFile() && type !== undefined) {
-      files.set(`${prefix}${entry.name}`, { path, type, version: versionOf(readFileSync(path)) });
+      files.set(`${prefix}${entry.name}`, { path, type, version: fileVersion(path) });
     }
   }
   return files;
@@ -91,7 +111,7 @@ function versionUrls(files: Map<string, StaticFile>, dir: string) {
       return `url(${address}?v=${named.version})`;
     });
     file.text = new TextEncoder().encode(text);
-    file.version = versionOf(file.text);
+    file.version = versionOf(createHash('sha256').update(file.text));
   }
 }
 
