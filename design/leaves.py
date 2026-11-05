@@ -1,7 +1,9 @@
 # Frames of a gust of wind in the foliage on the courtyard map: the same pixels, the crown sways
-# from the trunk (the top more), the leaves tremble. A frame «at rest» is not needed: at rest the
-# layer is hidden. Pixels are taken bicubically (Catmull-Rom) so the hatching does not blur; the
-# frames are then enlarged 2× the same way as the map (see asset-prompt.txt, «Обработка»).
+# from the trunk (the top more) and the leaves tremble; both fade to nothing at the bottom of the
+# crown, so the trunk there stays still where the map goes on below the frame. A frame «at rest» is
+# not needed: at rest the layer is hidden. Pixels are taken bicubically (Catmull-Rom) so the
+# hatching does not blur; the frames are then enlarged 2× the same way as the map (see
+# asset-prompt.txt, «Обработка»).
 # Only the foliage moves. It is a layer: dense ink inside a polygon that keeps out what stands next
 # to the plant (the rim of the fountain, a pot, a wall, a beam, a roof, barrels, flowers), with its
 # small holes filled. The strip of ground it uncovers is filled from the ground beside it; outside
@@ -108,8 +110,8 @@ for name, ((x0, y0, x1, y1), poly, base, amp, largest_hole) in REGIONS.items():
     drawn, most = [], 0.0
     for i, e in enumerate(ENV):
         ph = 2 * np.pi * i / len(ENV)
-        dx = mk * (amp * e * h * (1 + 0.35 * np.sin(2 * np.pi * xx / 70 + yy / 40)) + 0.6 * np.sin(2 * np.pi * (xx / 17 + yy / 23) - ph))
-        dy = mk * 0.5 * np.sin(2 * np.pi * (xx / 21 - yy / 19) - ph)
+        dx = mk * h * (amp * e * (1 + 0.35 * np.sin(2 * np.pi * xx / 70 + yy / 40)) + 0.6 * np.sin(2 * np.pi * (xx / 17 + yy / 23) - ph))
+        dy = mk * h * 0.5 * np.sin(2 * np.pi * (xx / 21 - yy / 19) - ph)
         sx, sy = np.clip(xx - dx, 0, W - 1), np.clip(yy - dy, 0, H - 1)
         c = np.clip(cubic(cover, sx, sy), 0, 1)
         rgb = np.clip(cubic(layer, sx, sy), 0, 255) + ground * (1 - c[..., None])
