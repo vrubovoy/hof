@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { Pool } from 'pg';
-import { createSaeckelApp, type CurrentUser, type SaeckelUser } from './app.ts';
+import { createSaeckelApp, type CoreScripts, type CurrentUser, type SaeckelUser } from './app.ts';
 
 const password = process.env.HOF_SAECKEL_DB_PASSWORD;
 assert.ok(password, 'HOF_SAECKEL_DB_PASSWORD is not set: create .env from .env.example');
@@ -22,13 +22,17 @@ const PEOPLE: Record<string, SaeckelUser> = {
 export const signedIn: CurrentUser = (request) =>
   Promise.resolve(PEOPLE[request.headers.get('x-test-user') ?? ''] ?? null);
 
-// The settings main.ts checks at startup.
+// The settings main.ts checks at startup, and the addresses of the scripts of Core it gives.
 export const SETTINGS = { currency: 'RUB', timeZone: 'Europe/Moscow' };
-export const app = createSaeckelApp(pool, signedIn, SETTINGS);
+export const CORE_SCRIPTS: CoreScripts = {
+  head: '/static/fx-head.js?v=0123456789ab',
+  effects: '/static/fx.js?v=ba9876543210',
+};
+export const app = createSaeckelApp(pool, signedIn, SETTINGS, CORE_SCRIPTS);
 
 // Nothing listens on port 1: any query through this pool fails, and the request with it.
 export const deadPool = new Pool({ host: '127.0.0.1', port: 1 });
-export const appWithoutDatabase = createSaeckelApp(deadPool, signedIn, SETTINGS);
+export const appWithoutDatabase = createSaeckelApp(deadPool, signedIn, SETTINGS, CORE_SCRIPTS);
 
 export function get(path: string, who?: string, target = app) {
   return target.request(path, { headers: who === undefined ? {} : { 'x-test-user': who } });

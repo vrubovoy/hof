@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { after, before, beforeEach, describe, test, type TestContext } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { migrate } from '../migrate.ts';
-import { createSaeckelApp } from './app.ts';
+import { createSaeckelApp, saeckelStatic } from './app.ts';
 import { dateForField, today } from './dates.ts';
 import {
   activeList,
@@ -17,6 +17,7 @@ import {
   appWithoutDatabase,
   assertNothingHeld,
   balanceOn,
+  CORE_SCRIPTS,
   currentTab,
   deadPool,
   failingTrigger,
@@ -798,7 +799,12 @@ describe('the page of a pouch: balance, form, expenses', () => {
   });
 
   test('another currency of the installation', async () => {
-    const euro = createSaeckelApp(pool, signedIn, { currency: 'EUR', timeZone: 'Europe/Berlin' });
+    const euro = createSaeckelApp(
+      pool,
+      signedIn,
+      { currency: 'EUR', timeZone: 'Europe/Berlin' },
+      CORE_SCRIPTS,
+    );
     const id = await addPouch(1, 'Lebensmittel');
     await addOperation(1, 'expense', 124050, { from: id });
     const page = await (await get(`/saeckel/pouches/${id}`, 'anna', euro)).text();
@@ -1185,7 +1191,7 @@ describe('Кладовая on Мешки', () => {
       [...storeroom.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]!.trim()),
       [apples, oranges].map(
         (id) =>
-          `<a class="stored" href="/saeckel/pouches/${id}" ><img src="/saeckel/static/img/emblem-saeckel-small.webp" srcset="/saeckel/static/img/emblem-saeckel-small@2x.webp 2x" alt="" /><span>${id === apples ? 'Яблоки' : 'Апельсины'}</span></a > <form method="post" action="/saeckel/pouches/${id}/restore"> <button type="submit" class="btn">Вернуть</button> </form>`,
+          `<a class="stored" href="/saeckel/pouches/${id}" ><img src="${saeckelStatic.url('img/emblem-saeckel-small.webp')}" srcset="${saeckelStatic.url('img/emblem-saeckel-small@2x.webp')} 2x" alt="" /><span>${id === apples ? 'Яблоки' : 'Апельсины'}</span></a > <form method="post" action="/saeckel/pouches/${id}/restore"> <button type="submit" class="btn">Вернуть</button> </form>`,
       ),
     );
     assert.ok(!page.includes('Старый Бориса'));

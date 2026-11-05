@@ -60,7 +60,7 @@ docker compose -f compose.dev.yaml down -v && docker compose -f compose.dev.yaml
 
 ```sh
 npm ci          # зависимости строго по package-lock.json
-npm run dev     # сервер на http://localhost:3000, перезапуск при изменении файлов
+npm run dev     # сервер на http://localhost:3000, перезапуск при изменении кода, на macOS — и static
 npm run check   # prettier --check, eslint, tsc --noEmit, node --test, docker compose build
 npm run format  # отформатировать всё через prettier
 ```

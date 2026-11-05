@@ -13,11 +13,12 @@ import { after, before, beforeEach, describe, test, type TestContext } from 'nod
 import { Hono } from 'hono';
 import type { PoolClient } from 'pg';
 import { migrate } from '../migrate.ts';
-import { staticFiles } from '../static.ts';
+import { saeckelStatic } from './app.ts';
 import {
   addOperation,
   addPouch,
   assignRows,
+  CORE_SCRIPTS,
   currentTab,
   deadPool,
   fold,
@@ -39,12 +40,16 @@ after(() => Promise.all([pool.end(), deadPool.end()]));
 const STATIC = join(import.meta.dirname, 'static');
 // The static folder of Säckel as main.ts serves it, by the same handler.
 const files = new Hono();
-files.use('/saeckel/static/*', staticFiles('/saeckel/static/', STATIC));
+files.use('/saeckel/static/*', saeckelStatic.serve);
 const served = async (address: string) => (await files.request(address)).status;
-// The scripts of the effects of Hof that every page names (§2, §6).
+// The address of a file of Säckel with its version, as the pages name it.
+const asset = saeckelStatic.url;
+// The version in an address of a static file.
+const VERSION = String.raw`\?v=[0-9a-f]{12}`;
+// The scripts of the effects of Hof that every page names (§2, §6), as main.ts gives them.
 const FX_SCRIPTS = [
-  '<script src="/static/fx-head.js"></script>',
-  '<script type="module" src="/static/fx.js"></script>',
+  `<script src="${CORE_SCRIPTS.head}"></script>`,
+  `<script type="module" src="${CORE_SCRIPTS.effects}"></script>`,
 ];
 
 // Every file of the static folder, by its address.
@@ -299,11 +304,22 @@ describe('the pages of Säckel', () => {
       for (const [, described] of page.matchAll(/aria-describedby="([^"]*)"/g)) {
         for (const id of described!.split(/\s+/)) assert.ok(ids.includes(id), `${name}: ${id}`);
       }
-      // Files only of the static folder of Säckel, never of Core's, but for the scripts above.
+      // Files only of the static folder of Säckel, never of Core's, but for the scripts above;
+      // each with its version, kept by the browser without asking.
       const own = FX_SCRIPTS.reduce((rest, script) => rest.replace(script, ''), page);
       for (const address of pageFiles(own)) {
-        assert.match(address, /^\/saeckel\/static\//, `${name}: ${address}`);
-        assert.equal(await served(address), 200, `${name}: ${address}`);
+        assert.match(
+          address,
+          new RegExp(`^/saeckel/static/[^?]+${VERSION}$`),
+          `${name}: ${address}`,
+        );
+        const res = await files.request(address);
+        assert.equal(res.status, 200, `${name}: ${address}`);
+        assert.equal(
+          res.headers.get('cache-control'),
+          'public, max-age=31536000, immutable',
+          `${name}: ${address}`,
+        );
       }
       // Links and forms only within Säckel, and the way to the courtyard.
       for (const address of pageLinks(page)) {
@@ -327,6 +343,13 @@ describe('the pages of Säckel', () => {
       assert.equal(await served(address), 200, address);
     }
     assert.equal(await served('/saeckel/static/saeckel.css'), 200);
+    // As it is served: every url() with the version of its file.
+    const css = await (await files.request(asset('saeckel.css'))).text();
+    const versioned = [...css.matchAll(/url\(([^)]*)\)/g)].map((match) => match[1]!);
+    assert.equal(versioned.length, cssFiles.length);
+    for (const address of versioned) {
+      assert.match(address, new RegExp(`^(img|fonts)/[^?]+${VERSION}$`), address);
+    }
   });
 
   test('the font: every face has its range; ₽ is drawn by latin-ext, upright and italic', () => {
@@ -364,7 +387,9 @@ describe('the pages of Säckel', () => {
     const named = new Set([
       '/saeckel/static/saeckel.css',
       ...cssFiles,
-      ...(await drawnPages()).flatMap(([, , page]) => pageFiles(page)),
+      ...(await drawnPages()).flatMap(([, , page]) =>
+        pageFiles(page).map((address) => new URL(address, 'http://hof.test').pathname),
+      ),
     ]);
     for (const address of folderFiles()) {
       assert.equal(await served(address), 200, address);
@@ -809,7 +834,7 @@ describe('the page of a pouch', () => {
     ].map(([, key, checked, src]) => [key, checked !== undefined, src]);
     assert.deepEqual(
       offered,
-      SIGN_FILES.map(([key, file]) => [key, key === 'cart', `/saeckel/static/img/${file}.webp`]),
+      SIGN_FILES.map(([key, file]) => [key, key === 'cart', asset(`img/${file}.webp`)]),
     );
     // A name refused: one field invalid, the chosen sign kept.
     const refused = await (
@@ -902,7 +927,7 @@ describe('Доход, Разложить, Переложить', () => {
       /<td class="(put[^"]*)">/.exec(row!)?.[1],
       (row!.match(/aria-invalid="true"/g) ?? []).length,
     ]);
-    const sign = (file: string) => `/saeckel/static/img/${file}.webp`;
+    const sign = (file: string) => asset(`img/${file}.webp`);
     assert.deepEqual(rows, [
       [sign('icon-basket'), 'Продукты', 'Положить в мешок Продукты', 'put', 0],
       [sign('icon-hearth'), 'Квартира', 'Положить в мешок Квартира', 'put', 0],
@@ -1079,9 +1104,9 @@ describe('Летопись and a record', () => {
   test('the empty Летопись: the closed book, the sprig, «Записать доход» and «К мешкам»; no table, no filter', async () => {
     const page = fold(await (await get('/saeckel/history', 'anna')).text());
     for (const text of [
-      '<img class="vignette" src="/saeckel/static/img/empty-history-closed.webp" alt="" />',
+      `<img class="vignette" src="${asset('img/empty-history-closed.webp')}" alt="" />`,
       '<h2 class="title">Летопись пока пуста</h2>',
-      '<img class="sprig" src="/saeckel/static/img/sprig-divider.webp" alt="" />',
+      `<img class="sprig" src="${asset('img/sprig-divider.webp')}" alt="" />`,
       '<a class="btn btn-ochre" href="/saeckel/income">Записать доход</a>',
       '<a class="link" href="/saeckel/">К мешкам</a>',
     ]) {
@@ -1233,7 +1258,7 @@ describe('the decor of Säckel (M10.5)', () => {
       // Inside: the picture of the closed chest and nothing else.
       assert.equal(
         chest[1]!.trim(),
-        '<img class="chest" src="/saeckel/static/img/emblem-chest-closed.webp" alt="" />',
+        `<img class="chest" src="${asset('img/emblem-chest-closed.webp')}" alt="" />`,
         path,
       );
       // The sum and the buttons are after it, outside.
@@ -1252,7 +1277,7 @@ describe('the decor of Säckel (M10.5)', () => {
     const page = fold(await (await get('/saeckel/', 'anna')).text());
     assert.ok(
       page.includes(
-        '<span class="vignette sniff" aria-hidden="true" ><img src="/saeckel/static/img/empty-saeckel.webp" alt="" /><span class="cat" data-poke="sniff" ></span ></span>',
+        `<span class="vignette sniff" aria-hidden="true" ><img src="${asset('img/empty-saeckel.webp')}" alt="" /><span class="cat" data-poke="sniff" ></span ></span>`,
       ),
     );
     assert.deepEqual(
@@ -1319,12 +1344,12 @@ describe('the signs, the money and the storeroom of the column', () => {
       ...page.matchAll(/<a\s+class="pouch[^"]*"[^>]*>\s*<img\s+src="([^"]*)"/g),
     ].map((match) => match[1]!);
     assert.deepEqual(pictures, [
-      ...SIGN_FILES.map(([, file]) => `/saeckel/static/img/${file}.webp`),
-      '/saeckel/static/img/emblem-saeckel-small.webp',
+      ...SIGN_FILES.map(([, file]) => asset(`img/${file}.webp`)),
+      asset('img/emblem-saeckel-small.webp'),
     ]);
     // The default sign has its sharper copy for dense screens.
     assert.ok(
-      page.includes('srcset="/saeckel/static/img/emblem-saeckel-small@2x.webp 2x"'),
+      page.includes(`srcset="${asset('img/emblem-saeckel-small@2x.webp')} 2x"`),
       'the default sign at 2x',
     );
   });

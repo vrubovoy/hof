@@ -12,8 +12,10 @@ import { Hono, type MiddlewareHandler } from 'hono';
 import { html } from 'hono/html';
 import { parse as parseCookies } from 'hono/utils/cookie';
 import type { HtmlEscapedString } from 'hono/utils/html';
+import { join } from 'node:path';
 import { DatabaseError, type Pool } from 'pg';
 import { log } from '../log.ts';
+import { staticFolder } from '../static.ts';
 import type { FirstRun } from './gate-key.ts';
 import {
   hashPassword,
@@ -35,6 +37,11 @@ import {
   type CurrentUser,
 } from './sessions.ts';
 import { parseUsername } from './username.ts';
+
+// The static folder of Core (§4.1, §4.9), served by main.ts at /static/. A page names its files
+// only by asset(), the address with the version of the file.
+export const coreStatic = staticFolder('/static/', join(import.meta.dirname, 'static'));
+const asset = coreStatic.url;
 
 // One entry of «Службы двора»: the name, the address and the emblem, which the service keeps
 // among its own static files.
@@ -63,8 +70,8 @@ function slide(here: Place, to: keyof typeof ORDER, keep = to !== 'service') {
 // The door of «Покинуть двор»: the open frame lies over the closed one and shows only while the
 // form goes (fx.js); without the script the door stays closed.
 const DOOR = html`<span class="frames"
-  ><img src="/static/img/emblem-door-closed-small.webp" alt="" /><img
-    src="/static/img/emblem-door-small.webp"
+  ><img src="${asset('img/emblem-door-closed-small.webp')}" alt="" /><img
+    src="${asset('img/emblem-door-small.webp')}"
     alt=""
 /></span>`;
 
@@ -162,11 +169,11 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>${title}</title>
-        <link rel="stylesheet" href="/static/hof.css" />
+        <link rel="stylesheet" href="${asset('hof.css')}" />
         ${forget ? html`<link rel="stylesheet" href="/forget.css" />` : ''}
-        <link rel="icon" href="/static/img/hof-mark.svg" type="image/svg+xml" />
-        <script src="/static/fx-head.js"></script>
-        <script type="module" src="/static/fx.js"></script>
+        <link rel="icon" href="${asset('img/hof-mark.svg')}" type="image/svg+xml" />
+        <script src="${asset('fx-head.js')}"></script>
+        <script type="module" src="${asset('fx.js')}"></script>
       </head>
       <body>
         ${body}
@@ -212,8 +219,11 @@ export function errorPage(status: keyof typeof ERRORS, retry = false) {
     html`<main class="error error-${status}">
       <div class="error-scene">
         <img
-          src="/static/img/${error.scene}.webp"
-          srcset="/static/img/${error.scene}.webp 1536w, /static/img/${error.scene}@2x.webp 3072w"
+          src="${asset(`img/${error.scene}.webp`)}"
+          srcset="
+            ${asset(`img/${error.scene}.webp`)} 1536w,
+            ${asset(`img/${error.scene}@2x.webp`)} 3072w
+          "
           sizes="(max-width: 1023.98px) 164vw, 100vw"
           alt="${error.alt}"
         />
@@ -221,11 +231,11 @@ export function errorPage(status: keyof typeof ERRORS, retry = false) {
       </div>
       <div class="error-paper">
         <a class="logo" href="/" data-fx="right">
-          <img src="/static/img/hof-mark.svg" width="40" height="40" alt="" />
+          <img src="${asset('img/hof-mark.svg')}" width="40" height="40" alt="" />
           <span><b>Hof</b><small>Ваш личный двор</small></span>
         </a>
         <h1 class="title t-1">${error.title}</h1>
-        <img class="sprig" src="/static/img/sprig-divider.webp" alt="" />
+        <img class="sprig" src="${asset('img/sprig-divider.webp')}" alt="" />
         <p class="muted">${error.text}</p>
         <div class="error-actions">
           ${
@@ -240,7 +250,7 @@ export function errorPage(status: keyof typeof ERRORS, retry = false) {
         (blot) =>
           html`<img
             class="blot blot-error-${blot}"
-            src="/static/img/${blot}.webp"
+            src="${asset(`img/${blot}.webp`)}"
             alt=""
             loading="lazy"
           />`,
@@ -271,11 +281,11 @@ function shell(
     html`<div class="shell" data-session>
       <nav class="banner" aria-label="Hof">
         <a class="logo" href="/">
-          <img src="/static/img/hof-mark-white.svg" width="44" height="44" alt="" />
+          <img src="${asset('img/hof-mark-white.svg')}" width="44" height="44" alt="" />
           <span><b>Hof</b><small>Ваш личный двор</small></span>
         </a>
         <a class="nav" href="/" ${current('courtyard')} ${slide(here, 'courtyard')}>
-          <img src="/static/img/emblem-fountain-small.webp" alt="" />Двор
+          <img src="${asset('img/emblem-fountain-small.webp')}" alt="" />Двор
         </a>
         ${
           services.length === 0
@@ -292,13 +302,13 @@ function shell(
           user.isAdmin
             ? html`<div class="nav-label">Хозяйство</div>
                 <a class="nav" href="/admin/users" ${current('users')} ${slide(here, 'users')}>
-                  <img src="/static/img/emblem-keys-small.webp" alt="" />Приближённые
+                  <img src="${asset('img/emblem-keys-small.webp')}" alt="" />Приближённые
                 </a>`
             : ''
         }
         <div class="banner-foot">
           <a class="nav" href="/account" ${current('account')} ${slide(here, 'account')}>
-            <img src="/static/img/emblem-candle-small.webp" alt="" />
+            <img src="${asset('img/emblem-candle-small.webp')}" alt="" />
             <span class="nav-who">
               <span>Мои покои</span>
               <span class="small"
@@ -313,7 +323,7 @@ function shell(
       </nav>
       <header class="m-top">
         <a class="logo" href="/" ${slide(here, 'courtyard', false)}>
-          <img src="/static/img/hof-mark.svg" width="32" height="32" alt="" /><b>Hof</b>
+          <img src="${asset('img/hof-mark.svg')}" width="32" height="32" alt="" /><b>Hof</b>
         </a>
         <a
           class="m-chambers"
@@ -322,7 +332,7 @@ function shell(
           ${current('account')}
           ${slide(here, 'account', false)}
         >
-          <img src="/static/img/emblem-candle-small.webp" width="34" height="34" alt="" />
+          <img src="${asset('img/emblem-candle-small.webp')}" width="34" height="34" alt="" />
         </a>
       </header>
       <main class="${main.class}">${main.body}</main>
@@ -332,7 +342,7 @@ function shell(
 
 // The mark of Hof with its caption; the picture says nothing the text does not.
 const LOGO = html`<div class="logo">
-  <img src="/static/img/hof-mark.svg" width="64" height="64" alt="" />
+  <img src="${asset('img/hof-mark.svg')}" width="64" height="64" alt="" />
   <span><b>Hof</b><small>Ваш личный двор</small></span>
 </div>`;
 
@@ -437,8 +447,8 @@ function setupPage(form: SetupForm) {
       </div>
       <div class="gate-scene">
         <img
-          src="/static/img/scene-setup.webp"
-          srcset="/static/img/scene-setup.webp 1536w, /static/img/scene-setup@2x.webp 3072w"
+          src="${asset('img/scene-setup.webp')}"
+          srcset="${asset('img/scene-setup.webp')} 1536w, ${asset('img/scene-setup@2x.webp')} 3072w"
           sizes="(max-width: 1023.98px) 195vw, 100vw"
           alt="Ворота замка закрыты, в замке ключ, кот ждёт у ворот"
         />
@@ -448,11 +458,11 @@ function setupPage(form: SetupForm) {
       </div>
       <img
         class="blot blot-setup-medium"
-        src="/static/img/ink-blot-medium.webp"
+        src="${asset('img/ink-blot-medium.webp')}"
         alt=""
         loading="lazy"
       />
-      <img class="blot blot-setup-ring" src="/static/img/ink-ring.webp" alt="" loading="lazy" />
+      <img class="blot blot-setup-ring" src="${asset('img/ink-ring.webp')}" alt="" loading="lazy" />
     </main>`,
   );
 }
@@ -529,16 +539,16 @@ function loginPage(form: LoginForm) {
           <source
             media="(max-width: 1023.98px)"
             srcset="
-              /static/img/login-mobile-v2@2x.webp  780w,
-              /static/img/login-mobile-v2@3x.webp 1170w
+              ${asset('img/login-mobile-v2@2x.webp')}  780w,
+              ${asset('img/login-mobile-v2@3x.webp')} 1170w
             "
             sizes="100vw"
           />
           <img
-            src="/static/img/login-desktop-v2.webp"
+            src="${asset('img/login-desktop-v2.webp')}"
             srcset="
-              /static/img/login-desktop-v2.webp    1536w,
-              /static/img/login-desktop-v2@2x.webp 3072w
+              ${asset('img/login-desktop-v2.webp')} 1536w,
+              ${asset('img/login-desktop-v2@2x.webp')} 3072w
             "
             sizes="100vw"
             alt="Открытые ворота замка, кот смотрит во двор"
@@ -548,17 +558,17 @@ function loginPage(form: LoginForm) {
       </div>
       <img
         class="blot blot-login-small"
-        src="/static/img/ink-blot-small.webp"
+        src="${asset('img/ink-blot-small.webp')}"
         alt=""
         loading="lazy"
       />
       <img
         class="blot blot-login-splatter"
-        src="/static/img/ink-splatter-b.webp"
+        src="${asset('img/ink-splatter-b.webp')}"
         alt=""
         loading="lazy"
       />
-      <img class="blot blot-login-drip" src="/static/img/ink-drip.webp" alt="" loading="lazy" />
+      <img class="blot blot-login-drip" src="${asset('img/ink-drip.webp')}" alt="" loading="lazy" />
     </main>`,
     true,
   );
@@ -593,10 +603,10 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
       <div class="court-map">
         <div class="court-inner">
           <img
-            src="/static/img/scene-courtyard-map.webp"
+            src="${asset('img/scene-courtyard-map.webp')}"
             srcset="
-              /static/img/scene-courtyard-map.webp    1536w,
-              /static/img/scene-courtyard-map@2x.webp 3072w
+              ${asset('img/scene-courtyard-map.webp')} 1536w,
+              ${asset('img/scene-courtyard-map@2x.webp')} 3072w
             "
             sizes="(max-width: 1023.98px) 100vw, calc(100vw - 288px)"
             alt="Двор замка: ворота со сторожкой, казначейская, башня с покоями, фонтан посередине"
@@ -634,7 +644,7 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
       <div class="court-below">
         <div class="court-note">
           <h2 class="title t-2">Ваш двор в порядке</h2>
-          <img class="sprig" src="/static/img/sprig-divider.webp" alt="" />
+          <img class="sprig" src="${asset('img/sprig-divider.webp')}" alt="" />
           <p class="muted">
             Вывески на карте ведут в службы и комнаты. Те же места всегда есть в знамени слева.
           </p>
@@ -650,24 +660,34 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
               </aside>`
             : ''
         }
-        <img class="blot blot-court-drip" src="/static/img/ink-drip.webp" alt="" loading="lazy" />
+        <img
+          class="blot blot-court-drip"
+          src="${asset('img/ink-drip.webp')}"
+          alt=""
+          loading="lazy"
+        />
         <img
           class="blot blot-court-small"
-          src="/static/img/ink-blot-small.webp"
+          src="${asset('img/ink-blot-small.webp')}"
           alt=""
           loading="lazy"
         />
         <img
           class="blot blot-court-splatter-b"
-          src="/static/img/ink-splatter-b.webp"
+          src="${asset('img/ink-splatter-b.webp')}"
           alt=""
           loading="lazy"
         />
-        <img class="blot blot-court-ring" src="/static/img/ink-ring.webp" alt="" loading="lazy" />
+        <img
+          class="blot blot-court-ring"
+          src="${asset('img/ink-ring.webp')}"
+          alt=""
+          loading="lazy"
+        />
       </div>
       <img
         class="blot blot-court-splatter-a"
-        src="/static/img/ink-splatter-a.webp"
+        src="${asset('img/ink-splatter-a.webp')}"
         alt=""
         loading="lazy"
       />`,
@@ -825,29 +845,29 @@ function accountPage(user: CurrentUser, services: readonly Service[], form: Acco
         </form>
         <img
           class="blot blot-chambers-drip"
-          src="/static/img/ink-drip.webp"
+          src="${asset('img/ink-drip.webp')}"
           alt=""
           loading="lazy"
         />
         <img
           class="blot blot-chambers-small"
-          src="/static/img/ink-blot-small.webp"
+          src="${asset('img/ink-blot-small.webp')}"
           alt=""
           loading="lazy"
         />
         <img
           class="blot blot-chambers-splatter"
-          src="/static/img/ink-splatter-a.webp"
+          src="${asset('img/ink-splatter-a.webp')}"
           alt=""
           loading="lazy"
         />
       </div>
       <div class="chambers-scene room-scene">
         <img
-          src="/static/img/scene-chambers-panel.webp"
+          src="${asset('img/scene-chambers-panel.webp')}"
           srcset="
-            /static/img/scene-chambers-panel.webp     683w,
-            /static/img/scene-chambers-panel@2x.webp 1366w
+            ${asset('img/scene-chambers-panel.webp')}  683w,
+            ${asset('img/scene-chambers-panel@2x.webp')} 1366w
           "
           sizes="(max-width: 1023.98px) 100vw, 600px"
           alt="Покои: окно во двор, стол с пером и чернильницей, кот спит на стуле"
@@ -885,10 +905,10 @@ function usersPage(
     class: 'residents',
     body: html`<div class="residents-scene room-scene">
         <img
-          src="/static/img/scene-residents-panel.webp"
+          src="${asset('img/scene-residents-panel.webp')}"
           srcset="
-            /static/img/scene-residents-panel.webp     520w,
-            /static/img/scene-residents-panel@2x.webp 1040w
+            ${asset('img/scene-residents-panel.webp')}  520w,
+            ${asset('img/scene-residents-panel@2x.webp')} 1040w
           "
           sizes="(max-width: 1023.98px) 100vw, 420px"
           alt="Сторожка у ворот: ключница с ключами на крюках"
@@ -906,10 +926,10 @@ function usersPage(
         ${
           others.length === 0
             ? html`<div class="residents-empty">
-                <img class="vignette" src="/static/img/empty-residents.webp" alt="" />
+                <img class="vignette" src="${asset('img/empty-residents.webp')}" alt="" />
                 <div class="residents-empty-text">
                   <h2 class="title t-2">Пока у двора только хозяин</h2>
-                  <img class="sprig" src="/static/img/sprig-divider.webp" alt="" />
+                  <img class="sprig" src="${asset('img/sprig-divider.webp')}" alt="" />
                   <p class="muted">
                     На ключнице один ключ — ваш. Примите ко двору семью или друзей: у каждого будет
                     свой ключ и свои мешки.
@@ -921,7 +941,7 @@ function usersPage(
                   (person) =>
                     html`<li class="key">
                       <img
-                        src="/static/img/${person.is_disabled ? 'hook-empty' : 'key-tag'}.webp"
+                        src="${asset(`img/${person.is_disabled ? 'hook-empty' : 'key-tag'}.webp`)}"
                         alt=""
                       />
                       <b>${person.username}</b>
@@ -984,26 +1004,26 @@ function usersPage(
           others.length === 0
             ? html`<img
                 class="blot blot-residents-splatter-a"
-                src="/static/img/ink-splatter-a.webp"
+                src="${asset('img/ink-splatter-a.webp')}"
                 alt=""
                 loading="lazy"
               />`
             : html`<img
                   class="blot blot-residents-splatter-b"
-                  src="/static/img/ink-splatter-b.webp"
+                  src="${asset('img/ink-splatter-b.webp')}"
                   alt=""
                   loading="lazy"
                 />
                 <img
                   class="blot blot-residents-small"
-                  src="/static/img/ink-blot-small.webp"
+                  src="${asset('img/ink-blot-small.webp')}"
                   alt=""
                   loading="lazy"
                 />`
         }
         <img
           class="blot blot-residents-ring"
-          src="/static/img/ink-ring.webp"
+          src="${asset('img/ink-ring.webp')}"
           alt=""
           loading="lazy"
         />
@@ -1043,7 +1063,9 @@ function memberPage(
       <div class="card-grid">
         <div class="card-person">
           <span class="card-key"
-            ><img src="/static/img/${member.is_disabled ? 'hook-empty' : 'key-tag'}.webp" alt=""
+            ><img
+              src="${asset(`img/${member.is_disabled ? 'hook-empty' : 'key-tag'}.webp`)}"
+              alt=""
           /></span>
           <div class="card-name">
             <h1 class="title t-1">${member.username}</h1>
@@ -1114,20 +1136,20 @@ function memberPage(
       </div>
       <img
         class="blot blot-card-medium"
-        src="/static/img/ink-blot-medium.webp"
+        src="${asset('img/ink-blot-medium.webp')}"
         alt=""
         loading="lazy"
       />
       <img
         class="blot blot-card-splatter"
-        src="/static/img/ink-splatter-a.webp"
+        src="${asset('img/ink-splatter-a.webp')}"
         alt=""
         loading="lazy"
       />
-      <img class="blot blot-card-drip" src="/static/img/ink-drip.webp" alt="" loading="lazy" />
+      <img class="blot blot-card-drip" src="${asset('img/ink-drip.webp')}" alt="" loading="lazy" />
       <img
         class="blot blot-card-small"
-        src="/static/img/ink-blot-small.webp"
+        src="${asset('img/ink-blot-small.webp')}"
         alt=""
         loading="lazy"
       />`,
