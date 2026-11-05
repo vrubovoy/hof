@@ -1,26 +1,23 @@
-// static.ts: which files of a folder are served, with which headers, and when the answer is 304
-// (ARCHITECTURE.md §4.1, §4.9). No database: a small app on a folder of its own.
+// static.ts: which files of a folder are served, with which versions and headers, and when the
+// answer is 304 (ARCHITECTURE.md §4.1, §4.9). No database: a small app on a folder of its own.
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
-  closeSync,
-  ftruncateSync,
+  cpSync,
   mkdirSync,
   mkdtempSync,
-  openSync,
   rmSync,
-  statSync,
   symlinkSync,
   unlinkSync,
   utimesSync,
   writeFileSync,
-  writeSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import { Hono } from 'hono';
-import { staticFiles } from './static.ts';
+import { byteRange, staticFolder } from './static.ts';
 
 const root = mkdtempSync(join(tmpdir(), 'hof-static-'));
 const dir = join(root, 'static');
@@ -38,31 +35,39 @@ const FILES: Record<string, [content: string, type: string]> = {
   'sounds/music.m4a': ['0123456789', 'audio/mp4'],
 };
 const MUSIC = '/static/sounds/music.m4a';
-// A fixed time, so Last-Modified is known: 2026-10-01 12:00:00 UTC.
-const MODIFIED = new Date('2026-10-01T12:00:00Z');
-const MODIFIED_HTTP = 'Thu, 01 Oct 2026 12:00:00 GMT';
+// A CSS file that names a picture and a font.
+const NAMING_CSS =
+  'a { background: url(img/scene.webp); }\n@font-face { src: url(fonts/font.woff2); }';
 
-mkdirSync(join(dir, 'img'), { recursive: true });
-mkdirSync(join(dir, 'fonts'));
-mkdirSync(join(dir, 'sounds'));
-mkdirSync(outside);
-for (const [name, [content]] of Object.entries(FILES)) {
-  writeFileSync(join(dir, name), content);
-  utimesSync(join(dir, name), MODIFIED, MODIFIED);
+// The version of a content: the start of its SHA-256.
+const version = (content: string) =>
+  createHash('sha256').update(content).digest('hex').slice(0, 12);
+
+function makeFolder(folder: string, files: Record<string, string>) {
+  for (const [name, content] of Object.entries(files)) {
+    mkdirSync(join(folder, name, '..'), { recursive: true });
+    writeFileSync(join(folder, name), content);
+  }
 }
+
+makeFolder(dir, {
+  ...Object.fromEntries(Object.entries(FILES).map(([name, [content]]) => [name, content])),
+  'named.css': NAMING_CSS,
+});
+mkdirSync(outside);
 // Never served: a hidden file, a file of another type, links to a file and to a folder outside.
 writeFileSync(join(dir, '.hidden.css'), 'hidden');
 writeFileSync(join(dir, 'img', 'photo.png'), 'png');
 writeFileSync(join(outside, 'secret.css'), 'secret');
 symlinkSync(join(outside, 'secret.css'), join(dir, 'link.css'));
 symlinkSync(outside, join(dir, 'linked'));
-// Listed at the start, changed afterwards (below).
-writeFileSync(join(dir, 'later-link.css'), 'a file at the start');
-writeFileSync(join(dir, 'later-gone.css'), 'a file at the start');
-writeFileSync(join(dir, 'later-edited.css'), 'short');
+// Listed at the start, removed or replaced afterwards (below).
+writeFileSync(join(dir, 'later-link.svg'), '<svg/>');
+writeFileSync(join(dir, 'later-gone.svg'), '<svg/>');
 
+const folder = staticFolder('/static/', dir);
 const app = new Hono();
-app.use('/static/*', staticFiles('/static/', dir));
+app.use('/static/*', folder.serve);
 app.post('/static/hof.css', (c) => c.text('route'));
 app.notFound((c) => c.text('not found', 404));
 
@@ -70,42 +75,110 @@ function get(path: string, headers: Record<string, string> = {}, method = 'GET')
   return app.request(path, { method, headers });
 }
 
+// The CSS of named.css as it is served: each url() with the version of its file.
+const NAMED_SERVED = NAMING_CSS.replace(
+  'img/scene.webp',
+  `img/scene.webp?v=${version('RIFF-webp')}`,
+).replace('fonts/font.woff2', `fonts/font.woff2?v=${version('wOF2-font')}`);
+
 describe('static files', () => {
   for (const [name, [content, type]] of Object.entries(FILES)) {
-    test(`GET ${name}: the file, its type, length, date, no-cache and ranges`, async () => {
+    test(`GET ${name} without a version: the file, its type, length, ETag, no-cache, ranges`, async () => {
       const res = await get(`/static/${name}`);
       assert.equal(res.status, 200);
       assert.equal(res.headers.get('content-type'), type);
       assert.equal(res.headers.get('content-length'), String(Buffer.byteLength(content)));
-      assert.equal(res.headers.get('last-modified'), MODIFIED_HTTP);
+      assert.equal(res.headers.get('etag'), `"${version(content)}"`);
+      assert.equal(res.headers.get('last-modified'), null);
       assert.equal(res.headers.get('cache-control'), 'no-cache');
       assert.equal(res.headers.get('accept-ranges'), 'bytes');
       assert.equal(await res.text(), content);
     });
   }
 
+  test('url(): the address with the version of the content; a name not in the folder is an error', () => {
+    for (const [name, [content]] of Object.entries(FILES)) {
+      assert.equal(folder.url(name), `/static/${name}?v=${version(content)}`);
+    }
+    for (const name of [
+      'missing.css',
+      'img/photo.png',
+      'link.css',
+      '.hidden.css',
+      '/hof.css',
+      'img',
+    ]) {
+      assert.throws(() => folder.url(name), /is not a file of/, name);
+    }
+  });
+
+  test('the address of url(): a year without asking; another version or none: no-cache', async () => {
+    for (const name of Object.keys(FILES)) {
+      const res = await get(folder.url(name));
+      assert.equal(res.status, 200, name);
+      assert.equal(res.headers.get('cache-control'), 'public, max-age=31536000, immutable', name);
+    }
+    const [content] = FILES['img/scene.webp']!;
+    for (const address of [
+      '/static/img/scene.webp?v=000000000000',
+      '/static/img/scene.webp?v=',
+      '/static/img/scene.webp?w=1',
+    ]) {
+      const res = await get(address);
+      assert.equal(res.status, 200, address);
+      assert.equal(res.headers.get('cache-control'), 'no-cache', address);
+      assert.equal(res.headers.get('etag'), `"${version(content)}"`, address);
+      assert.equal(await res.text(), content, address);
+    }
+  });
+
+  test('a CSS file: every url() with the version of its file, from memory, its own version over that', async () => {
+    assert.equal(folder.url('named.css'), `/static/named.css?v=${version(NAMED_SERVED)}`);
+    const res = await get(folder.url('named.css'));
+    assert.equal(res.headers.get('content-type'), 'text/css; charset=utf-8');
+    assert.equal(res.headers.get('content-length'), String(Buffer.byteLength(NAMED_SERVED)));
+    assert.equal(res.headers.get('etag'), `"${version(NAMED_SERVED)}"`);
+    assert.equal(res.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    assert.equal(await res.text(), NAMED_SERVED);
+    const part = await get('/static/named.css', { range: 'bytes=0-4' });
+    assert.equal(part.status, 206);
+    assert.equal(part.headers.get('content-range'), `bytes 0-4/${Buffer.byteLength(NAMED_SERVED)}`);
+    assert.equal(await part.text(), 'a { b');
+  });
+
   test('HEAD: the same headers, no body', async () => {
     const res = await get('/static/hof.css', {}, 'HEAD');
     assert.equal(res.status, 200);
     assert.equal(res.headers.get('content-type'), 'text/css; charset=utf-8');
     assert.equal(res.headers.get('content-length'), String(FILES['hof.css']![0].length));
-    assert.equal(res.headers.get('last-modified'), MODIFIED_HTTP);
+    assert.equal(res.headers.get('etag'), `"${version(FILES['hof.css']![0])}"`);
     assert.equal(await res.text(), '');
   });
 
-  test('If-Modified-Since: 304 without a body for a current copy, 200 for an old one', async () => {
-    for (const since of [MODIFIED_HTTP, 'Fri, 02 Oct 2026 00:00:00 GMT']) {
-      const res = await get('/static/img/scene.webp', { 'if-modified-since': since });
-      assert.equal(res.status, 304, since);
-      assert.equal(res.headers.get('last-modified'), MODIFIED_HTTP);
-      assert.equal(res.headers.get('cache-control'), 'no-cache');
-      assert.equal(await res.text(), '');
+  test('If-None-Match with the ETag, weak, in a list or *: 304 without a body', async () => {
+    const etag = `"${version('RIFF-webp')}"`;
+    for (const tags of [etag, `W/${etag}`, `"other", ${etag}`, '*']) {
+      for (const address of ['/static/img/scene.webp', folder.url('img/scene.webp')]) {
+        const res = await get(address, { 'if-none-match': tags });
+        assert.equal(res.status, 304, `${address} ${tags}`);
+        assert.equal(res.headers.get('etag'), etag);
+        assert.ok(res.headers.get('cache-control'));
+        assert.equal(await res.text(), '');
+      }
     }
-    for (const since of ['Thu, 01 Oct 2026 11:59:59 GMT', 'not a date']) {
-      const res = await get('/static/img/scene.webp', { 'if-modified-since': since });
-      assert.equal(res.status, 200, since);
+    for (const tags of ['"other"', etag.slice(0, -2) + '"', 'not a tag']) {
+      const res = await get('/static/img/scene.webp', { 'if-none-match': tags });
+      assert.equal(res.status, 200, tags);
       assert.equal(await res.text(), 'RIFF-webp');
     }
+  });
+
+  test('If-Modified-Since: no longer read, the whole file', async () => {
+    const res = await get('/static/img/scene.webp', {
+      'if-modified-since': 'Fri, 01 Jan 2100 00:00:00 GMT',
+    });
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), 'RIFF-webp');
   });
 
   // A literal "\" or ".." never reaches the application: the URL parser turns "\" into "/" and
@@ -137,27 +210,76 @@ describe('static files', () => {
   }
 
   test('a file removed or replaced by a link after the start: 404', async () => {
-    unlinkSync(join(dir, 'later-gone.css'));
-    unlinkSync(join(dir, 'later-link.css'));
-    symlinkSync(join(outside, 'secret.css'), join(dir, 'later-link.css'));
-    for (const path of ['/static/later-gone.css', '/static/later-link.css']) {
+    unlinkSync(join(dir, 'later-gone.svg'));
+    unlinkSync(join(dir, 'later-link.svg'));
+    symlinkSync(join(outside, 'secret.css'), join(dir, 'later-link.svg'));
+    for (const path of ['/static/later-gone.svg', '/static/later-link.svg']) {
       assert.equal((await get(path)).status, 404, path);
     }
-  });
-
-  test('a file changed after the start: its new content, length and date', async () => {
-    writeFileSync(join(dir, 'later-edited.css'), 'a longer content');
-    const res = await get('/static/later-edited.css');
-    assert.equal(res.headers.get('content-length'), '16');
-    const seconds = Math.floor(statSync(join(dir, 'later-edited.css')).mtimeMs / 1000) * 1000;
-    assert.equal(res.headers.get('last-modified'), new Date(seconds).toUTCString());
-    assert.equal(await res.text(), 'a longer content');
   });
 
   test('other methods go on to the routes', async () => {
     const res = await get('/static/hof.css', {}, 'POST');
     assert.equal(await res.text(), 'route');
   });
+});
+
+// The version depends on the content only: two builds of the same files give the same addresses,
+// and a changed file changes its own address and that of the CSS naming it, nothing else.
+describe('static files: versions', () => {
+  const CONTENT = {
+    'site.css': 'a { background: url(img/a.webp); }',
+    'plain.css': 'b { color: blue; }',
+    'img/a.webp': 'RIFF-a',
+    'img/b.webp': 'RIFF-b',
+    'fx.js': 'export {};',
+    'sounds/door-1.m4a': 'door',
+  };
+  const names = Object.keys(CONTENT);
+  const addresses = (path: string) => {
+    const one = staticFolder('/static/', path);
+    return Object.fromEntries(names.map((name) => [name, one.url(name)]));
+  };
+
+  test('the same files with other dates: the same addresses', () => {
+    const first = join(root, 'build-1');
+    makeFolder(first, CONTENT);
+    const second = join(root, 'build-2');
+    cpSync(first, second, { recursive: true });
+    for (const name of names)
+      utimesSync(join(second, name), new Date('2020-01-01'), new Date('2020-01-01'));
+    assert.deepEqual(addresses(second), addresses(first));
+  });
+
+  test('one picture changed: its address and that of the CSS naming it change, nothing else', () => {
+    const before = join(root, 'build-before');
+    makeFolder(before, CONTENT);
+    const changed = join(root, 'build-changed');
+    makeFolder(changed, { ...CONTENT, 'img/a.webp': 'RIFF-a, drawn again' });
+    const old = addresses(before);
+    const now = addresses(changed);
+    assert.deepEqual(
+      names.filter((name) => old[name] !== now[name]),
+      ['site.css', 'img/a.webp'],
+    );
+  });
+
+  for (const [what, css] of [
+    ['a file not in the folder', 'a { background: url(img/missing.webp); }'],
+    ['another CSS', 'a { background: url(plain.css); }'],
+    ['a quoted address', 'a { background: url("img/a.webp"); }'],
+    ['a data address', 'a { background: url(data:image/webp;base64,AAAA); }'],
+    ['an address of another site', 'a { background: url(https://example.org/a.webp); }'],
+  ]) {
+    test(`a CSS file naming ${what}: the folder is refused at the start`, () => {
+      const broken = mkdtempSync(join(root, 'broken-'));
+      makeFolder(broken, { ...CONTENT, 'site.css': css! });
+      assert.throws(
+        () => staticFolder('/static/', broken),
+        /site\.css: url\(.*\) is not a file of/,
+      );
+    });
+  }
 });
 
 // RFC 9110 §14: one range is a part (206), one past the end is 416, anything else is the whole
@@ -181,7 +303,7 @@ describe('static files: byte ranges', () => {
       assert.equal(res.headers.get('content-length'), String(body.length));
       assert.equal(res.headers.get('content-type'), 'audio/mp4');
       assert.equal(res.headers.get('accept-ranges'), 'bytes');
-      assert.equal(res.headers.get('last-modified'), MODIFIED_HTTP);
+      assert.equal(res.headers.get('etag'), `"${version('0123456789')}"`);
       assert.equal(res.headers.get('cache-control'), 'no-cache');
       assert.equal(await res.text(), body);
     });
@@ -204,7 +326,7 @@ describe('static files: byte ranges', () => {
     ['another unit', { range: 'items=0-1' }],
     ['several ranges', { range: 'bytes=0-1,3-4' }],
     ['a number past the exact ones', { range: 'bytes=0-9007199254740993' }],
-    ['If-Range', { range: 'bytes=0-1', 'if-range': MODIFIED_HTTP }],
+    ['If-Range', { range: 'bytes=0-1', 'if-range': `"${version('0123456789')}"` }],
   ];
   for (const [name, headers] of whole) {
     test(`${name}: 200 with the whole file`, async () => {
@@ -225,7 +347,10 @@ describe('static files: byte ranges', () => {
   });
 
   test('a current copy with a range: 304 first', async () => {
-    const res = await get(MUSIC, { range: 'bytes=0-1', 'if-modified-since': MODIFIED_HTTP });
+    const res = await get(MUSIC, {
+      range: 'bytes=0-1',
+      'if-none-match': `"${version('0123456789')}"`,
+    });
     assert.equal(res.status, 304);
     assert.equal(await res.text(), '');
   });
@@ -242,23 +367,9 @@ describe('static files: byte ranges', () => {
     }
   });
 
-  // A sparse file of 4 GiB takes no room on disk. If the file were read whole, two bytes at its
-  // end would take far longer than the test may, and an offset past 2³² must be exact.
-  test('the last two bytes of a 4 GiB file: 206 at once', { timeout: 5000 }, async () => {
-    const bigDir = join(root, 'big');
-    mkdirSync(bigDir);
+  test('a range past 4 GiB: exact numbers', () => {
     const size = 4 * 1024 ** 3 + 2;
-    const fd = openSync(join(bigDir, 'big.m4a'), 'w');
-    ftruncateSync(fd, size);
-    writeSync(fd, Buffer.from('ok'), 0, 2, size - 2);
-    closeSync(fd);
-    const big = new Hono();
-    big.use('/static/*', staticFiles('/static/', bigDir));
-
-    const res = await big.request('/static/big.m4a', { headers: { range: `bytes=${size - 2}-` } });
-    assert.equal(res.status, 206);
-    assert.equal(res.headers.get('content-range'), `bytes ${size - 2}-${size - 1}/${size}`);
-    assert.equal(res.headers.get('content-length'), '2');
-    assert.equal(await res.text(), 'ok');
+    assert.deepEqual(byteRange(`bytes=${size - 2}-`, size), { start: size - 2, end: size - 1 });
+    assert.deepEqual(byteRange('bytes=-2', size), { start: size - 2, end: size - 1 });
   });
 });

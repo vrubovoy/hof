@@ -1,9 +1,10 @@
 // Säckel routes (ARCHITECTURE.md §2, §4.1, §6): a budget by pouches.
 //
 // Säckel knows nothing of Core. From main.ts it gets its own pool (role hof_saeckel, schema
-// saeckel), one function — who is signed in, as { id, username } — and the checked settings
-// of the installation: its currency and its time zone. Every query of a pouch or a record is
-// bound to that user's id; the administrator is an ordinary user here.
+// saeckel), one function — who is signed in, as { id, username } — the checked settings of the
+// installation: its currency and its time zone, and the addresses of the two scripts of the
+// effects of Hof. Every query of a pouch or a record is bound to that user's id; the
+// administrator is an ordinary user here.
 //
 // Each route of Säckel checks the session itself, before its path, its form or any query of
 // Säckel. Paths that are not routes of Säckel end in the common 404, with or without a session.
@@ -11,7 +12,9 @@
 import { Hono, type MiddlewareHandler } from 'hono';
 import { html } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
+import { join } from 'node:path';
 import { DatabaseError, type Pool, type PoolClient } from 'pg';
+import { staticFolder } from '../static.ts';
 import { dateForField, dateForList, parseDate, today } from './dates.ts';
 import {
   AMOUNT_MAX_CENTS,
@@ -39,7 +42,21 @@ export interface SaeckelSettings {
   timeZone: string;
 }
 
+// The two scripts of the effects of Hof (§2, §6), the addresses of Core with their versions.
+export interface CoreScripts {
+  head: string;
+  effects: string;
+}
+
 type SaeckelEnv = { Variables: { user: SaeckelUser } };
+
+// The static folder of Säckel (§4.1, §4.9), served by main.ts at /saeckel/static/. A page names
+// its files only by asset(), the address with the version of the file.
+export const saeckelStatic = staticFolder('/saeckel/static/', join(import.meta.dirname, 'static'));
+const asset = saeckelStatic.url;
+
+// The scripts of Core on every page: set once, by createSaeckelApp.
+let coreScripts: CoreScripts = { head: '', effects: '' };
 
 // §4.7: the largest id of a PostgreSQL integer.
 const MAX_ID = 2_147_483_647;
@@ -309,7 +326,7 @@ interface PouchView {
 
 // Every page of Säckel: its own CSS and its own copy of the mark of Hof as the icon of the tab
 // (§4.1: Säckel names only files of its own static folder), and the two scripts of the effects of
-// Hof — the only addresses of Core a page of Säckel names (§2).
+// Hof — the only addresses of Core a page of Säckel names (§2), as main.ts gave them.
 function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString>) {
   return html`<!doctype html>
     <html lang="ru">
@@ -317,10 +334,10 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>${title}</title>
-        <link rel="stylesheet" href="/saeckel/static/saeckel.css" />
-        <link rel="icon" href="/saeckel/static/img/hof-mark.svg" type="image/svg+xml" />
-        <script src="/static/fx-head.js"></script>
-        <script type="module" src="/static/fx.js"></script>
+        <link rel="stylesheet" href="${asset('saeckel.css')}" />
+        <link rel="icon" href="${asset('img/hof-mark.svg')}" type="image/svg+xml" />
+        <script src="${coreScripts.head}"></script>
+        <script type="module" src="${coreScripts.effects}"></script>
       </head>
       <body>
         ${body}
@@ -371,16 +388,16 @@ function saeckelPage(place: Place, body: HtmlEscapedString | Promise<HtmlEscaped
       <header class="sk-head">
         <img
           class="sk-scene"
-          src="/saeckel/static/img/scene-treasury-band.webp"
+          src="${asset('img/scene-treasury-band.webp')}"
           srcset="
-            /saeckel/static/img/scene-treasury-band.webp    1536w,
-            /saeckel/static/img/scene-treasury-band@2x.webp 3072w
+            ${asset('img/scene-treasury-band.webp')} 1536w,
+            ${asset('img/scene-treasury-band@2x.webp')} 3072w
           "
           sizes="100vw"
           alt="Казначейская: стол с весами, монетами, книгой, мешками и сундуком"
         />
         <a class="sk-gate sk-court" href="/" data-fx="flip-back"
-          ><img src="/saeckel/static/img/hof-mark.svg" width="22" height="22" alt="" />Двор</a
+          ><img src="${asset('img/hof-mark.svg')}" width="22" height="22" alt="" />Двор</a
         >
         ${
           below
@@ -407,7 +424,7 @@ function saeckelPage(place: Place, body: HtmlEscapedString | Promise<HtmlEscaped
 function blot(file: string, place: string) {
   return html`<img
     class="blot ${place}"
-    src="/saeckel/static/img/${file}.webp"
+    src="${asset(`img/${file}.webp`)}"
     alt=""
     loading="lazy"
   />`;
@@ -418,11 +435,11 @@ function blot(file: string, place: string) {
 function signPicture(stored: string) {
   const icon = parseIcon(stored) ?? DEFAULT_ICON;
   if (icon !== DEFAULT_ICON) {
-    return html`<img src="/saeckel/static/img/${SIGN_FILES[icon]}.webp" alt="" />`;
+    return html`<img src="${asset(`img/${SIGN_FILES[icon]}.webp`)}" alt="" />`;
   }
   return html`<img
-    src="/saeckel/static/img/${SIGN_FILES[icon]}.webp"
-    srcset="/saeckel/static/img/${SIGN_FILES[icon]}@2x.webp 2x"
+    src="${asset(`img/${SIGN_FILES[icon]}.webp`)}"
+    srcset="${asset(`img/${SIGN_FILES[icon]}@2x.webp`)} 2x"
     alt=""
   />`;
 }
@@ -480,7 +497,7 @@ function treasuryFrame(treasury: number, money: MoneyFormat, buttons: boolean) {
   const classes = ['money', ...(treasury < 0 ? ['neg'] : []), ...(sum.length > 14 ? ['long'] : [])];
   return html`<div class="framed treasury">
     <span class="chest-box" aria-hidden="true" data-poke="chest"
-      ><img class="chest" src="/saeckel/static/img/emblem-chest-closed.webp" alt=""
+      ><img class="chest" src="${asset('img/emblem-chest-closed.webp')}" alt=""
     /></span>
     <h2 class="title t-3">Казна</h2>
     <p class="${classes.join(' ')}">${sum}</p>
@@ -591,14 +608,14 @@ function pouchesPage(
     },
     html`<div class="sk-main sk-empty">
         <span class="vignette sniff" aria-hidden="true"
-          ><img src="/saeckel/static/img/empty-saeckel.webp" alt="" /><span
+          ><img src="${asset('img/empty-saeckel.webp')}" alt="" /><span
             class="cat"
             data-poke="sniff"
           ></span
         ></span>
         <div class="sk-empty-text">
           <h2 class="title">Мешков пока нет</h2>
-          <img class="sprig" src="/saeckel/static/img/sprig-divider.webp" alt="" />
+          <img class="sprig" src="${asset('img/sprig-divider.webp')}" alt="" />
           <p class="muted">
             Заведите первый мешок: «Продукты», «Квартира», «Транспорт». Траты берутся из мешка, а
             остаток переходит дальше сам.
@@ -607,7 +624,7 @@ function pouchesPage(
           <p class="hint text-full">Знак мешка можно выбрать потом, в «Изменить».</p>
         </div>
       </div>
-      <img class="sk-corner" src="/saeckel/static/img/sprig-corner.webp" alt="" loading="lazy" />
+      <img class="sk-corner" src="${asset('img/sprig-corner.webp')}" alt="" loading="lazy" />
       ${blot('ink-blot-medium', 'blot-empty-medium')}`,
   );
 }
@@ -1014,10 +1031,10 @@ function historyPage(view: HistoryView, money: MoneyFormat) {
     return saeckelPage(
       { title: 'Säckel — летопись', tab: 'history' },
       html`<div class="sk-empty history-empty">
-          <img class="vignette" src="/saeckel/static/img/empty-history-closed.webp" alt="" />
+          <img class="vignette" src="${asset('img/empty-history-closed.webp')}" alt="" />
           <div class="sk-empty-text">
             <h2 class="title">Летопись пока пуста</h2>
-            <img class="sprig" src="/saeckel/static/img/sprig-divider.webp" alt="" />
+            <img class="sprig" src="${asset('img/sprig-divider.webp')}" alt="" />
             <p class="muted">
               Сюда ляжет каждый доход, трата и перекладывание — по порядку, с датой и заметкой.
             </p>
@@ -1027,7 +1044,7 @@ function historyPage(view: HistoryView, money: MoneyFormat) {
             </p>
           </div>
         </div>
-        <img class="sk-corner" src="/saeckel/static/img/sprig-corner.webp" alt="" loading="lazy" />
+        <img class="sk-corner" src="${asset('img/sprig-corner.webp')}" alt="" loading="lazy" />
         ${blot('ink-blot-small', 'blot-history-empty')}`,
     );
   }
@@ -1599,8 +1616,10 @@ export function createSaeckelApp(
   pool: Pool,
   currentUser: CurrentUser,
   settings: SaeckelSettings,
+  scripts: CoreScripts,
 ): Hono<SaeckelEnv> {
   const saeckel = new Hono<SaeckelEnv>();
+  coreScripts = scripts;
   const money = moneyFormat(settings.currency);
 
   // A signed-in user or the way to /login. Put on each route, not on /saeckel/*: an address

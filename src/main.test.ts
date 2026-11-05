@@ -8,11 +8,12 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, test, type TestContext } from 'node:test';
 import { DatabaseError, Pool } from 'pg';
+import { coreStatic } from './core/app.ts';
 import type { FirstRun } from './core/gate-key.ts';
 import { hashSessionToken, newSessionToken } from './core/sessions.ts';
 import { applicationUser, createApp } from './main.ts';
 import { migrate } from './migrate.ts';
-import { otherRecordedCurrency } from './saeckel/app.ts';
+import { otherRecordedCurrency, saeckelStatic } from './saeckel/app.ts';
 
 const HOST = 'hof.example';
 // The headings of the common error pages, as Core draws them.
@@ -194,10 +195,24 @@ describe('static files of Core and Säckel', () => {
     assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(res.headers.get('referrer-policy'), 'same-origin');
     assert.equal(res.headers.get('cache-control'), 'no-cache');
-    assert.ok(res.headers.get('last-modified'));
+    assert.match(res.headers.get('etag') ?? '', /^"[0-9a-f]{12}"$/);
     assert.ok((await res.text()).length > 0);
     assert.equal(query.mock.callCount(), 0);
     assert.equal(connect.mock.callCount(), 0);
+  });
+
+  test('an address with the version of its file: kept a year without asking; the same tag', async () => {
+    for (const address of [coreStatic.url('hof.css'), saeckelStatic.url('saeckel.css')]) {
+      const res = await staticRequest(address);
+      assert.equal(res.status, 200, address);
+      assert.equal(
+        res.headers.get('cache-control'),
+        'public, max-age=31536000, immutable',
+        address,
+      );
+      assert.equal(res.headers.get('etag'), `"${address.split('?v=')[1]}"`, address);
+      assert.equal(res.headers.get('content-security-policy'), CSP, address);
+    }
   });
 
   test('each kind of file with its type', async () => {
@@ -597,7 +612,9 @@ describe('Säckel in the court', () => {
     const page = await (await get('/', cookie)).text();
     assert.match(
       page,
-      /<a class="nav" href="\/saeckel\/" data-fx="left">\s*<img src="\/saeckel\/static\/img\/emblem-saeckel-small.webp" alt="" \/>Säckel\s*<\/a>/,
+      new RegExp(
+        String.raw`<a class="nav" href="/saeckel/" data-fx="left">\s*<img src="${saeckelStatic.url('img/emblem-saeckel-small.webp').replace('?', '\\?')}" alt="" />Säckel\s*</a>`,
+      ),
     );
     // On the map the sign and the door of the treasury are one link (M10.3).
     assert.match(
@@ -611,8 +628,18 @@ describe('Säckel in the court', () => {
     // Of the static folder of Säckel the courtyard names the emblem only, and it is served; every
     // other file of that folder is named by the pages of Säckel (src/saeckel/look.test.ts).
     const named = new Set([...page.matchAll(/="(\/saeckel\/static\/[^"]*)"/g)].map((m) => m[1]!));
-    assert.deepEqual([...named], ['/saeckel/static/img/emblem-saeckel-small.webp']);
-    assert.equal((await get('/saeckel/static/img/emblem-saeckel-small.webp')).status, 200);
+    assert.deepEqual([...named], [saeckelStatic.url('img/emblem-saeckel-small.webp')]);
+    assert.equal((await get(saeckelStatic.url('img/emblem-saeckel-small.webp'))).status, 200);
+  });
+
+  // §2: the only addresses of Core on a page of Säckel, given by main.ts with their versions.
+  test('a page of Säckel names the scripts of the effects of Core with their versions', async () => {
+    const { cookie } = await person('anna');
+    const page = await (await get('/saeckel/', cookie)).text();
+    assert.deepEqual(
+      [...page.matchAll(/<script\b[^>]*src="([^"]*)"/g)].map((m) => m[1]),
+      [coreStatic.url('fx-head.js'), coreStatic.url('fx.js')],
+    );
   });
 
   // M11.6: fx.js asks GET /session only on the pages of a signed-in person, which carry

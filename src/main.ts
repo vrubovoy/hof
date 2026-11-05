@@ -7,7 +7,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { Pool } from 'pg';
-import { createCoreApp, errorPage, requestUser, type Service } from './core/app.ts';
+import { coreStatic, createCoreApp, errorPage, requestUser, type Service } from './core/app.ts';
 import { startFirstRun, type FirstRun } from './core/gate-key.ts';
 import { hashPassword } from './core/password.ts';
 import { describeError, log } from './log.ts';
@@ -16,12 +16,13 @@ import { handleConnectionErrors } from './postgres.ts';
 import {
   createSaeckelApp,
   otherRecordedCurrency,
+  saeckelStatic,
+  type CoreScripts,
   type CurrentUser,
   type SaeckelSettings,
 } from './saeckel/app.ts';
 import { timeZoneError } from './saeckel/dates.ts';
 import { currencyError } from './saeckel/money.ts';
-import { staticFiles } from './static.ts';
 
 const PORT = 3000;
 const BODY_LIMIT_BYTES = 16 * 1024;
@@ -29,17 +30,21 @@ const BODY_LIMIT_BYTES = 16 * 1024;
 export const DATABASE = 'hof';
 export const CORE_DB_ROLE = 'hof_core';
 const CORE_MIGRATIONS = join(import.meta.dirname, 'core', 'migrations');
-const CORE_STATIC = join(import.meta.dirname, 'core', 'static');
 // The role of Säckel, in the same database (§5).
 const SAECKEL_DB_ROLE = 'hof_saeckel';
 const SAECKEL_MIGRATIONS = join(import.meta.dirname, 'saeckel', 'migrations');
-const SAECKEL_STATIC = join(import.meta.dirname, 'saeckel', 'static');
 
 // The applications of this installation, for «Службы двора» (§2): the name, the address and the
 // emblem from the application's own static files. This is not a registry, just the list.
 const SERVICES: readonly Service[] = [
-  { name: 'Säckel', path: '/saeckel/', emblem: '/saeckel/static/img/emblem-saeckel-small.webp' },
+  { name: 'Säckel', path: '/saeckel/', emblem: saeckelStatic.url('img/emblem-saeckel-small.webp') },
 ];
+
+// The two scripts of the effects of Hof that every page of Säckel names (§2), with their versions.
+const CORE_SCRIPTS: CoreScripts = {
+  head: coreStatic.url('fx-head.js'),
+  effects: coreStatic.url('fx.js'),
+};
 
 // §4.9: explicit header values, not Hono's secureHeaders preset. connect-src: fx.js asks
 // GET /session (M11.6).
@@ -134,8 +139,8 @@ export function createApp(
 
   // Static files (§4.1) before the first-run gate: the pages of /setup need them before founding.
   // Each module has its own folder; the routes of Säckel never see a request for its files.
-  app.use('/static/*', staticFiles('/static/', CORE_STATIC));
-  app.use('/saeckel/static/*', staticFiles('/saeckel/static/', SAECKEL_STATIC));
+  app.use('/static/*', coreStatic.serve);
+  app.use('/saeckel/static/*', saeckelStatic.serve);
 
   // The healthcheck of Docker (§4.1, §9): the process answers. Before the first-run gate and with
   // no database query, so the answer is the same `ok` in every state of the court.
@@ -152,7 +157,10 @@ export function createApp(
   });
 
   app.route('/', createCoreApp(corePool, firstRun, dummyPasswordHash, SERVICES));
-  app.route('/', createSaeckelApp(saeckelPool, applicationUser(corePool), saeckelSettings));
+  app.route(
+    '/',
+    createSaeckelApp(saeckelPool, applicationUser(corePool), saeckelSettings, CORE_SCRIPTS),
+  );
 
   // Unknown paths and methods (§4.1).
   app.notFound((c) => c.html(NOT_FOUND_PAGE, 404));

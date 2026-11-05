@@ -13,6 +13,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { Pool } from 'pg';
 import { createApp, newDummyPasswordHash } from '../main.ts';
 import { migrate } from '../migrate.ts';
+import { coreStatic } from './app.ts';
 import { startFirstRun } from './gate-key.ts';
 import { hashPassword, verifyPassword } from './password.ts';
 import { createSession, hashSessionToken, newSessionToken, sessionCookie } from './sessions.ts';
@@ -24,6 +25,10 @@ const pool = new Pool({ database: 'hof_test', user: 'hof_core', password });
 // Säckel is mounted in createApp, but no route of Core asks its pool for anything.
 const unusedSaeckelPool = new Pool();
 const SAECKEL_SETTINGS = { currency: 'RUB', timeZone: 'Europe/Moscow' };
+// The address of a file of Core with its version, as the pages name it.
+const asset = coreStatic.url;
+// The version in an address of a static file.
+const VERSION = String.raw`\?v=[0-9a-f]{12}`;
 
 before(() => migrate(pool, join(import.meta.dirname, 'migrations')));
 beforeEach(() => pool.query('TRUNCATE sessions, users RESTART IDENTITY'));
@@ -128,7 +133,9 @@ function squeeze(piece: string): string {
 function keysIn(page: string): string[] {
   return [...page.matchAll(/<li class="key">([\s\S]*?)<\/li>/g)].map(([, key]) =>
     [
-      /src="\/static\/img\/(key-tag|hook-empty)\.webp"\s+alt=""/.exec(key!)?.[1],
+      new RegExp(`src="/static/img/(key-tag|hook-empty)\\.webp${VERSION}"\\s+alt=""`).exec(
+        key!,
+      )?.[1],
       plain(key!),
       /href="([^"]*)"/.exec(key!)?.[1],
     ]
@@ -1537,7 +1544,7 @@ describe('Приближённые', () => {
       '<title>Hof — приближённые</title>',
       '<nav class="banner" aria-label="Hof">',
       '<h1 class="ribbon ribbon-md"><span>Приближённые</span></h1>',
-      '<img class="vignette" src="/static/img/empty-residents.webp" alt="" />',
+      `<img class="vignette" src="${asset('img/empty-residents.webp')}" alt="" />`,
       '<h2 class="title t-2">Пока у двора только хозяин</h2>',
       '<form class="framed residents-new" method="post" action="/admin/users">',
       '<h2 class="title t-3">Принять ко двору</h2>',
@@ -1887,7 +1894,6 @@ describe('the card of a person', () => {
     for (const text of [
       '<title>Hof — anna</title>',
       '<nav class="banner" aria-label="Hof">',
-      '<span class="card-key"\n            ><img src="/static/img/key-tag.webp" alt=""',
       '<h1 class="title t-1">anna</h1>',
       '<span class="badge">С ключом</span>',
       '<h2 class="title t-3">Сбросить пароль</h2>',
@@ -1897,6 +1903,11 @@ describe('the card of a person', () => {
     ]) {
       assert.ok(page.includes(text), text);
     }
+    assert.ok(
+      squeeze(page).includes(
+        `<span class="card-key"><img src="${asset('img/key-tag.webp')}" alt="" /></span>`,
+      ),
+    );
     assert.ok(
       squeeze(page).includes(
         '<a class="back" href="/admin/users" data-fx="flip-back" data-keep><span>Приближённые</span></a>',
@@ -1918,7 +1929,7 @@ describe('the card of a person', () => {
     await addUser('anna', PASSWORD_HASH, true);
     const page = await (await get(app, '/admin/users/2', { cookie })).text();
     assert.ok(page.includes('<span class="badge">Ключ взят</span>'));
-    assert.ok(page.includes('<img src="/static/img/hook-empty.webp" alt=""'));
+    assert.ok(squeeze(page).includes(`<img src="${asset('img/hook-empty.webp')}" alt="" />`));
     assert.ok(!page.includes('С ключом'));
     assert.ok(!page.includes('key-tag'));
   });
@@ -2798,7 +2809,9 @@ describe('the shell and the courtyard', () => {
       assert.deepEqual(places(page).bar, ['/ Hof', '/account Мои покои'], path);
       assert.match(
         part(page, '<nav class="banner"', '</nav>'),
-        /<form method="post" action="\/logout" data-fx="logout">\s*<button type="submit" class="nav"><span class="frames"\s*><img src="\/static\/img\/emblem-door-closed-small.webp" alt="" \/><img\s+src="\/static\/img\/emblem-door-small.webp"\s+alt=""\s*\/><\/span>Покинуть двор<\/button>\s*<\/form>/,
+        new RegExp(
+          String.raw`<form method="post" action="/logout" data-fx="logout">\s*<button type="submit" class="nav"><span class="frames"\s*><img src="/static/img/emblem-door-closed-small\.webp${VERSION}" alt="" /><img\s+src="/static/img/emblem-door-small\.webp${VERSION}"\s+alt=""\s*/></span>Покинуть двор</button>\s*</form>`,
+        ),
         path,
       );
       assert.equal((page.match(/<h1[\s>]/g) ?? []).length, 1, path);
@@ -2810,7 +2823,9 @@ describe('the shell and the courtyard', () => {
     const page = await (await get(app, '/', { cookie })).text();
     assert.match(
       part(page, '<nav class="banner"', '</nav>'),
-      /<a class="nav" href="\/saeckel\/" data-fx="left">\s*<img src="\/saeckel\/static\/img\/emblem-saeckel-small.webp" alt="" \/>Säckel\s*<\/a>/,
+      new RegExp(
+        String.raw`<a class="nav" href="/saeckel/" data-fx="left">\s*<img src="/saeckel/static/img/emblem-saeckel-small\.webp${VERSION}" alt="" />Säckel\s*</a>`,
+      ),
     );
     const emblem = await get(app, '/saeckel/static/img/emblem-saeckel-small.webp');
     assert.equal(emblem.status, 200);
@@ -2898,8 +2913,12 @@ describe('the error pages', () => {
       ]),
     ] as const) {
       assert.ok(page!.includes(`<title>${title}</title>`), title);
-      assert.match(page!, new RegExp(`src="/static/img/${scene}\\.webp"[^>]*alt="${alt}"`), title);
-      assert.ok(page!.includes(`/static/img/${scene}@2x.webp 3072w`), title);
+      assert.match(
+        page!,
+        new RegExp(`src="/static/img/${scene}\\.webp${VERSION}"[^>]*alt="${alt}"`),
+        title,
+      );
+      assert.ok(page!.includes(`${asset(`img/${scene}@2x.webp`)} 3072w`), title);
       assert.ok(page!.includes('<a class="logo" href="/" data-fx="right">'), title);
       assert.ok(page!.includes(`<h1 class="title t-1">${title}</h1>`), title);
       assert.equal((page!.match(/<h1[\s>]/g) ?? []).length, 1, title);
@@ -2947,8 +2966,8 @@ describe('the look of Hof: pages, CSS and static files', () => {
     assert.deepEqual(
       scripts,
       [
-        '<script src="/static/fx-head.js"></script>',
-        '<script type="module" src="/static/fx.js"></script>',
+        `<script src="${asset('fx-head.js')}"></script>`,
+        `<script type="module" src="${asset('fx.js')}"></script>`,
       ],
       name,
     );
@@ -3062,11 +3081,21 @@ describe('the look of Hof: pages, CSS and static files', () => {
       assert.doesNotMatch(page, /https?:\/\//, name);
       for (const address of pageFiles(page)) {
         // The one address that is not a file: the empty stylesheet of the sign-in page, which
-        // makes the browser forget the pages it kept (sign-out).
-        if (address !== '/forget.css') {
-          assert.match(address, /^\/(saeckel\/)?static\//, `${name}: ${address}`);
-        }
-        assert.equal((await get(app, address)).status, 200, `${name}: ${address}`);
+        // makes the browser forget the pages it kept (sign-out). Every file with its version,
+        // kept by the browser without asking.
+        const res = await get(app, address);
+        assert.equal(res.status, 200, `${name}: ${address}`);
+        if (address === '/forget.css') continue;
+        assert.match(
+          address,
+          new RegExp(`^/(saeckel/)?static/[^?]+${VERSION}$`),
+          `${name}: ${address}`,
+        );
+        assert.equal(
+          res.headers.get('cache-control'),
+          'public, max-age=31536000, immutable',
+          `${name}: ${address}`,
+        );
       }
       // Local paths only; "" is the same address, «Попробовать ещё раз» of the 500 page after GET.
       for (const address of pageLinks(page)) {
@@ -3075,14 +3104,21 @@ describe('the look of Hof: pages, CSS and static files', () => {
     }
   });
 
-  test('hof.css: nothing from another site; every url() is a served file', async (t) => {
+  test('hof.css: nothing from another site; every url() is a served file with its version', async (t) => {
     const { app } = await found(t);
     const css = await (await get(app, '/static/hof.css')).text();
     assert.doesNotMatch(css, /https?:\/\/|@import/);
-    const named = cssReferences(css);
+    const named = [...css.matchAll(/url\(([^)]*)\)/g)].map((match) => match[1]!);
     assert.ok(named.length > 0);
     for (const address of named) {
-      assert.equal((await get(app, address)).status, 200, address);
+      assert.match(address, new RegExp(`^(img|fonts)/[^?]+${VERSION}$`), address);
+      const res = await get(app, new URL(address, 'http://hof.test/static/hof.css').href);
+      assert.equal(res.status, 200, address);
+      assert.equal(
+        res.headers.get('cache-control'),
+        'public, max-age=31536000, immutable',
+        address,
+      );
     }
   });
 
@@ -3137,7 +3173,9 @@ describe('the look of Hof: pages, CSS and static files', () => {
     const named = new Set([
       '/static/hof.css',
       ...cssReferences(css),
-      ...pages.flatMap(([, page]) => pageFiles(page)),
+      ...pages.flatMap(([, page]) =>
+        pageFiles(page).map((address) => new URL(address, 'http://hof.test').pathname),
+      ),
       // Sounds and music are asked for by fx.js, not by a page.
       ...soundFiles(),
     ]);
@@ -3272,8 +3310,7 @@ describe('the look of Hof: pages, CSS and static files', () => {
 
   test('M10.2: the door of «Покинуть двор» is two pictures without a name; the button keeps its name', async (t) => {
     const { pages } = await drawnPages(t);
-    const DOOR =
-      '<span class="frames"><img src="/static/img/emblem-door-closed-small.webp" alt="" /><img src="/static/img/emblem-door-small.webp" alt="" /></span>Покинуть двор';
+    const DOOR = `<span class="frames"><img src="${asset('img/emblem-door-closed-small.webp')}" alt="" /><img src="${asset('img/emblem-door-small.webp')}" alt="" /></span>Покинуть двор`;
     for (const name of ['courtyard', 'my chambers', 'chambers of anna']) {
       const page = pages.find(([page]) => page === name)![1];
       const forms = [...page.matchAll(/<form [^>]*action="\/logout"[^>]*>[\s\S]*?<\/form>/g)].map(
@@ -3440,7 +3477,9 @@ describe('the look of Hof: pages, CSS and static files', () => {
     );
     assert.match(
       card,
-      /<span class="card-key"\s*><img src="\/static\/img\/key-tag.webp" alt=""\s*\/><\/span>/,
+      new RegExp(
+        String.raw`<span class="card-key"\s*><img\s+src="/static/img/key-tag\.webp${VERSION}"\s+alt=""\s*/></span>`,
+      ),
     );
     const disable = /action="(\/admin\/users\/\d+\/disable)"/.exec(card)![1]!;
     assert.deepEqual(fields(card, disable), []);
