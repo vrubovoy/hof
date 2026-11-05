@@ -443,7 +443,9 @@ describe('Изменить мешок', () => {
     for (const [key, label] of SIGNS) {
       assert.match(
         flat,
-        new RegExp(`value="${key}"( checked)? /> <img [^>]*alt="" /> ${label} </label>`),
+        new RegExp(
+          `value="${key}"( checked)? /> <img [^>]*alt="" draggable="false" /> ${label} </label>`,
+        ),
         key,
       );
     }
@@ -1191,7 +1193,7 @@ describe('Кладовая on Мешки', () => {
       [...storeroom.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]!.trim()),
       [apples, oranges].map(
         (id) =>
-          `<a class="stored" href="/saeckel/pouches/${id}" ><img src="${saeckelStatic.url('img/emblem-saeckel-small.webp')}" srcset="${saeckelStatic.url('img/emblem-saeckel-small@2x.webp')} 2x" alt="" /><span>${id === apples ? 'Яблоки' : 'Апельсины'}</span></a > <form method="post" action="/saeckel/pouches/${id}/restore"> <button type="submit" class="btn">Вернуть</button> </form>`,
+          `<a class="stored" href="/saeckel/pouches/${id}" ><img src="${saeckelStatic.url('img/emblem-saeckel-small.webp')}" srcset="${saeckelStatic.url('img/emblem-saeckel-small@2x.webp')} 2x" alt="" draggable="false" /><span>${id === apples ? 'Яблоки' : 'Апельсины'}</span></a > <form method="post" action="/saeckel/pouches/${id}/restore"> <button type="submit" class="btn">Вернуть</button> </form>`,
       ),
     );
     assert.ok(!page.includes('Старый Бориса'));

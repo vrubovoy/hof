@@ -335,6 +335,30 @@ describe('the pages of Säckel', () => {
     }
   });
 
+  // M12.3: a picture is not selected with the text around it and not dragged away by the mouse;
+  // text, fields and saving a picture by its menu stay as they were.
+  test('M12.3: every picture of every page is not dragged', async () => {
+    for (const [name, , page] of await drawnPages()) {
+      const pictures = [...page.matchAll(/<img\b[^>]*>/g)].map(([tag]) => tag);
+      assert.ok(pictures.length > 0, name);
+      for (const tag of pictures) assert.match(tag, /\sdraggable="false"[\s/>]/, `${name}: ${tag}`);
+    }
+  });
+
+  test('M12.3: saeckel.css keeps pictures out of a selection, never a field or text', () => {
+    const css = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    const unselectable = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(([, , body]) => /(^|[\s;])user-select:\s*none/.test(body!))
+      .map(([, selector]) => selector!.trim());
+    assert.deepEqual(unselectable, ['img', '.blot']);
+    assert.match(
+      css,
+      /\nimg \{\s*-webkit-user-select: none;\s*user-select: none;\s*-webkit-user-drag: none;\s*\}/,
+    );
+    // Saving a picture by its menu or a long press is not taken away.
+    assert.doesNotMatch(css, /touch-callout/);
+  });
+
   test('saeckel.css: nothing from another site; every url() is a file of Säckel', async () => {
     assert.doesNotMatch(CSS, /https?:\/\/|@import/);
     assert.ok(cssFiles.length > 0);
@@ -829,7 +853,7 @@ describe('the page of a pouch', () => {
     const page = fold(await (await get(`/saeckel/pouches/${food}/edit`, 'anna')).text());
     const offered = [
       ...page.matchAll(
-        /<label class="icon-pick"> <input type="radio" name="icon" value="([^"]*)" ?(checked)? \/> <img src="([^"]*)"[^>]*alt="" \/> ([^<]*) <\/label>/g,
+        /<label class="icon-pick"> <input type="radio" name="icon" value="([^"]*)" ?(checked)? \/> <img src="([^"]*)"[^>]*alt="" draggable="false" \/> ([^<]*) <\/label>/g,
       ),
     ].map(([, key, checked, src]) => [key, checked !== undefined, src]);
     assert.deepEqual(
@@ -1104,9 +1128,9 @@ describe('Летопись and a record', () => {
   test('the empty Летопись: the closed book, the sprig, «Записать доход» and «К мешкам»; no table, no filter', async () => {
     const page = fold(await (await get('/saeckel/history', 'anna')).text());
     for (const text of [
-      `<img class="vignette" src="${asset('img/empty-history-closed.webp')}" alt="" />`,
+      `<img class="vignette" src="${asset('img/empty-history-closed.webp')}" alt="" draggable="false" />`,
       '<h2 class="title">Летопись пока пуста</h2>',
-      `<img class="sprig" src="${asset('img/sprig-divider.webp')}" alt="" />`,
+      `<img class="sprig" src="${asset('img/sprig-divider.webp')}" alt="" draggable="false" />`,
       '<a class="btn btn-ochre" href="/saeckel/income">Записать доход</a>',
       '<a class="link" href="/saeckel/">К мешкам</a>',
     ]) {
@@ -1258,7 +1282,7 @@ describe('the decor of Säckel (M10.5)', () => {
       // Inside: the picture of the closed chest and nothing else.
       assert.equal(
         chest[1]!.trim(),
-        `<img class="chest" src="${asset('img/emblem-chest-closed.webp')}" alt="" />`,
+        `<img class="chest" src="${asset('img/emblem-chest-closed.webp')}" alt="" draggable="false" />`,
         path,
       );
       // The sum and the buttons are after it, outside.
@@ -1277,7 +1301,7 @@ describe('the decor of Säckel (M10.5)', () => {
     const page = fold(await (await get('/saeckel/', 'anna')).text());
     assert.ok(
       page.includes(
-        `<span class="vignette sniff" aria-hidden="true" ><img src="${asset('img/empty-saeckel.webp')}" alt="" /><span class="cat" data-poke="sniff" ></span ></span>`,
+        `<span class="vignette sniff" aria-hidden="true" ><img src="${asset('img/empty-saeckel.webp')}" alt="" draggable="false" /><span class="cat" data-poke="sniff" ></span ></span>`,
       ),
     );
     assert.deepEqual(

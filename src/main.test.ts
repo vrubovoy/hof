@@ -613,7 +613,7 @@ describe('Säckel in the court', () => {
     assert.match(
       page,
       new RegExp(
-        String.raw`<a class="nav" href="/saeckel/" data-fx="left">\s*<img src="${saeckelStatic.url('img/emblem-saeckel-small.webp').replace('?', '\\?')}" alt="" />Säckel\s*</a>`,
+        String.raw`<a class="nav" href="/saeckel/" data-fx="left">\s*<img src="${saeckelStatic.url('img/emblem-saeckel-small.webp').replace('?', '\\?')}" alt="" draggable="false" />Säckel\s*</a>`,
       ),
     );
     // On the map the sign and the door of the treasury are one link (M10.3).

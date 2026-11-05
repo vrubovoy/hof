@@ -111,6 +111,14 @@ a {
   color: var(--blue);
 }
 
+/* картинки — рисунок, а не текст: не выделяются вместе с текстом и не тянутся мышью; сохранить
+   картинку через меню можно, как и раньше */
+img {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 /* текст */
 .title {
   margin: 0;
