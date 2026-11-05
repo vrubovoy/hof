@@ -395,9 +395,16 @@ function saeckelPage(place: Place, body: HtmlEscapedString | Promise<HtmlEscaped
           "
           sizes="100vw"
           alt="Казначейская: стол с весами, монетами, книгой, мешками и сундуком"
+          draggable="false"
         />
         <a class="sk-gate sk-court" href="/" data-fx="flip-back"
-          ><img src="${asset('img/hof-mark.svg')}" width="22" height="22" alt="" />Двор</a
+          ><img
+            src="${asset('img/hof-mark.svg')}"
+            width="22"
+            height="22"
+            alt=""
+            draggable="false"
+          />Двор</a
         >
         ${
           below
@@ -426,6 +433,7 @@ function blot(file: string, place: string) {
     class="blot ${place}"
     src="${asset(`img/${file}.webp`)}"
     alt=""
+    draggable="false"
     loading="lazy"
   />`;
 }
@@ -435,12 +443,13 @@ function blot(file: string, place: string) {
 function signPicture(stored: string) {
   const icon = parseIcon(stored) ?? DEFAULT_ICON;
   if (icon !== DEFAULT_ICON) {
-    return html`<img src="${asset(`img/${SIGN_FILES[icon]}.webp`)}" alt="" />`;
+    return html`<img src="${asset(`img/${SIGN_FILES[icon]}.webp`)}" alt="" draggable="false" />`;
   }
   return html`<img
     src="${asset(`img/${SIGN_FILES[icon]}.webp`)}"
     srcset="${asset(`img/${SIGN_FILES[icon]}@2x.webp`)} 2x"
     alt=""
+    draggable="false"
   />`;
 }
 
@@ -497,7 +506,7 @@ function treasuryFrame(treasury: number, money: MoneyFormat, buttons: boolean) {
   const classes = ['money', ...(treasury < 0 ? ['neg'] : []), ...(sum.length > 14 ? ['long'] : [])];
   return html`<div class="framed treasury">
     <span class="chest-box" aria-hidden="true" data-poke="chest"
-      ><img class="chest" src="${asset('img/emblem-chest-closed.webp')}" alt=""
+      ><img class="chest" src="${asset('img/emblem-chest-closed.webp')}" alt="" draggable="false"
     /></span>
     <h2 class="title t-3">Казна</h2>
     <p class="${classes.join(' ')}">${sum}</p>
@@ -608,14 +617,14 @@ function pouchesPage(
     },
     html`<div class="sk-main sk-empty">
         <span class="vignette sniff" aria-hidden="true"
-          ><img src="${asset('img/empty-saeckel.webp')}" alt="" /><span
+          ><img src="${asset('img/empty-saeckel.webp')}" alt="" draggable="false" /><span
             class="cat"
             data-poke="sniff"
           ></span
         ></span>
         <div class="sk-empty-text">
           <h2 class="title">Мешков пока нет</h2>
-          <img class="sprig" src="${asset('img/sprig-divider.webp')}" alt="" />
+          <img class="sprig" src="${asset('img/sprig-divider.webp')}" alt="" draggable="false" />
           <p class="muted">
             Заведите первый мешок: «Продукты», «Квартира», «Транспорт». Траты берутся из мешка, а
             остаток переходит дальше сам.
@@ -624,7 +633,13 @@ function pouchesPage(
           <p class="hint text-full">Знак мешка можно выбрать потом, в «Изменить».</p>
         </div>
       </div>
-      <img class="sk-corner" src="${asset('img/sprig-corner.webp')}" alt="" loading="lazy" />
+      <img
+        class="sk-corner"
+        src="${asset('img/sprig-corner.webp')}"
+        alt=""
+        draggable="false"
+        loading="lazy"
+      />
       ${blot('ink-blot-medium', 'blot-empty-medium')}`,
   );
 }
@@ -1031,10 +1046,15 @@ function historyPage(view: HistoryView, money: MoneyFormat) {
     return saeckelPage(
       { title: 'Säckel — летопись', tab: 'history' },
       html`<div class="sk-empty history-empty">
-          <img class="vignette" src="${asset('img/empty-history-closed.webp')}" alt="" />
+          <img
+            class="vignette"
+            src="${asset('img/empty-history-closed.webp')}"
+            alt=""
+            draggable="false"
+          />
           <div class="sk-empty-text">
             <h2 class="title">Летопись пока пуста</h2>
-            <img class="sprig" src="${asset('img/sprig-divider.webp')}" alt="" />
+            <img class="sprig" src="${asset('img/sprig-divider.webp')}" alt="" draggable="false" />
             <p class="muted">
               Сюда ляжет каждый доход, трата и перекладывание — по порядку, с датой и заметкой.
             </p>
@@ -1044,7 +1064,13 @@ function historyPage(view: HistoryView, money: MoneyFormat) {
             </p>
           </div>
         </div>
-        <img class="sk-corner" src="${asset('img/sprig-corner.webp')}" alt="" loading="lazy" />
+        <img
+          class="sk-corner"
+          src="${asset('img/sprig-corner.webp')}"
+          alt=""
+          draggable="false"
+          loading="lazy"
+        />
         ${blot('ink-blot-small', 'blot-history-empty')}`,
     );
   }

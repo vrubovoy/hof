@@ -87,6 +87,14 @@ a {
   color: var(--blue);
 }
 
+/* A picture is a drawing, not text: it is not selected with the text around it and not dragged
+   by the mouse. Saving it from its menu works as before. */
+img {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 /* текст */
 .title {
   margin: 0;

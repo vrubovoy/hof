@@ -1544,7 +1544,6 @@ describe('Приближённые', () => {
       '<title>Hof — приближённые</title>',
       '<nav class="banner" aria-label="Hof">',
       '<h1 class="ribbon ribbon-md"><span>Приближённые</span></h1>',
-      `<img class="vignette" src="${asset('img/empty-residents.webp')}" alt="" />`,
       '<h2 class="title t-2">Пока у двора только хозяин</h2>',
       '<form class="framed residents-new" method="post" action="/admin/users">',
       '<h2 class="title t-3">Принять ко двору</h2>',
@@ -1554,6 +1553,11 @@ describe('Приближённые', () => {
     ]) {
       assert.ok(page.includes(text), text);
     }
+    assert.ok(
+      squeeze(page).includes(
+        `<img class="vignette" src="${asset('img/empty-residents.webp')}" alt="" draggable="false" />`,
+      ),
+    );
     for (const text of [
       'На ключнице один ключ — ваш. Примите ко двору семью или друзей: у каждого будет свой ключ и свои мешки.',
       'Пароль виден, чтобы его можно было передать. Человек сменит его в своих покоях.',
@@ -1905,7 +1909,7 @@ describe('the card of a person', () => {
     }
     assert.ok(
       squeeze(page).includes(
-        `<span class="card-key"><img src="${asset('img/key-tag.webp')}" alt="" /></span>`,
+        `<span class="card-key"><img src="${asset('img/key-tag.webp')}" alt="" draggable="false" /></span>`,
       ),
     );
     assert.ok(
@@ -1929,7 +1933,11 @@ describe('the card of a person', () => {
     await addUser('anna', PASSWORD_HASH, true);
     const page = await (await get(app, '/admin/users/2', { cookie })).text();
     assert.ok(page.includes('<span class="badge">Ключ взят</span>'));
-    assert.ok(squeeze(page).includes(`<img src="${asset('img/hook-empty.webp')}" alt="" />`));
+    assert.ok(
+      squeeze(page).includes(
+        `<img src="${asset('img/hook-empty.webp')}" alt="" draggable="false" />`,
+      ),
+    );
     assert.ok(!page.includes('С ключом'));
     assert.ok(!page.includes('key-tag'));
   });
@@ -2810,7 +2818,7 @@ describe('the shell and the courtyard', () => {
       assert.match(
         part(page, '<nav class="banner"', '</nav>'),
         new RegExp(
-          String.raw`<form method="post" action="/logout" data-fx="logout">\s*<button type="submit" class="nav"><span class="frames"\s*><img src="/static/img/emblem-door-closed-small\.webp${VERSION}" alt="" /><img\s+src="/static/img/emblem-door-small\.webp${VERSION}"\s+alt=""\s*/></span>Покинуть двор</button>\s*</form>`,
+          String.raw`<form method="post" action="/logout" data-fx="logout">\s*<button type="submit" class="nav"><span class="frames"\s*><img src="/static/img/emblem-door-closed-small\.webp${VERSION}" alt="" draggable="false" /><img\s+src="/static/img/emblem-door-small\.webp${VERSION}"\s+alt=""\s+draggable="false"\s*/></span>Покинуть двор</button>\s*</form>`,
         ),
         path,
       );
@@ -2824,7 +2832,7 @@ describe('the shell and the courtyard', () => {
     assert.match(
       part(page, '<nav class="banner"', '</nav>'),
       new RegExp(
-        String.raw`<a class="nav" href="/saeckel/" data-fx="left">\s*<img src="/saeckel/static/img/emblem-saeckel-small\.webp${VERSION}" alt="" />Säckel\s*</a>`,
+        String.raw`<a class="nav" href="/saeckel/" data-fx="left">\s*<img src="/saeckel/static/img/emblem-saeckel-small\.webp${VERSION}" alt="" draggable="false" />Säckel\s*</a>`,
       ),
     );
     const emblem = await get(app, '/saeckel/static/img/emblem-saeckel-small.webp');
@@ -3104,6 +3112,32 @@ describe('the look of Hof: pages, CSS and static files', () => {
     }
   });
 
+  // M12.3: a picture is not selected with the text around it and not dragged away by the mouse;
+  // text, fields and saving a picture by its menu stay as they were.
+  test('M12.3: every picture of every page is not dragged', async (t) => {
+    const { pages } = await drawnPages(t);
+    for (const [name, page] of pages) {
+      const pictures = [...page.matchAll(/<img\b[^>]*>/g)].map(([tag]) => tag);
+      assert.ok(pictures.length > 0, name);
+      for (const tag of pictures) assert.match(tag, /\sdraggable="false"[\s/>]/, `${name}: ${tag}`);
+    }
+  });
+
+  test('M12.3: hof.css keeps pictures out of a selection, never a field or text', async (t) => {
+    const { app } = await found(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const unselectable = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(([, , body]) => /(^|[\s;])user-select:\s*none/.test(body!))
+      .map(([, selector]) => selector!.trim());
+    assert.deepEqual(unselectable, ['img', '.blot']);
+    assert.match(
+      css,
+      /\nimg \{\s*-webkit-user-select: none;\s*user-select: none;\s*-webkit-user-drag: none;\s*\}/,
+    );
+    // Saving a picture by its menu or a long press is not taken away.
+    assert.doesNotMatch(css, /touch-callout/);
+  });
+
   test('hof.css: nothing from another site; every url() is a served file with its version', async (t) => {
     const { app } = await found(t);
     const css = await (await get(app, '/static/hof.css')).text();
@@ -3310,7 +3344,7 @@ describe('the look of Hof: pages, CSS and static files', () => {
 
   test('M10.2: the door of «Покинуть двор» is two pictures without a name; the button keeps its name', async (t) => {
     const { pages } = await drawnPages(t);
-    const DOOR = `<span class="frames"><img src="${asset('img/emblem-door-closed-small.webp')}" alt="" /><img src="${asset('img/emblem-door-small.webp')}" alt="" /></span>Покинуть двор`;
+    const DOOR = `<span class="frames"><img src="${asset('img/emblem-door-closed-small.webp')}" alt="" draggable="false" /><img src="${asset('img/emblem-door-small.webp')}" alt="" draggable="false" /></span>Покинуть двор`;
     for (const name of ['courtyard', 'my chambers', 'chambers of anna']) {
       const page = pages.find(([page]) => page === name)![1];
       const forms = [...page.matchAll(/<form [^>]*action="\/logout"[^>]*>[\s\S]*?<\/form>/g)].map(
@@ -3478,7 +3512,7 @@ describe('the look of Hof: pages, CSS and static files', () => {
     assert.match(
       card,
       new RegExp(
-        String.raw`<span class="card-key"\s*><img\s+src="/static/img/key-tag\.webp${VERSION}"\s+alt=""\s*/></span>`,
+        String.raw`<span class="card-key"\s*><img\s+src="/static/img/key-tag\.webp${VERSION}"\s+alt=""\s+draggable="false"\s*/></span>`,
       ),
     );
     const disable = /action="(\/admin\/users\/\d+\/disable)"/.exec(card)![1]!;
