@@ -2340,7 +2340,9 @@ img {
   }
   /* a gust of wind in a crown (fx.js): fx.js wakes the frames of the leaves (.wake) after those
      of the water, the banners and the doors, and only then they load; a gust (.gust) is 8 frames
-     in 2 s, at rest the layer is hidden */
+     in 2 s, at rest the layer keeps its first frame, which repeats the map. The steps belong to
+     the animation, as for the water: given in a keyframe that does not name background-position,
+     they did not reach it in Firefox, which slid the strip through the layer (M12.10) */
   .fx-on .fx-leaves.wake {
     background: 0 0 / 800% 100% no-repeat;
   }
@@ -2357,7 +2359,7 @@ img {
     background-image: url(img/fx-leaves-tree.webp);
   }
   .fx-on .fx-leaves.gust {
-    animation: fx-gust 2s;
+    animation: fx-gust 2s steps(8, jump-none);
   }
   /* стайка (fx.js, .fly) за 15 с набирает высоту и уходит за верхний край до башни; крылья
      машут каждое в своём темпе */
@@ -2595,7 +2597,6 @@ img {
 @keyframes fx-gust {
   from {
     opacity: 1;
-    animation-timing-function: steps(8, jump-none);
   }
   to {
     opacity: 1;
