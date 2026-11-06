@@ -3607,4 +3607,19 @@ describe('the look of Hof: pages, CSS and static files', () => {
     assert.match(frame, /\bposition: absolute;/);
     assert.match(frame, /\binset: 0;/);
   });
+
+  // M12.10: a gust steps through the 8 frames of a crown in Firefox as well. Its steps belong to
+  // the animation, as for the water and the banners: given in a keyframe that does not name
+  // background-position, Firefox did not step the strip but slid it through the layer.
+  test('M12.10: a gust steps through its frames, the steps on the animation', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = await (await get(app, '/static/hof.css')).text();
+    assert.match(
+      css,
+      /\.fx-on \.fx-leaves\.gust \{\s*animation: fx-gust 2s steps\(8, jump-none\);\s*\}/,
+    );
+    const gust = /@keyframes fx-gust \{([\s\S]*?)\n\}/.exec(css)![1]!;
+    assert.doesNotMatch(gust, /animation-timing-function/);
+    assert.match(gust, /to \{[^}]*background-position: 100% 0;/);
+  });
 });
