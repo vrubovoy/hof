@@ -3138,6 +3138,33 @@ describe('the look of Hof: pages, CSS and static files', () => {
     assert.doesNotMatch(css, /touch-callout/);
   });
 
+  // M12.5: the picture of the first screen is asked for before the rest of the page. The error
+  // pages and the founding of the court are M12.6.
+  test('M12.5: one picture of the first screen asked for first, on the pages with a scene', async (t) => {
+    const { pages } = await drawnPages(t);
+    const first: [RegExp, string][] = [
+      [/^(GET \/login|refused sign-in)$/, 'login-desktop-v2'],
+      [/^courtyard/, 'scene-courtyard-map'],
+      [
+        /^(my chambers|password changed|short new password|chambers of anna)$/,
+        'scene-chambers-panel',
+      ],
+      [
+        /^(Приближённые|wrong new login|a key made|short initial password)/,
+        'scene-residents-panel',
+      ],
+    ];
+    for (const [name, page] of pages) {
+      const high = [...page.matchAll(/<img\b[^>]*\sfetchpriority="high"[^>]*>/g)].map(
+        ([tag]) => tag,
+      );
+      const scene = first.find(([pattern]) => pattern.test(name))?.[1];
+      assert.equal(high.length, scene === undefined ? 0 : 1, name);
+      if (scene !== undefined)
+        assert.match(high[0]!, new RegExp(`\\ssrc="[^"]*/${scene}\\.webp`), name);
+    }
+  });
+
   // The width and the height of a lossy WebP from the header of its frame.
   function webpSize(file: string) {
     const data = readFileSync(join(import.meta.dirname, 'static', 'img', file));

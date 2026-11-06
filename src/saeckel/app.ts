@@ -396,6 +396,7 @@ function saeckelPage(place: Place, body: HtmlEscapedString | Promise<HtmlEscaped
           sizes="100vw"
           alt="Казначейская: стол с весами, монетами, книгой, мешками и сундуком"
           draggable="false"
+          fetchpriority="high"
         />
         <a class="sk-gate sk-court" href="/" data-fx="flip-back"
           ><img
