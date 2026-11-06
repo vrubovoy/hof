@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict';
 import { createHook } from 'node:async_hooks';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, test, type TestContext } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -3136,6 +3136,42 @@ describe('the look of Hof: pages, CSS and static files', () => {
     );
     // Saving a picture by its menu or a long press is not taken away.
     assert.doesNotMatch(css, /touch-callout/);
+  });
+
+  // The width and the height of a lossy WebP from the header of its frame.
+  function webpSize(file: string) {
+    const data = readFileSync(join(import.meta.dirname, 'static', 'img', file));
+    assert.equal(data.toString('latin1', 12, 16), 'VP8 ', file);
+    return { width: data.readUInt16LE(26) & 0x3fff, height: data.readUInt16LE(28) & 0x3fff };
+  }
+
+  test('M12.5: from 320 px the phone band of a room is a picture of its own, at least 300 KB lighter', async (t) => {
+    const { pages } = await drawnPages(t);
+    const page = (name: string) => pages.find(([n]) => n === name)![1];
+    const bytes = (file: string) => statSync(join(import.meta.dirname, 'static', 'img', file)).size;
+    for (const [name, room] of [
+      ['my chambers', 'chambers'],
+      ['Приближённые', 'residents'],
+    ] as const) {
+      const { width } = webpSize(`scene-${room}-panel.webp`);
+      const source = new RegExp(
+        String.raw`<picture>\s*<source\s+media="\(min-width: 320px\) and \(max-width: 1023\.98px\)"\s+` +
+          String.raw`srcset="\s*[^"\s]*/scene-${room}-band\.webp\S*\s+${width}w,\s*` +
+          String.raw`[^"\s]*/scene-${room}-band@2x\.webp\S*\s+${2 * width}w\s*"\s+sizes="100vw"\s*/>\s*<img\s`,
+      );
+      assert.match(page(name), source, name);
+      // Of the size of its panel, so that the browser draws it as the panel.
+      for (const density of ['', '@2x']) {
+        const band = `scene-${room}-band${density}.webp`;
+        const panel = `scene-${room}-panel${density}.webp`;
+        assert.deepEqual(webpSize(band), webpSize(panel), band);
+      }
+      // A phone of 2x and 3x takes @2x.
+      assert.ok(
+        bytes(`scene-${room}-panel@2x.webp`) - bytes(`scene-${room}-band@2x.webp`) >= 300 * 1024,
+        room,
+      );
+    }
   });
 
   test('hof.css: nothing from another site; every url() is a served file with its version', async (t) => {
