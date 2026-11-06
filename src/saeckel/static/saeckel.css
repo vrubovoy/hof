@@ -1965,15 +1965,15 @@ mark.move {
     animation: stamp 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) backwards;
   }
 
-  /* сдвиг (из знамени Hof и лист книги — в ту же сторону): страница уезжает на 32 % и темнеет
-     до 0,85 за 0,5 с, новая выезжает навстречу за 0,6 с. Завеса ссылок не закрывает. Сдвиг не
-     даёт прокрутки вбок: <html> отдаёт свой overflow окну (там clip — это hidden, и сдвинутое всё
-     ещё прокручивается скриптом), поэтому обрезает и <body> */
+  /* a page of the book turned: the page moves away by 32 % and darkens to 0.85 in 0.5 s, the next
+     one comes towards it in 0.6 s. The veil does not cover the links. The slide gives no scrolling
+     sideways: <html> hands its overflow to the window (where clip is hidden, and what moved can
+     still be scrolled by a script), so <body> clips as well */
   html:is(.go-left, .go-right, .from-left, .from-right),
   html:is(.go-left, .go-right, .from-left, .from-right) body {
     overflow-x: clip;
   }
-  html:is(.go-left, .go-right, .from-left, .from-right, .from-door) body::after {
+  html:is(.go-left, .go-right, .from-left, .from-right, .go-dark, .from-door) body::after {
     content: '';
     position: fixed;
     inset: 0;
@@ -1994,6 +1994,11 @@ mark.move {
     opacity: 1;
     animation: veil-out 0.7s ease-out forwards;
   }
+  /* M12.11: «Двор» leaves the book as through a door (fx.js, .go-dark): into the dark in 0.5 s,
+     the courtyard coming out of it */
+  .go-dark body::after {
+    animation: veil-in 0.5s ease-in forwards;
+  }
   /* виньетки и кляксы печатаются на бумагу страницы (multiply), а сдвигаемая страница — свой
      слой: на время перехода у неё та же бумага, иначе вокруг рисунков видна белая бумага
      картинки */
@@ -2005,17 +2010,20 @@ mark.move {
     background-blend-mode: multiply, normal;
     will-change: transform;
   }
+  /* M12.11: the page away moves at once and slows down to its stop, the next one starts and stops
+     softly. With ease-in it stood still at full speed while the next page loaded, and that one
+     set off at full speed */
   .go-left body > * {
-    animation: out-left 0.5s ease-in forwards;
+    animation: out-left 0.5s ease-out forwards;
   }
   .go-right body > * {
-    animation: out-right 0.5s ease-in forwards;
+    animation: out-right 0.5s ease-out forwards;
   }
   .from-right body > * {
-    animation: in-right 0.6s ease-out both;
+    animation: in-right 0.6s ease-in-out both;
   }
   .from-left body > * {
-    animation: in-left 0.6s ease-out both;
+    animation: in-left 0.6s ease-in-out both;
   }
 
   /* сундук Казны (M10.5, fx.js): по нажатию крышка открывается за 0,2 с — кадр открытого сундука
@@ -2099,6 +2107,11 @@ mark.move {
 @keyframes veil-dim {
   to {
     opacity: 0.85;
+  }
+}
+@keyframes veil-in {
+  to {
+    opacity: 1;
   }
 }
 @keyframes veil-out {

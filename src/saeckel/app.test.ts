@@ -138,7 +138,7 @@ describe('Мешки', () => {
     }
     assert.match(
       page,
-      /<a class="sk-gate sk-court" href="\/" data-fx="flip-back"\s*><img [^>]*\/>Двор<\/a\s*>/,
+      /<a class="sk-gate sk-court" href="\/" data-fx="door"\s*><img [^>]*\/>Двор<\/a\s*>/,
     );
     assert.equal(wayBack(page), undefined);
     assert.ok(

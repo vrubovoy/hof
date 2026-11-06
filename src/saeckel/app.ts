@@ -354,8 +354,10 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
 // the h1 of the tabs themselves; any other page has its own.
 //
 // With «Анимации» the book turns a page (data-fx, read by fx.js of Hof, §6): forward to Летопись
-// and, on the phone, deeper into Мешки; back to Мешки, to Двор and on «назад». A link marked
+// and, on the phone, deeper into Мешки; back to Мешки and on «назад». A link marked
 // flip-fwd-phone turns the page on the phone only: on a computer the column stays where it is.
+// M12.11: «Двор» leaves the book as a way out through a door: into the dark, the courtyard coming
+// out of it.
 function saeckelPage(place: Place, body: HtmlEscapedString | Promise<HtmlEscapedString> | '') {
   const here = (tab: Tab) =>
     tab === place.tab
@@ -398,7 +400,7 @@ function saeckelPage(place: Place, body: HtmlEscapedString | Promise<HtmlEscaped
           draggable="false"
           fetchpriority="high"
         />
-        <a class="sk-gate sk-court" href="/" data-fx="flip-back"
+        <a class="sk-gate sk-court" href="/" data-fx="door"
           ><img
             src="${asset('img/hof-mark.svg')}"
             width="22"

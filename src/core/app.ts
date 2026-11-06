@@ -54,17 +54,27 @@ export interface Service {
 // The place of Hof a page belongs to, marked as the current one in the banner and the top bar.
 type Place = 'courtyard' | 'users' | 'account';
 
-// The order of the banner (§6): Двор, the services, Приближённые, Мои покои. With «Анимации» a
-// link to a place further down slides the page away to the left, one back up — to the right
-// (data-fx, read by fx.js); data-keep — the banner stays, for both pages have it. A link to the
-// place of the page itself is an ordinary link. A key and its card are a page of the book turned
-// (flip-fwd, flip-back), with the banner staying as well.
-const ORDER = { courtyard: 0, service: 1, users: 2, account: 3 } as const;
+// M12.11: with «Анимации» a link of the banner or the top bar goes into a place as its door on the
+// courtyard map does (data-fx="door", data-door — read by fx.js): on the courtyard the map zooms
+// into that door, on any other page, where the door is not drawn, the page goes into the dark. The
+// courtyard has no door: the way to it always goes into the dark, and every way through a door
+// ends on a page coming out of the dark. A link to the place of the page itself is an ordinary
+// link. A key and its card are a page of the book turned (flip-fwd, flip-back), the banner staying
+// (data-keep).
+const DOORS: Record<Place, string | null> = {
+  courtyard: null,
+  users: 'gatehouse',
+  account: 'tower',
+};
 
-function slide(here: Place, to: keyof typeof ORDER, keep = to !== 'service') {
-  if (to === here) return '';
-  const fx = ORDER[to] > ORDER[here] ? 'left' : 'right';
-  return keep ? html`data-fx="${fx}" data-keep` : html`data-fx="${fx}"`;
+// A way through the door `at`; with no door — the courtyard, a service after the first one (the
+// first lives behind the treasury) — into the dark.
+function through(at: string | null) {
+  return at === null ? html`data-fx="door"` : html`data-fx="door" data-door="${at}"`;
+}
+
+function into(here: Place, to: Place) {
+  return to === here ? '' : through(DOORS[to]);
 }
 
 // The door of «Покинуть двор»: the open frame lies over the closed one and shows only while the
@@ -232,7 +242,7 @@ export function errorPage(status: keyof typeof ERRORS, retry = false) {
         ${status === 500 ? html`<span class="cat-frame">${cat('500')}</span>` : ''}
       </div>
       <div class="error-paper">
-        <a class="logo" href="/" data-fx="right">
+        <a class="logo" href="/" data-fx="door">
           <img src="${asset('img/hof-mark.svg')}" width="40" height="40" alt="" draggable="false" />
           <span><b>Hof</b><small>Ваш личный двор</small></span>
         </a>
@@ -243,8 +253,8 @@ export function errorPage(status: keyof typeof ERRORS, retry = false) {
           ${
             retry
               ? html`<a class="btn btn-blue" href="">Попробовать ещё раз</a>
-                  <a class="link" href="/" data-fx="right">Во двор</a>`
-              : html`<a class="btn btn-blue" href="/" data-fx="right">Во двор</a>`
+                  <a class="link" href="/" data-fx="door">Во двор</a>`
+              : html`<a class="btn btn-blue" href="/" data-fx="door">Во двор</a>`
           }
         </div>
       </div>
@@ -293,7 +303,7 @@ function shell(
           />
           <span><b>Hof</b><small>Ваш личный двор</small></span>
         </a>
-        <a class="nav" href="/" ${current('courtyard')} ${slide(here, 'courtyard')}>
+        <a class="nav" href="/" ${current('courtyard')} ${into(here, 'courtyard')}>
           <img src="${asset('img/emblem-fountain-small.webp')}" alt="" draggable="false" />Двор
         </a>
         ${
@@ -301,8 +311,12 @@ function shell(
             ? ''
             : html`<div class="nav-label">Службы двора</div>
                 ${services.map(
-                  (service) =>
-                    html`<a class="nav" href="${service.path}" ${slide(here, 'service')}>
+                  (service, i) =>
+                    html`<a
+                      class="nav"
+                      href="${service.path}"
+                      ${through(i === 0 ? 'treasury' : null)}
+                    >
                       <img src="${service.emblem}" alt="" draggable="false" />${service.name}
                     </a>`,
                 )}`
@@ -310,7 +324,7 @@ function shell(
         ${
           user.isAdmin
             ? html`<div class="nav-label">Хозяйство</div>
-                <a class="nav" href="/admin/users" ${current('users')} ${slide(here, 'users')}>
+                <a class="nav" href="/admin/users" ${current('users')} ${into(here, 'users')}>
                   <img
                     src="${asset('img/emblem-keys-small.webp')}"
                     alt=""
@@ -320,7 +334,7 @@ function shell(
             : ''
         }
         <div class="banner-foot">
-          <a class="nav" href="/account" ${current('account')} ${slide(here, 'account')}>
+          <a class="nav" href="/account" ${current('account')} ${into(here, 'account')}>
             <img src="${asset('img/emblem-candle-small.webp')}" alt="" draggable="false" />
             <span class="nav-who">
               <span>Мои покои</span>
@@ -335,7 +349,7 @@ function shell(
         </div>
       </nav>
       <header class="m-top">
-        <a class="logo" href="/" ${slide(here, 'courtyard', false)}>
+        <a class="logo" href="/" ${into(here, 'courtyard')}>
           <img
             src="${asset('img/hof-mark.svg')}"
             width="32"
@@ -349,7 +363,7 @@ function shell(
           href="/account"
           aria-label="Мои покои"
           ${current('account')}
-          ${slide(here, 'account', false)}
+          ${into(here, 'account')}
         >
           <img
             src="${asset('img/emblem-candle-small.webp')}"
@@ -703,7 +717,7 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
                 <p class="small muted">
                   Примите приближённых: у каждого будет свой ключ и свои мешки.
                 </p>
-                <a class="btn" href="/admin/users" data-fx="left" data-keep>Принять ко двору</a>
+                <a class="btn" href="/admin/users" ${through(DOORS.users)}>Принять ко двору</a>
               </aside>`
             : ''
         }

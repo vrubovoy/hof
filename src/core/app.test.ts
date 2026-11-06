@@ -516,10 +516,7 @@ describe('after founding', () => {
       assert.equal(res.headers.get('cache-control'), 'no-store', name);
       const page = await res.text();
       assert.ok(page.includes('<h1 class="title t-1">Такой тропы во дворе нет</h1>'), name);
-      assert.ok(
-        page.includes('<a class="btn btn-blue" href="/" data-fx="right">Во двор</a>'),
-        name,
-      );
+      assert.ok(page.includes('<a class="btn btn-blue" href="/" data-fx="door">Во двор</a>'), name);
     }
   });
 });
@@ -1476,7 +1473,7 @@ describe('the pages of the administrator: who gets in', () => {
       '<title>Сюда только хозяину</title>',
       FORBIDDEN_H1,
       '<p class="muted">Это место двора открыто только хозяину. Если нужно, попросите его.</p>',
-      '<a class="btn btn-blue" href="/" data-fx="right">Во двор</a>',
+      '<a class="btn btn-blue" href="/" data-fx="door">Во двор</a>',
     ]) {
       assert.ok(page.includes(text), text);
     }
@@ -2832,7 +2829,7 @@ describe('the shell and the courtyard', () => {
     assert.match(
       part(page, '<nav class="banner"', '</nav>'),
       new RegExp(
-        String.raw`<a class="nav" href="/saeckel/" data-fx="left">\s*<img src="/saeckel/static/img/emblem-saeckel-small\.webp${VERSION}" alt="" draggable="false" />Säckel\s*</a>`,
+        String.raw`<a\s+class="nav"\s+href="/saeckel/"\s+data-fx="door" data-door="treasury"\s*>\s*<img src="/saeckel/static/img/emblem-saeckel-small\.webp${VERSION}" alt="" draggable="false" />Säckel\s*</a>`,
       ),
     );
     const emblem = await get(app, '/saeckel/static/img/emblem-saeckel-small.webp');
@@ -2846,7 +2843,7 @@ describe('the shell and the courtyard', () => {
     assert.ok(alone.includes(`<h2 class="title t-3">${NOTE}</h2>`));
     assert.ok(
       alone.includes(
-        '<a class="btn" href="/admin/users" data-fx="left" data-keep>Принять ко двору</a>',
+        '<a class="btn" href="/admin/users" data-fx="door" data-door="gatehouse">Принять ко двору</a>',
       ),
     );
 
@@ -2927,7 +2924,7 @@ describe('the error pages', () => {
         title,
       );
       assert.ok(page!.includes(`${asset(`img/${scene}@2x.webp`)} 3072w`), title);
-      assert.ok(page!.includes('<a class="logo" href="/" data-fx="right">'), title);
+      assert.ok(page!.includes('<a class="logo" href="/" data-fx="door">'), title);
       assert.ok(page!.includes(`<h1 class="title t-1">${title}</h1>`), title);
       assert.equal((page!.match(/<h1[\s>]/g) ?? []).length, 1, title);
       assert.ok(page!.includes(`<p class="muted">${text}</p>`), title);
@@ -2944,13 +2941,13 @@ describe('the error pages', () => {
     const [forbidden, notFound, afterGet, afterPost] = await errorPages(t);
     assert.ok(
       squeeze(afterGet!).includes(
-        '<div class="error-actions"><a class="btn btn-blue" href="">Попробовать ещё раз</a><a class="link" href="/" data-fx="right">Во двор</a></div>',
+        '<div class="error-actions"><a class="btn btn-blue" href="">Попробовать ещё раз</a><a class="link" href="/" data-fx="door">Во двор</a></div>',
       ),
     );
     for (const page of [forbidden, notFound, afterPost]) {
       assert.ok(
         squeeze(page!).includes(
-          '<div class="error-actions"><a class="btn btn-blue" href="/" data-fx="right">Во двор</a></div>',
+          '<div class="error-actions"><a class="btn btn-blue" href="/" data-fx="door">Во двор</a></div>',
         ),
       );
       assert.ok(!page!.includes('Попробовать ещё раз'));
@@ -3340,49 +3337,59 @@ describe('the look of Hof: pages, CSS and static files', () => {
     assert.ok(links > 50, String(links));
   });
 
-  test('M10.2: the banner and the bar slide by the order of the banner, for each place and each role', async (t) => {
+  // M12.11: the banner and the bar go into a place as its door on the courtyard map does — the
+  // door named as on the map; the courtyard has none, the way to it goes into the dark. Each link
+  // as "address fx[ door][ keep]".
+  function doors(piece: string): string[] {
+    return [...piece.matchAll(/<a\s([^>]*)>/g)].flatMap(([, attributes]) => {
+      const fx = /data-fx="([^"]*)"/.exec(attributes!)?.[1];
+      if (fx === undefined) return [];
+      const href = /href="([^"]*)"/.exec(attributes!)![1];
+      const door = /data-door="([^"]*)"/.exec(attributes!)?.[1];
+      const keep = /\sdata-keep(?=\s|$)/.test(` ${attributes}`);
+      return [`${href} ${fx}${door === undefined ? '' : ` ${door}`}${keep ? ' keep' : ''}`];
+    });
+  }
+
+  test('M12.11: the banner and the bar go through the doors of the places, for each place and each role', async (t) => {
     const { pages } = await drawnPages(t);
     const of = (name: string) => pages.find(([page]) => page === name)![1];
     const banner = (page: string) =>
-      ways(part(page, '<nav class="banner" aria-label="Hof">', '</nav>'));
-    const bar = (page: string) => ways(part(page, '<header class="m-top">', '</header>'));
-    const out = 'form /logout logout';
+      doors(part(page, '<nav class="banner" aria-label="Hof">', '</nav>'));
+    const bar = (page: string) => doors(part(page, '<header class="m-top">', '</header>'));
+    const saeckel = '/saeckel/ door treasury';
+    const users = '/admin/users door gatehouse';
+    const chambers = '/account door tower';
     for (const [name, inBanner, inBar] of [
-      [
-        'courtyard',
-        ['a /saeckel/ left', 'a /admin/users left keep', 'a /account left keep', out],
-        ['a /account left'],
-      ],
-      [
-        'Приближённые',
-        ['a / right keep', 'a /saeckel/ right', 'a /account left keep', out],
-        ['a / right', 'a /account left'],
-      ],
-      [
-        'the card of anna',
-        ['a / right keep', 'a /saeckel/ right', 'a /account left keep', out],
-        ['a / right', 'a /account left'],
-      ],
-      [
-        'my chambers',
-        ['a / right keep', 'a /saeckel/ right', 'a /admin/users right keep', out],
-        ['a / right'],
-      ],
-      ['courtyard of anna', ['a /saeckel/ left', 'a /account left keep', out], ['a /account left']],
-      ['chambers of anna', ['a / right keep', 'a /saeckel/ right', out], ['a / right']],
+      ['courtyard', [saeckel, users, chambers], [chambers]],
+      ['Приближённые', ['/ door', saeckel, chambers], ['/ door', chambers]],
+      ['the card of anna', ['/ door', saeckel, chambers], ['/ door', chambers]],
+      ['my chambers', ['/ door', saeckel, users], ['/ door']],
+      ['courtyard of anna', [saeckel, chambers], [chambers]],
+      ['chambers of anna', ['/ door', saeckel], ['/ door']],
     ] as const) {
       assert.deepEqual(banner(of(name)), inBanner, name);
       assert.deepEqual(bar(of(name)), inBar, name);
+      assert.ok(part(of(name), '<nav class="banner"', '</nav>').includes('data-fx="logout"'), name);
     }
+    // The doors named are the doors of the same places on the courtyard map.
+    const map = doors(
+      part(of('courtyard'), '<div class="court-map">', '<nav class="court-places"'),
+    );
+    for (const way of [saeckel, users, chambers]) assert.ok(map.includes(way), way);
   });
 
   test('M10.2: «Принять ко двору», «Открыть ›», the hand, the error pages; the names stay', async (t) => {
     const { pages } = await drawnPages(t);
     const of = (name: string) => pages.find(([page]) => page === name)![1];
-    // The doors of the courtyard aside (M10.3).
+    // The doors of the courtyard aside (M10.3); «Принять ко двору» goes through the door of
+    // Приближённые as well (M12.11).
     const main = (page: string) =>
       ways(part(page, '<main', '</main>')).filter((way) => !way.endsWith(' door'));
-    assert.deepEqual(main(of('courtyard, alone')), ['a /admin/users left keep']);
+    assert.deepEqual(doors(part(of('courtyard, alone'), '<aside class="court-alone', '</aside>')), [
+      '/admin/users door gatehouse',
+    ]);
+    assert.deepEqual(main(of('courtyard, alone')), []);
     assert.deepEqual(main(of('courtyard')), []);
     const keys = main(of('Приближённые'));
     assert.equal(keys.length, (of('Приближённые').match(/>Открыть ›</g) ?? []).length);
@@ -3393,8 +3400,10 @@ describe('the look of Hof: pages, CSS and static files', () => {
       ['a /admin/users flip-back keep'],
     );
     assert.ok(linksIn(of('the card of anna')).includes('/admin/users Приближённые'));
+    // The way to the courtyard from an error page goes into the dark (M12.11).
+    const errorWays = (page: string) => ways(part(page, '<div class="error-paper">', '</main>'));
     for (const name of ['403', '404', '500 after POST']) {
-      assert.deepEqual(main(of(name)), ['a / right', 'a / right'], name);
+      assert.deepEqual(errorWays(of(name)), ['a / door', 'a / door'], name);
       assert.deepEqual(
         linksIn(part(of(name), '<div class="error-paper">', '</main>')),
         ['/ Hof Ваш личный двор', '/ Во двор'],
@@ -3402,7 +3411,7 @@ describe('the look of Hof: pages, CSS and static files', () => {
       );
     }
     // «Попробовать ещё раз» opens the same address again: an ordinary link.
-    assert.deepEqual(main(of('500 after GET')), ['a / right', 'a / right']);
+    assert.deepEqual(errorWays(of('500 after GET')), ['a / door', 'a / door']);
   });
 
   test('M10.2: the door of «Покинуть двор» is two pictures without a name; the button keeps its name', async (t) => {
@@ -3621,5 +3630,29 @@ describe('the look of Hof: pages, CSS and static files', () => {
     const gust = /@keyframes fx-gust \{([\s\S]*?)\n\}/.exec(css)![1]!;
     assert.doesNotMatch(gust, /animation-timing-function/);
     assert.match(gust, /to \{[^}]*background-position: 100% 0;/);
+  });
+
+  // M12.11: a slide (a page of the book) moves away at once and slows down to its stop, the next
+  // page starts and stops softly — in the CSS of Hof and of Säckel; before, the page away stood
+  // still at full speed while the next page loaded. Säckel goes to the courtyard into the dark.
+  test('M12.11: the slides stop softly; Säckel goes to the courtyard into the dark', async (t) => {
+    const { app } = await drawnPages(t);
+    for (const address of ['/static/hof.css', '/saeckel/static/saeckel.css']) {
+      const css = await (await get(app, address)).text();
+      for (const [name, easing] of [
+        ['out-left', 'ease-out'],
+        ['out-right', 'ease-out'],
+        ['in-right', 'ease-in-out'],
+        ['in-left', 'ease-in-out'],
+      ] as const) {
+        const uses = [...css.matchAll(new RegExp(`animation: ${name} ([^;]*);`, 'g'))];
+        assert.ok(uses.length > 0, `${address}: ${name}`);
+        for (const [, use] of uses)
+          assert.match(use!, new RegExp(`\\b${easing}\\b`), `${address}: ${use}`);
+      }
+    }
+    const saeckel = await (await get(app, '/saeckel/static/saeckel.css')).text();
+    assert.match(saeckel, /\.go-dark body::after \{\s*animation: veil-in 0\.5s ease-in forwards;/);
+    assert.match(saeckel, /@keyframes veil-in \{\s*to \{\s*opacity: 1;/);
   });
 });
