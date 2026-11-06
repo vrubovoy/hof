@@ -2305,22 +2305,24 @@ img {
 
   /* живой Двор: кадры одной полосы сменяют друг друга по кругу — вода в фонтане (6 кадров),
      знамёна ворот и башни (8 кадров ткани, у каждого свой круг) */
-  .fx-on .fx-fountain {
+  /* fx.js wakes these layers (.wake) once the page has loaded, so their frames load after the
+     map (M12.5); until then the map shows the same water and cloth standing still */
+  .fx-on .fx-fountain.wake {
     background: url(img/fx-fountain.webp) 0 0 / 600% 100% no-repeat;
     animation: fx-frames 0.9s steps(6, jump-none) infinite;
   }
-  .fx-on .fx-banner {
+  .fx-on .fx-banner.wake {
     background: 0 0 / 800% 100% no-repeat;
     animation: fx-frames 2.6s steps(8, jump-none) infinite;
   }
-  .fx-on .fx-gate-l {
+  .fx-on .fx-gate-l.wake {
     background-image: url(img/fx-banner-gate-l.webp);
   }
-  .fx-on .fx-gate-r {
+  .fx-on .fx-gate-r.wake {
     background-image: url(img/fx-banner-gate-r.webp);
     animation-duration: 3.1s;
   }
-  .fx-on .fx-tower {
+  .fx-on .fx-tower.wake {
     background-image: url(img/fx-banner-tower.webp);
     animation-duration: 3.5s;
   }
@@ -2336,8 +2338,9 @@ img {
   .fx-on .fx-smoke i:nth-child(3) {
     animation-delay: 5s;
   }
-  /* порыв ветра в кроне (fx.js): кадры листвы fx.js будит после первой отрисовки (.wake) — тогда
-     они и грузятся; порыв (.gust) — 8 кадров за 2 с, в покое слой скрыт */
+  /* a gust of wind in a crown (fx.js): fx.js wakes the frames of the leaves (.wake) after those
+     of the water, the banners and the doors, and only then they load; a gust (.gust) is 8 frames
+     in 2 s, at rest the layer is hidden */
   .fx-on .fx-leaves.wake {
     background: 0 0 / 800% 100% no-repeat;
   }
@@ -2379,16 +2382,17 @@ img {
     transform-origin: 50% 0;
     animation: swing 1.4s ease-out;
   }
-  .fx-on .door {
+  /* the open doors load with the water and the banners (fx.js, .wake) */
+  .fx-on .door.wake {
     background: 0 0 / 100% 100% no-repeat;
   }
-  .fx-on .door-gatehouse {
+  .fx-on .door-gatehouse.wake {
     background-image: url(img/map-gatehouse-window.webp);
   }
-  .fx-on .door-treasury {
+  .fx-on .door-treasury.wake {
     background-image: url(img/map-treasury-door.webp);
   }
-  .fx-on .door-tower {
+  .fx-on .door-tower.wake {
     background-image: url(img/map-tower-door.webp);
   }
   /* кот: кадр позы над котом, пока он звучит (.meow и длину --pose ставит fx.js); смена кадра
