@@ -35,11 +35,15 @@ defaults:
     shell: bash
 
 jobs:
-  # The release that runs now. After the first approval; changes nothing.
+  # The release that runs now. After the first approval; changes nothing. It takes the secrets and
+  # the approval of production but leaves no deployment there: the environment lists the updates
+  # only, one per run (`deployment: false`).
   server:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: production
+    environment:
+      name: production
+      deployment: false
     permissions: {}
     outputs:
       current: ${{ steps.status.outputs.current }}
