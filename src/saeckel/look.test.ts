@@ -345,6 +345,17 @@ describe('the pages of Säckel', () => {
     }
   });
 
+  // M12.5: the picture of the first screen is asked for before the rest of the page.
+  test('M12.5: the band of the treasury is the one picture asked for first', async () => {
+    for (const [name, , page] of await drawnPages()) {
+      const high = [...page.matchAll(/<img\b[^>]*\sfetchpriority="high"[^>]*>/g)].map(
+        ([tag]) => tag,
+      );
+      assert.equal(high.length, 1, name);
+      assert.match(high[0]!, /\sclass="sk-scene"\s/, name);
+    }
+  });
+
   test('M12.3: saeckel.css keeps pictures out of a selection, never a field or text', () => {
     const css = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
     const unselectable = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]

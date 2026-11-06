@@ -586,6 +586,7 @@ function loginPage(form: LoginForm) {
             sizes="100vw"
             alt="Открытые ворота замка, кот смотрит во двор"
             draggable="false"
+            fetchpriority="high"
           />
         </picture>
         <span class="cat-frame">${cat('login')}</span>
@@ -626,6 +627,8 @@ function loginPage(form: LoginForm) {
 // without a name, a link or a stop of Tab. The door of a place opens when its sign is pressed: on
 // a computer the sign and the door are one link, on the phone the sign under the map opens the
 // door on it, and that door is a picture only.
+//
+// M12.5: the map is asked for first, the frames of the layers wait for it (fx.js).
 function courtyardPage(user: CurrentUser, services: readonly Service[], alone: boolean) {
   const treasury = services[0];
   // The places with a door, in the order of the map: the gatehouse, the treasury, the tower.
@@ -653,6 +656,7 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
             sizes="(max-width: 1023.98px) 100vw, calc(100vw - 288px)"
             alt="Двор замка: ворота со сторожкой, казначейская, башня с покоями, фонтан посередине"
             draggable="false"
+            fetchpriority="high"
           />
           <span class="fx fx-fountain" aria-hidden="true"></span>
           <span class="fx fx-banner fx-gate-l" aria-hidden="true"></span>
@@ -811,6 +815,11 @@ const FX_SETTINGS = html`<section id="fx-settings" class="framed fx-settings" hi
 // picture of the chambers stands to the right the whole height of the window, on the phone it is
 // a band at the top and the longer texts are not drawn (text-full). No password is ever written
 // back into the page.
+//
+// M12.5: the band has a picture of its own, the panel with only the rows the band shows in a
+// window from 320 px wide; above and below them each column repeats its edge pixel, which costs
+// next to nothing. Of the size of the panel, it is drawn exactly as the panel was; a narrower
+// window still takes the whole panel. The same for «Приближённые».
 function accountPage(user: CurrentUser, services: readonly Service[], form: AccountForm) {
   const describedBy = (field: PasswordField, hint?: string) => {
     const ids = [hint, form.error?.field === field ? `${field}-error` : undefined].filter(Boolean);
@@ -914,16 +923,27 @@ function accountPage(user: CurrentUser, services: readonly Service[], form: Acco
         />
       </div>
       <div class="chambers-scene room-scene">
-        <img
-          src="${asset('img/scene-chambers-panel.webp')}"
-          srcset="
-            ${asset('img/scene-chambers-panel.webp')}  683w,
-            ${asset('img/scene-chambers-panel@2x.webp')} 1366w
-          "
-          sizes="(max-width: 1023.98px) 100vw, 600px"
-          alt="Покои: окно во двор, стол с пером и чернильницей, кот спит на стуле"
-          draggable="false"
-        />
+        <picture>
+          <source
+            media="(min-width: 320px) and (max-width: 1023.98px)"
+            srcset="
+              ${asset('img/scene-chambers-band.webp')}  683w,
+              ${asset('img/scene-chambers-band@2x.webp')} 1366w
+            "
+            sizes="100vw"
+          />
+          <img
+            src="${asset('img/scene-chambers-panel.webp')}"
+            srcset="
+              ${asset('img/scene-chambers-panel.webp')}  683w,
+              ${asset('img/scene-chambers-panel@2x.webp')} 1366w
+            "
+            sizes="(max-width: 1023.98px) 100vw, 600px"
+            alt="Покои: окно во двор, стол с пером и чернильницей, кот спит на стуле"
+            draggable="false"
+            fetchpriority="high"
+          />
+        </picture>
         <span class="cat-frame">${cat('chambers')}</span>
       </div>`,
   });
@@ -956,16 +976,27 @@ function usersPage(
   return shell(user, services, 'users', 'Hof — приближённые', {
     class: 'residents',
     body: html`<div class="residents-scene room-scene">
-        <img
-          src="${asset('img/scene-residents-panel.webp')}"
-          srcset="
-            ${asset('img/scene-residents-panel.webp')}  520w,
-            ${asset('img/scene-residents-panel@2x.webp')} 1040w
-          "
-          sizes="(max-width: 1023.98px) 100vw, 420px"
-          alt="Сторожка у ворот: ключница с ключами на крюках"
-          draggable="false"
-        />
+        <picture>
+          <source
+            media="(min-width: 320px) and (max-width: 1023.98px)"
+            srcset="
+              ${asset('img/scene-residents-band.webp')}  520w,
+              ${asset('img/scene-residents-band@2x.webp')} 1040w
+            "
+            sizes="100vw"
+          />
+          <img
+            src="${asset('img/scene-residents-panel.webp')}"
+            srcset="
+              ${asset('img/scene-residents-panel.webp')}  520w,
+              ${asset('img/scene-residents-panel@2x.webp')} 1040w
+            "
+            sizes="(max-width: 1023.98px) 100vw, 420px"
+            alt="Сторожка у ворот: ключница с ключами на крюках"
+            draggable="false"
+            fetchpriority="high"
+          />
+        </picture>
       </div>
       <div class="residents-main">
         <h1 class="ribbon ribbon-md"><span>Приближённые</span></h1>

@@ -223,11 +223,15 @@ function courtyard(door: Box = { left: 722.25, top: 287.75, right: 776.25, botto
   const leaves = ['olive', 'bush-l', 'bush-r', 'tree'].map(
     (name) => new FakeBox(map.box, 'fx', 'fx-leaves', `fx-${name}`),
   );
+  const banners = ['gate-l', 'gate-r', 'tower'].map(
+    (name) => new FakeBox(map.box, 'fx', 'fx-banner', `fx-${name}`),
+  );
   return {
     map,
     inner,
     doors,
     leaves,
+    banners,
     fountain: new FakeBox(map.box, 'fx', 'fx-fountain'),
     flock: new FakeBox(map.box, 'fx', 'fx-birds'),
   };
@@ -337,6 +341,9 @@ async function openChambers({
       null,
     querySelectorAll: (selector: string): unknown[] => {
       if (selector === '.fx-leaves') return court?.leaves ?? [];
+      if (selector === '.fx-fountain, .fx-banner, .door') {
+        return court ? [court.fountain, ...court.banners, ...court.doors] : [];
+      }
       if (selector === '.court-inner') return court ? [court.inner] : [];
       const all = Object.values(elements);
       if (selector === '.cat.meow') return all.filter((e) => e.classList.contains('meow'));
@@ -365,9 +372,10 @@ async function openChambers({
     document: doc,
     innerWidth: 1440,
     innerHeight: 900,
+    // The frames of a layer: named by its last class, fx-olive, fx-gate-l, door-treasury.
     getComputedStyle: (element: FakeBox) => ({
       backgroundImage: element.classList.contains('wake')
-        ? `url("${ORIGIN}/static/img/${[...element.classList.names].find((n) => n.startsWith('fx-') && n !== 'fx-leaves')}.webp")`
+        ? `url("${ORIGIN}/static/img/${[...element.classList.names].findLast((n) => /^(fx|door)-/.test(n))}.webp")`
         : 'none',
     }),
     Image: class {
@@ -376,7 +384,10 @@ async function openChambers({
         images.made += 1;
       }
       decode() {
-        return Promise.resolve();
+        images.asked.push(this.src.replace(`${ORIGIN}/static/img/`, ''));
+        return images.hold
+          ? new Promise<void>((done) => images.held.push(done))
+          : Promise.resolve();
       }
     },
     location: { assign: (address: string) => void assigned.push(address) },
@@ -491,8 +502,9 @@ async function openChambers({
   };
 }
 
-// The frames of the crowns asked for by fx.js (new Image()), counted over every page.
-const images = { made: 0 };
+// The frames of the courtyard asked for by fx.js (new Image()), counted over every page, and the
+// files in the order asked. While `hold` is on, a decode waits in `held` until the test lets it go.
+const images = { made: 0, asked: [] as string[], hold: false, held: [] as (() => void)[] };
 
 // Lets the promises of play() and resume() run.
 async function settle() {
@@ -816,6 +828,11 @@ describe('fx.js in a page: the living courtyard (M10.3)', () => {
       [true, false],
       'the door drawn, not the one of the phone',
     );
+    assert.deepEqual(
+      court.doors.map((door) => door.classList.contains('wake')),
+      [true, false],
+      'pressed before the page has loaded, the door asks for its frame',
+    );
     // The middle of the door in per cent of the map: 615 and 501,5 px of 1536×1024.
     const [x, y] = court.inner.style.transformOrigin.split(' ').map((v) => parseFloat(v));
     assert.ok(Math.abs(x! - (615 / 1536) * 100) < 0.01, String(x));
@@ -900,6 +917,49 @@ describe('fx.js in a page: the living courtyard (M10.3)', () => {
     assert.deepEqual(assigned, []);
   });
 
+  test('the frames of the courtyard after the map: the water, the banners and the doors at load, the leaves once those are there', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const court = courtyard();
+    const { loaded } = await openChambers({ settings: { anim: true }, court });
+    const loops = [court.fountain, ...court.banners, ...court.doors];
+    assert.ok(
+      [...loops, ...court.leaves].every((layer) => !layer.classList.contains('wake')),
+      'nothing before load',
+    );
+    const from = images.asked.length;
+    images.hold = true;
+    t.after(() => {
+      images.hold = false;
+      images.held = [];
+    });
+    loaded();
+    await settle();
+    assert.ok(loops.every((layer) => layer.classList.contains('wake')));
+    assert.deepEqual(images.asked.slice(from), [
+      'fx-fountain.webp',
+      'fx-gate-l.webp',
+      'fx-gate-r.webp',
+      'fx-tower.webp',
+      'door-treasury.webp',
+      'door-treasury.webp',
+    ]);
+    for (const done of images.held.splice(0, 5)) done();
+    await settle();
+    assert.ok(
+      court.leaves.every((leaf) => !leaf.classList.contains('wake')),
+      'the leaves wait for the last of them',
+    );
+    images.held.shift()!();
+    await settle();
+    assert.ok(court.leaves.every((leaf) => leaf.classList.contains('wake')));
+    assert.deepEqual(images.asked.slice(from + 6), [
+      'fx-olive.webp',
+      'fx-bush-l.webp',
+      'fx-bush-r.webp',
+      'fx-tree.webp',
+    ]);
+  });
+
   test('the wind and the birds: one chain each, only while the tab is seen', async (t: TestContext) => {
     t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
     // The shortest waits: the first flock at 4 s, a gust at 14 s, the next flock 20 s later.
@@ -976,10 +1036,11 @@ describe('fx.js in a page: the living courtyard (M10.3)', () => {
     page.backFromCache();
     await settle();
     assert.ok(court.leaves.every((leaf) => leaf.classList.contains('wake')));
-    assert.equal(images.made - before, 4, 'each crown asked for once');
+    // The water, three banners, two doors (the computer's and the phone's) and four crowns.
+    assert.equal(images.made - before, 10, 'each layer asked for once');
     page.backFromCache();
     await settle();
-    assert.equal(images.made - before, 4, 'not again');
+    assert.equal(images.made - before, 10, 'not again');
     // One flock at 4 s, one gust at 14 s: the chains are not doubled.
     t.mock.timers.tick(14_000);
     assert.equal(court.leaves.filter((leaf) => leaf.classList.contains('gust')).length, 1);
@@ -1000,7 +1061,8 @@ describe('fx.js in a page: the living courtyard (M10.3)', () => {
     page.reduce(true);
     page.reduce(false);
     await settle();
-    assert.equal(images.made - before, 4);
+    // Each layer once: the water, three banners, two doors and four crowns.
+    assert.equal(images.made - before, 10);
   });
 
   test('the fountain: the next loop on each visit, 2 s to come up, after an action of the person', async (t: TestContext) => {

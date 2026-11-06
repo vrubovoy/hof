@@ -840,7 +840,8 @@ function start() {
         const x = ((d.left + d.width / 2 - r.left) / r.width) * 100;
         const y = ((d.top + d.height / 2 - r.top) / r.height) * 100;
         inner.style.transformOrigin = `${x}% ${y}%`;
-        door.classList.add('open');
+        // Pressed before the page has loaded, the door asks for its frame itself (M12.5).
+        door.classList.add('wake', 'open');
       }
       setTimeout(() => playSound('door'), 0);
     }
@@ -1085,24 +1086,35 @@ function start() {
     w.release();
   }
 
-  // The leaves: their frames are large and wait until the page has loaded; a crown gusts only
-  // with its frames loaded. The address is the one the CSS gives the crown once it is awake.
+  // The frames of the courtyard wait until the page has loaded, so that the map comes first
+  // (M12.5): then the frames always seen, the water and the banners, and the doors; the leaves,
+  // the largest and seen only in a gust, after them. A crown gusts only with its frames loaded.
+  // The address of a layer is the one the CSS gives it once it is awake.
+  const loops = [...document.querySelectorAll('.fx-fountain, .fx-banner, .door')];
   /** @type {Set<Element>} */
   const ready = new Set();
+  /**
+   * @param {Element} layer
+   * @returns {Promise<boolean>} whether its frames are there
+   */
+  function frames(layer) {
+    layer.classList.add('wake');
+    const address = /url\("?([^")]+)"?\)/.exec(getComputedStyle(layer).backgroundImage)?.[1];
+    if (address === undefined) return Promise.resolve(false);
+    const image = new Image();
+    image.src = address;
+    return image.decode().then(
+      () => true,
+      () => false,
+    );
+  }
+  let awake = false;
   function wake() {
-    if (!canMove(settings, reduced.matches)) return;
-    for (const layer of leaves) {
-      if (layer.classList.contains('wake')) continue;
-      layer.classList.add('wake');
-      const address = /url\("?([^")]+)"?\)/.exec(getComputedStyle(layer).backgroundImage)?.[1];
-      if (address === undefined) continue;
-      const image = new Image();
-      image.src = address;
-      image.decode().then(
-        () => ready.add(layer),
-        () => {},
-      );
-    }
+    if (awake || !canMove(settings, reduced.matches)) return;
+    awake = true;
+    Promise.all(loops.map(frames)).then(() => {
+      for (const layer of leaves) frames(layer).then((there) => there && ready.add(layer));
+    });
   }
   function gust() {
     if (canMove(settings, reduced.matches)) {
