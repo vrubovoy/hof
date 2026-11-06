@@ -2501,19 +2501,22 @@ img {
     :is(body > :not(.shell), .shell > :not(.banner)) {
     will-change: transform;
   }
+  /* M12.11: the page away moves at once and slows down to its stop, the next one starts and stops
+     softly. With ease-in it stood still at full speed while the next page loaded, and that one
+     set off at full speed */
   .go-left :is(body > :not(.shell), .shell > :not(.banner)) {
-    animation: out-left 0.5s ease-in forwards;
+    animation: out-left 0.5s ease-out forwards;
   }
   .go-right :is(body > :not(.shell), .shell > :not(.banner)) {
-    animation: out-right 0.5s ease-in forwards;
+    animation: out-right 0.5s ease-out forwards;
   }
   .from-right :is(body > :not(.shell), .shell > :not(.banner)),
   .from-right:not(.keep-banner) .banner {
-    animation: in-right 0.6s ease-out both;
+    animation: in-right 0.6s ease-in-out both;
   }
   .from-left :is(body > :not(.shell), .shell > :not(.banner)),
   .from-left:not(.keep-banner) .banner {
-    animation: in-left 0.6s ease-out both;
+    animation: in-left 0.6s ease-in-out both;
   }
 }
 @media (prefers-reduced-motion: no-preference) and (min-width: 1024px) {

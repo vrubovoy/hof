@@ -467,8 +467,8 @@ describe('the shell', () => {
 // form that writes money names its act for the coins of the next page; no other form has one.
 describe('the ways between pages', () => {
   // The effects of a link fx.js of Hof knows that Säckel uses (LINK_FX in src/core/static/fx.js;
-  // Säckel does not import Core, §2).
-  const LINK_FX = ['flip-fwd', 'flip-back', 'flip-fwd-phone', 'page'];
+  // Säckel does not import Core, §2). M12.11: «Двор» goes out as through a door, into the dark.
+  const LINK_FX = ['flip-fwd', 'flip-back', 'flip-fwd-phone', 'page', 'door'];
   // Each way of a piece of a page as "address fx", the links only.
   function ways(piece: string): string[] {
     return [...piece.matchAll(/<a\s([^>]*)>/g)].flatMap(([, attributes]) => {
@@ -530,14 +530,14 @@ describe('the ways between pages', () => {
     assert.deepEqual([...acts].sort(), ['assign', 'expense', 'income', 'transfer']);
   });
 
-  test('Двор and «назад» turn back; a tab by the order of the tabs; deeper into Мешки forward on the phone; Летопись rustles', async () => {
+  test('M12.11: Двор goes into the dark, «назад» turns back; a tab by the order of the tabs; deeper into Мешки forward on the phone; Летопись rustles', async () => {
     const { ids, pages } = await bookPages();
     const food = ids['Продукты']!;
     const pouches = Object.values(ids).map((id) => `/saeckel/pouches/${id} flip-fwd-phone`);
     const actions = ['/saeckel/assign flip-fwd-phone', '/saeckel/income flip-fwd-phone'];
     const of = (path: string) => pages.get(path)!;
 
-    assert.deepEqual(head(of('/saeckel/')), ['/ flip-back']);
+    assert.deepEqual(head(of('/saeckel/')), ['/ door']);
     assert.deepEqual(tabs(of('/saeckel/')), ['/saeckel/history flip-fwd']);
     // The column, then the first pouch open on the right of a computer: «Изменить» there too.
     assert.deepEqual(below(of('/saeckel/')), [
@@ -547,13 +547,13 @@ describe('the ways between pages', () => {
     ]);
 
     const pouch = of(`/saeckel/pouches/${food}`);
-    assert.deepEqual(head(pouch), ['/ flip-back', '/saeckel/ flip-back']);
+    assert.deepEqual(head(pouch), ['/ door', '/saeckel/ flip-back']);
     assert.deepEqual(tabs(pouch), ['/saeckel/history flip-fwd']);
     // The pouch itself is the current one in the column: an ordinary link.
     assert.ok(!ways(pouch).includes(`/saeckel/pouches/${food} flip-fwd-phone`));
     assert.ok(ways(pouch).includes(`/saeckel/pouches/${food}/edit flip-fwd-phone`));
     assert.deepEqual(head(of(`/saeckel/pouches/${food}/edit`)), [
-      '/ flip-back',
+      '/ door',
       `/saeckel/pouches/${food} flip-back`,
     ]);
     for (const path of [
@@ -562,20 +562,17 @@ describe('the ways between pages', () => {
       '/saeckel/assign',
       '/saeckel/transfer',
     ]) {
-      assert.deepEqual(head(of(path)), ['/ flip-back', '/saeckel/ flip-back'], path);
+      assert.deepEqual(head(of(path)), ['/ door', '/saeckel/ flip-back'], path);
       assert.deepEqual(tabs(of(path)), ['/saeckel/history flip-fwd'], path);
     }
 
     for (const path of ['/saeckel/history', '/saeckel/history?page=2']) {
-      assert.deepEqual(head(of(path)), ['/ flip-back'], path);
+      assert.deepEqual(head(of(path)), ['/ door'], path);
       assert.deepEqual(tabs(of(path)), ['/saeckel/ flip-back'], path);
     }
     assert.deepEqual(below(of('/saeckel/history')), ['/saeckel/history?page=2 page']);
     assert.deepEqual(below(of('/saeckel/history?page=2')), ['/saeckel/history?page=1 page']);
-    assert.deepEqual(head(of('/saeckel/operations/2')), [
-      '/ flip-back',
-      '/saeckel/history flip-back',
-    ]);
+    assert.deepEqual(head(of('/saeckel/operations/2')), ['/ door', '/saeckel/history flip-back']);
     assert.deepEqual(tabs(of('/saeckel/operations/2')), ['/saeckel/ flip-back']);
   });
 });

@@ -281,10 +281,12 @@ export function createChain(fire, times, clock, random = Math.random) {
 }
 
 /**
- * The effects of a link (data-fx, M10.2): a slide to the left or the right (the order of the
- * banner), a page of the book turned forward or back, one turned forward on the phone only, and
- * the sound of a page alone. A page turned slides the same way and rustles on the next page.
- * M10.3: the door of a place on the courtyard map (data-door names it).
+ * The effects of a link (data-fx, M10.2): a slide to the left or the right, a page of the book
+ * turned forward or back, one turned forward on the phone only, and the sound of a page alone. A
+ * page turned slides the same way and rustles on the next page.
+ * M10.3: the door of a place on the courtyard map (data-door names it). M12.11: the banner and the
+ * top bar go through the doors as well; a door not named — the way to the courtyard — goes into
+ * the dark.
  */
 export const LINK_FX = Object.freeze([
   'left',
@@ -822,10 +824,14 @@ function start() {
     let ms = SLIDE_MS;
     if (away === 'go-door') {
       // The door of the place on the map — the one drawn now: in the link on a computer, on the
-      // map of the phone for a sign under it. The creak comes in the same frame.
-      const door = [...document.getElementsByClassName(`door-${link.dataset.door}`)].find(
-        (element) => element.getClientRects().length > 0,
-      );
+      // map of the phone for a sign under it or for the banner. The creak comes in the same frame.
+      const named = link.dataset.door;
+      const door =
+        named === undefined
+          ? undefined
+          : [...document.getElementsByClassName(`door-${named}`)].find(
+              (element) => element.getClientRects().length > 0,
+            );
       const inner = door?.closest('.court-inner');
       const map = door?.closest('.court-map');
       ({ away, ms } = doorWay(
