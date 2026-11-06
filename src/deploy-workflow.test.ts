@@ -74,7 +74,9 @@ describe('deploy.yml: by hand, with approval, without rights', () => {
 
   test('server, image, production; the environment only for the two jobs that reach the server', () => {
     assert.deepEqual(Object.keys(jobs), ['server', 'image', 'production']);
-    assert.match(jobs.server!, /^ {4}environment: production$/m);
+    // status takes the secrets and the approval without a deployment of its own: the environment
+    // lists one deployment per update, not two.
+    assert.match(jobs.server!, /^ {4}environment:\n {6}name: production\n {6}deployment: false$/m);
     assert.match(jobs.production!, /^ {4}environment: production$/m);
     assert.ok(!/environment/.test(jobs.image!));
     assert.match(
