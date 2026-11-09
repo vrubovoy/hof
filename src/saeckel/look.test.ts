@@ -92,7 +92,7 @@ const cssFiles = [...CSS.matchAll(/url\(([^)]*)\)/g)].map(
 const ANNA = 1;
 const BORIS = 2;
 
-// The data of design/preview/Saeckel.html for anna: four pouches, one in debt, two in the
+// The data of the prototype Saeckel for anna: four pouches, one in debt, two in the
 // storeroom, «Казна» 18 320,00.
 async function prototypeBudget() {
   const ids: Record<string, number> = {};
@@ -262,7 +262,7 @@ async function drawnPages(): Promise<[string, number, string][]> {
   return pages;
 }
 
-// The picture of each sign, copied from design/preview/PouchEditMobile.html on purpose: the test
+// The picture of each sign, copied from the prototype PouchEditMobile on purpose: the test
 // must not share the set with the code.
 const SIGN_FILES: [string, string][] = [
   ['pouch', 'emblem-saeckel-small'],

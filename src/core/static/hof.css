@@ -1,7 +1,7 @@
-/* Hof Core — облик (ARCHITECTURE.md §6). Цвета, размеры и материалы — из утверждённого
-   design/screens.css; сюда переносится только то, что уже используют страницы Core.
-   Эффектов здесь нет: ни анимаций, ни переходов (M10). Координаты и кадры — только классы:
-   CSP запрещает атрибут style. Компьютер — от 1024 px, ниже — телефон. */
+/* Hof Core — the look (ARCHITECTURE.md §6). Colours, sizes and materials come from the approved
+   prototype styles (screens.css, in the git history before M12.12); only what pages of Core use.
+   Coordinates and frames only through classes: the CSP forbids the style attribute. A computer
+   from 1024 px, below — a phone. */
 
 /* EB Garamond — одна семья (лицензия OFL, fonts/OFL.txt): прямой и курсив, латиница и
    кириллица. Браузер скачивает файл подмножества, только если на странице есть его символы. */

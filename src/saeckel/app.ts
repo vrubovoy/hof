@@ -94,7 +94,7 @@ const HISTORY_LAST_PAGE = 1000;
 const EMPTY_POUCH_HISTORY = 'По этому мешку записей пока нет.';
 const PAST_LAST_PAGE = 'На этой странице записей нет.';
 
-// The signs of a pouch (§5.4, design/preview/PouchEditMobile.html): the key kept in
+// The signs of a pouch (§5.4, the prototype PouchEditMobile): the key kept in
 // pouches.icon and its label. Only these keys are accepted; a stored key the set does not know
 // is shown as the default one.
 const ICONS = {
@@ -183,7 +183,7 @@ interface StoredPouch {
   icon: string;
 }
 
-// The column of the pages of «Мешки» (§6, design/preview/Saeckel.html): the treasury, the active
+// The column of the pages of «Мешки» (§6, the prototype Saeckel): the treasury, the active
 // pouches and the storeroom of one user.
 interface PouchColumn {
   treasury: number;
@@ -194,7 +194,7 @@ interface PouchColumn {
 // Where a column stands: beside the page of a pouch, which it marks as the current one; on Мешки
 // beside the first pouch open on the right, which it marks by look only; and whether the
 // treasury has its buttons — not beside «Разложить», where one of them leads
-// (design/preview/SaeckelAssign.html).
+// (the prototype SaeckelAssign).
 interface ColumnPlace {
   current?: number;
   open?: number;
@@ -216,7 +216,7 @@ interface Place {
 
 type Kind = 'income' | 'assign' | 'expense' | 'transfer';
 
-// The words for each kind of record (design/preview/SaeckelHistory.html).
+// The words for each kind of record (the prototype SaeckelHistory).
 const KIND_LABELS: Record<Kind, string> = {
   income: 'Доход',
   assign: 'Из казны',
@@ -345,8 +345,8 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
     </html>`;
 }
 
-// The frame of every page of Säckel (design/preview/Saeckel.html, SaeckelMobile.html,
-// PouchMobile.html). On a computer: the scene of the treasury room to the edges with «Двор» on
+// The frame of every page of Säckel (the prototypes Saeckel, SaeckelMobile,
+// PouchMobile). On a computer: the scene of the treasury room to the edges with «Двор» on
 // it, below it the ribbon, the two tabs and the motto, then the page — beside the column of
 // pouches on the pages of «Мешки». On the phone: the scene as a band; on the two tabs themselves
 // «Двор», the ribbon and the tabs, on a page below them only the way back on the band, and the
@@ -491,7 +491,7 @@ function newPouchForm(form: NewPouchForm) {
   </form>`;
 }
 
-// What the list says under a pouch (design/preview/Saeckel.html): in debt, its last expense,
+// What the list says under a pouch (the prototype Saeckel): in debt, its last expense,
 // or none yet.
 function pouchNote(pouch: ListedPouch, money: MoneyFormat): string {
   if (pouch.balance < 0) return 'в долгу';
@@ -499,7 +499,7 @@ function pouchNote(pouch: ListedPouch, money: MoneyFormat): string {
   return 'трат пока не было';
 }
 
-// «Казна» (design/preview/Saeckel.html): the money not laid out yet, in a frame with the closed
+// «Казна» (the prototype Saeckel): the money not laid out yet, in a frame with the closed
 // chest. Shown always — at zero, below zero, before the first pouch — with the way to laying out
 // and to income where the page asks for them. A sum longer than «1 234 567,89 ₽» is set smaller,
 // so that it stays on one line beside the chest. The chest itself is decor of Hof (data-poke,
@@ -587,8 +587,8 @@ function pouchColumn(column: PouchColumn, money: MoneyFormat, place: ColumnPlace
     </div>`;
 }
 
-// Мешки, texts from design/preview/Saeckel.html, SaeckelMobile.html, SaeckelEmpty.html and
-// SaeckelEmptyMobile.html. The treasury is always there; the empty state is about the active
+// Мешки, texts from the prototypes Saeckel, SaeckelMobile, SaeckelEmpty and
+// SaeckelEmptyMobile. The treasury is always there; the empty state is about the active
 // pouches, beside the treasury and the storeroom (M6.1: SaeckelEmpty has no treasury); on a
 // computer the picture and the form of the first pouch stand to the right of them; the cat of the
 // picture is decor of Hof (data-poke, M10.5) and sniffs at the pouches when pressed. With pouches,
@@ -664,8 +664,8 @@ function newPouchPage(form: NewPouchForm, column: PouchColumn, money: MoneyForma
   );
 }
 
-// «Сумма», «Дата», «Заметка» of a form (design/preview/Saeckel.html, SaeckelForms.html,
-// PouchMobile.html): fields drawn by pen, the amount larger. What was typed stays in the fields;
+// «Сумма», «Дата», «Заметка» of a form (the prototypes Saeckel, SaeckelForms,
+// PouchMobile): fields drawn by pen, the amount larger. What was typed stays in the fields;
 // the error of a field is under it, and the field is drawn red.
 function entryFields(form: EntryForm, money: MoneyFormat) {
   const attributes = (field: EntryField) =>
@@ -719,7 +719,7 @@ function entryFields(form: EntryForm, money: MoneyFormat) {
     </div>`;
 }
 
-// The form «Записать трату» (design/preview/Saeckel.html, PouchMobile.html): on a computer the
+// The form «Записать трату» (the prototypes Saeckel, PouchMobile): on a computer the
 // fields and the button in a row, on the phone in a frame, the amount the whole width. Its
 // heading is for the screen reader only on the phone; `level` is the level of that heading. With
 // «Анимации» or «Звуки» the page of the pouch after it rings and writes the record in (data-fx,
@@ -743,7 +743,7 @@ function expenseForm(pouch: Pouch, form: EntryForm, money: MoneyFormat, level: 2
   </form>`;
 }
 
-// «Доход», texts from design/preview/SaeckelForms.html and IncomeMobile.html: the form on the
+// «Доход», texts from the prototypes SaeckelForms and IncomeMobile: the form on the
 // right in its frame; on a computer the amount, the date and the note in a row, on the phone one
 // under another.
 function incomePage(form: EntryForm, money: MoneyFormat, column: PouchColumn) {
@@ -767,7 +767,7 @@ function incomePage(form: EntryForm, money: MoneyFormat, column: PouchColumn) {
   );
 }
 
-// «Разложить по мешкам», texts from design/preview/SaeckelAssign.html and AssignMobile.html. The
+// «Разложить по мешкам», texts from the prototypes SaeckelAssign and AssignMobile. The
 // income just written, if any, is named above in a note with the blue seal: in full on a
 // computer, on the phone only its first sentence, the whole of it left to the screen reader. On a
 // computer a table — the sign and the name, the balance, a field; on the phone the same rows as
@@ -869,7 +869,7 @@ function assignPage(
   );
 }
 
-// «Покрыть из другого мешка» (§6, design/preview/PouchEditMobile.html), only under a balance
+// «Покрыть из другого мешка» (§6, the prototype PouchEditMobile), only under a balance
 // below zero: «Переложить» with this pouch as the target and its debt as the amount. A debt
 // larger than one record can hold is left out, and the form then asks for the amount. Only a
 // hint for the form: the debt may change before it is sent.
@@ -883,7 +883,7 @@ function coverLink(pouchId: number, balance: number) {
   </p>`;
 }
 
-// One list of pouches of a form (design/preview/SaeckelForms.html): the active pouches of the
+// One list of pouches of a form (the prototype SaeckelForms): the active pouches of the
 // user, each with its text, and in «Переложить» an empty choice first. Drawn as a field with an
 // arrow by pen; its error is under it, and the field is drawn red. Only an id of one of them is
 // ever shown as chosen.
@@ -918,7 +918,7 @@ function pouchSelect(
   </div>`;
 }
 
-// «Переложить из мешка в мешок», texts from design/preview/SaeckelForms.html: the form on the
+// «Переложить из мешка в мешок», texts from the prototype SaeckelForms: the form on the
 // right in its frame; the two lists side by side while their longest line fits half of the
 // frame, else one under another; on the phone one column, as in IncomeMobile.
 function transferPage(column: PouchColumn, form: PouchesForm, money: MoneyFormat) {
@@ -1005,7 +1005,7 @@ function historyHref(pouch: number | null, page: number): string {
   return `/saeckel/history?${query.toString()}`;
 }
 
-// One record of «Летопись» (design/preview/SaeckelHistory.html): a row of the table — the date,
+// One record of «Летопись» (the prototype SaeckelHistory): a row of the table — the date,
 // the pouches, the kind, the note, the amount and «›» to the record. On the phone the same row is a
 // line of HistoryMobile — the date and the amount, «pouch · kind», the note — and its link covers
 // the whole line: one link a record, named as before, described by its row. The kind is in its
@@ -1037,8 +1037,8 @@ function historyRow(operation: Operation, money: MoneyFormat) {
   </tr>`;
 }
 
-// «Летопись», texts from design/preview/SaeckelHistory.html, HistoryMobile.html and
-// SaeckelHistoryEmpty.html: the whole width under the tabs, no column of pouches. A filter by
+// «Летопись», texts from the prototypes SaeckelHistory, HistoryMobile and
+// SaeckelHistoryEmpty: the whole width under the tabs, no column of pouches. A filter by
 // pouch with «Показать» — without a script the list does not send the form itself — 50 records a
 // page, «Назад» and «Следующие 50». With no record at all, the empty page: the closed book, on the
 // phone above the text, as in SaeckelEmptyMobile. A pouch without records and a page past the
@@ -1199,7 +1199,7 @@ function operationPage(operation: Operation, money: MoneyFormat) {
   );
 }
 
-// A record to change (design/preview/SaeckelForms.html, «Трата · 05.10.2026»): the lists of its
+// A record to change (the prototypes SaeckelForms, «Трата · 05.10.2026»): the lists of its
 // pouches by its kind — the active pouches by name, the chosen one first chosen — then the
 // amount, the date and the note. One list stands beside the amount, the date and the note under
 // them, as in the prototype; two lists stand above the fields, as in «Переложить»; an income has
@@ -1250,7 +1250,7 @@ function operationEditPage(
   );
 }
 
-// An open pouch (design/preview/Saeckel.html on the right, PouchMobile.html): its sign and name
+// An open pouch (the prototype Saeckel on the right, PouchMobile): its sign and name
 // with «Переложить» and «Изменить», the balance in a frame drawn by pen — red below zero, then
 // «Покрыть из другого мешка» — the refusal, if any, the form of an expense and the last
 // movements. A pouch in the storeroom has neither the links nor the form, only «Вернуть»: it is
@@ -1318,8 +1318,8 @@ function pouchPage(pouch: Pouch, view: PouchView, money: MoneyFormat, column: Po
   );
 }
 
-// «Изменить», texts from design/preview/PouchEditMobile.html and the frame «Мешок «Транспорт»» of
-// SaeckelForms.html: the name and the sign — each sign a picture with its word, the chosen one
+// «Изменить», texts from the prototypes PouchEditMobile and the frame «Мешок «Транспорт»» of
+// SaeckelForms: the name and the sign — each sign a picture with its word, the chosen one
 // ringed by pen — then «В кладовую», in the same frame under a line on a computer and in a frame
 // of its own on the phone. The heading keeps the stored name; the fields show what was typed and
 // chosen. Only an empty pouch goes into the storeroom: with any other balance the block says why
