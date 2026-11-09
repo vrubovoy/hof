@@ -146,8 +146,9 @@ Static каждого модуля лежит в его папке: Core — `sr
 адреса `/static/…`; Säckel — `src/saeckel/static/` (`saeckel.css`, `fonts/`, `img/`), адреса
 `/saeckel/static/…`. Общей папки нет: шрифт, бумага, перо и плашки у Säckel — свои копии, а его
 страницы и CSS называют только файлы своей папки. В шрифтах Säckel есть ещё подмножество latin-ext
-со знаком ₽ (EB Garamond той же версии, что у Core). Картинки выпускаются из мастеров `design/`
-командой `design/tools/export.py` ([design/README.md](design/README.md)). Список файлов сервер
+со знаком ₽ (EB Garamond той же версии, что у Core). Картинки — законченные работы `design/masters/`, WebP
+из них делает `design/export.py`; часть картинок — готовые WebP без мастера
+([design/README.md](design/README.md)). Список файлов сервер
 составляет при старте, поэтому новый файл появляется только после перезапуска `npm run dev`.
 
 Прототипы экранов этапа дизайна (`design/preview/`) убраны в M12.12 и лежат в истории git; ниже они

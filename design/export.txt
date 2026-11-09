@@ -1,0 +1,43 @@
+# Hof — the pictures of the site made from the finished masters (design/README.md, «Экспорт»).
+# One line — one file of the site:
+#   master   a PNG of design/masters/
+#   file     core/… is src/core/static/img/…, saeckel/… is src/saeckel/static/img/…
+#   size     1x — as it is; 2x — twice as large (for Retina); 780 — to this width;
+#            2x/8 — a sheet of 8 frames side by side, each frame twice as large
+#   quality  WebP quality; a master with transparency keeps it at full quality
+# master                   file                                 size  quality
+error-403-mobile.png       core/error-403-mobile@2x.webp        780   80
+error-403-mobile.png       core/error-403-mobile@3x.webp        1x    80
+error-403.png              core/error-403.webp                  1x    82
+error-403.png              core/error-403@2x.webp               2x    72
+error-404-mobile.png       core/error-404-mobile@2x.webp        780   80
+error-404-mobile.png       core/error-404-mobile@3x.webp        1x    80
+error-404.png              core/error-404.webp                  1x    82
+error-404.png              core/error-404@2x.webp               2x    72
+error-500-mobile.png       core/error-500-mobile@2x.webp        780   80
+error-500-mobile.png       core/error-500-mobile@3x.webp        1x    80
+fx-banner-gate-l.png       core/fx-banner-gate-l.webp           2x/8  75
+fx-banner-gate-r.png       core/fx-banner-gate-r.webp           2x/8  75
+fx-banner-tower.png        core/fx-banner-tower.webp            2x/8  75
+fx-leaves-bush-l.png       core/fx-leaves-bush-l.webp           2x/8  75
+fx-leaves-bush-r.png       core/fx-leaves-bush-r.webp           2x/8  75
+fx-leaves-olive.png        core/fx-leaves-olive.webp            2x/8  75
+fx-leaves-tree.png         core/fx-leaves-tree.webp             2x/8  75
+login-desktop-v2.png       core/login-desktop-v2.webp           1x    82
+login-desktop-v2.png       core/login-desktop-v2@2x.webp        2x    75
+login-mobile-v2.png        core/login-mobile-v2@2x.webp         780   80
+login-mobile-v2.png        core/login-mobile-v2@3x.webp         1170  80
+pose-500.png               core/pose-500.webp                   1x    82
+pose-500.png               core/pose-500@2x.webp                2x    75
+scene-chambers-panel.png   core/scene-chambers-panel.webp       1x    82
+scene-chambers-panel.png   core/scene-chambers-panel@2x.webp    2x    75
+scene-courtyard-map.png    core/scene-courtyard-map.webp        1x    82
+scene-courtyard-map.png    core/scene-courtyard-map@2x.webp     2x    75
+scene-residents-panel.png  core/scene-residents-panel.webp      1x    82
+scene-residents-panel.png  core/scene-residents-panel@2x.webp   2x    75
+scene-setup-mobile.png     core/scene-setup-mobile@2x.webp      780   80
+scene-setup-mobile.png     core/scene-setup-mobile@3x.webp      1x    80
+scene-setup.png            core/scene-setup.webp                1x    82
+scene-setup.png            core/scene-setup@2x.webp             2x    72
+scene-treasury-band.png    saeckel/scene-treasury-band.webp     1x    82
+scene-treasury-band.png    saeckel/scene-treasury-band@2x.webp  2x    75

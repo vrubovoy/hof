@@ -1,270 +1,128 @@
-# design/ — картинки Hof: мастера, выпуск, стиль
+# design/ — художественные работы Hof
 
-Сайт показывает только файлы `src/core/static/img` и `src/saeckel/static/img`. Здесь — то, из чего
-они сделаны, и как сделать новые. В образ Docker папка не попадает (`.dockerignore`).
+Сайт показывает только файлы `src/core/static/img` и `src/saeckel/static/img`. Здесь — законченные
+работы, из которых сделаны его картинки, и как их править. В образ Docker папка не попадает.
 
-## Устройство
+## Что где лежит
 
 | Что | Зачем |
 |---|---|
-| `masters/` | Мастер-PNG: готовая, утверждённая картина под одно место показа (компьютер или телефон) — нужная композиция, цвет и размер. Из мастера файлы static делаются одной командой |
-| `assets.json` | Опись: каждая картинка static и как она получается (рецепт ниже) |
-| `tools/export.py` | Выпуск и проверка по описи |
-| `tools/banners.py`, `leaves.py`, `fountain.py`, `crisp.py` | Кадры анимаций карты Двора из её мастера: знамёна, листва, вода; резкость кадров как у картины |
-| `tools/pen.py` | Всё, что нарисовано пером, — SVG рамок, линеек, закладок, флажков |
-| `references/` | Эталоны стиля: доски владельца `01…07`, комнаты — `scene-treasury-v1.png`, эмблемы и материалы — `emblem-saeckel.png` |
-| `sounds/` | Исходные записи, музыка и их сведение (`mix.py`), раздел «Звуки» ниже |
+| `masters/` | Законченные работы в PNG: открыл — видишь готовую картину, с её цветом, штриховкой, прозрачностью и размером. Имя мастера — имя файла сайта |
+| `export.txt` | Какие файлы сайта делаются из каких мастеров: размер и качество, одна строка — один файл |
+| `export.py` | Технический экспорт PNG → WebP по этой таблице и проверка, что сайт ему соответствует |
+| `prompts.md` | Стиль, промпты и правки для ChatGPT — если нужна новая картина |
+| `references/` | Эталоны стиля для ChatGPT |
+| `sounds/` | Исходные записи звуков и их сведение (раздел «Звуки» ниже) |
 
-## Правило
+## Картинки сайта бывают трёх видов
 
-1. Картинка сайта — файл static, сделанный из мастера командой выпуска. Мастер и рецепт названы в `assets.json`.
-2. Компьютер и телефон — разные мастера, если на них разная композиция: телефон не режет картину компьютера.
-3. Сырые генерации, листы, правки ChatGPT и разовые скрипты в репозиторий не кладутся. Из них делается
-   мастер, а сам путь — строкой в «Журнале» ниже.
-4. `copy` в описи — картинка, сделанная однажды вручную (вырезка с листа, перевод бумаги в белый,
-   позы кота, двери карты, кляксы, эмблемы, материалы): её файл в static и есть мастер. Чтобы
-   изменить её, делают новый мастер и переводят запись на рецепт.
+**1. Из мастера** — 35 файлов, все перечислены в `export.txt`:
 
-## Выпуск
+- сцены компьютера: вход, карта Двора, панели покоев и приближённых, шапка казначейской,
+  «Основание двора», ошибки 403 и 404 (и их вдвое большие для Retina);
+- сцены телефона: вход, 403, 404, 500, «Основание двора» (`*-mobile`, `login-mobile-v2`);
+- листы кадров анимаций: знамёна ворот и башни (`fx-banner-*`), листва (`fx-leaves-*`) — по 8
+  кадров одинаковой ширины слева направо;
+- поза кота на 500 (`pose-500`).
 
-Нужны ImageMagick 7 (`brew install imagemagick`) и Python с Pillow и NumPy:
+**2. Готовый WebP без мастера** — эталон сам файл сайта. Их делали вручную однажды (вырезка с
+листа, перевод бумаги в белый, кадр из правки ChatGPT), и PNG без потерь не сохранился. Делать PNG
+из WebP и называть его оригиналом не стали: он был бы сжатой копией.
+
+- 500 для компьютера (`error-500`, `@2x`), полосы покоев и приближённых на телефоне
+  (`scene-*-band`) — про них ниже;
+- вода фонтана (`fx-fountain`), створки «Основания двора» (`setup-gate-open`);
+- позы котов (`pose-login`, `pose-login-m`, `pose-setup`, `map-cat`, `chambers-cat`), двери карты
+  (`map-*-door`, `map-gatehouse-window`);
+- пустые состояния и их кадры (`empty-*`), эмблемы (`emblem-*`), знаки мешков (`icon-*`);
+- материалы: знамя меню, лента, рамка, вывеска, бирки ключей, кнопки, печати, рулон знамени;
+- кляксы, веточки, рука, бумага (`ink-*`, `sprig-*`, `manicule`, `paper-*`).
+
+**3. SVG** — векторные исходники сами по себе: элементы, нарисованные пером (`pen-*`), знак Hof
+(`hof-mark*`), птицы и дым (`fx-birds`, `fx-smoke`).
+
+Файлы, которые есть и в Core, и в Säckel (бумага, перо, кнопки, кляксы), — одинаковые копии: у
+модулей нет общей static. Меняя один, меняют оба.
+
+## Как править
+
+**Картину из мастера.** Открыть `masters/<имя>.png`, исправить, сохранить PNG того же размера.
+Затем выпустить её файлы и проверить:
 
 ```sh
-python3 -m venv ~/.venvs/hof && ~/.venvs/hof/bin/pip install pillow numpy
-~/.venvs/hof/bin/python design/tools/export.py check
-~/.venvs/hof/bin/python design/tools/export.py build src/core/static/img/scene-setup.webp
+python3 design/export.py build core/scene-setup.webp core/scene-setup@2x.webp
+python3 design/export.py check
 ```
 
-`check` делает во временной папке каждую картинку, у которой есть рецепт, и сравнивает со static
-байт в байт; заодно — что опись и static совпадают по списку. После любой замены мастера:
-`build` нужных файлов, затем `check`. Тест `npm run check` следит, что каждая картинка static есть
-в описи, а каждый мастер описи — в `masters/`.
+**Кадр анимации.** Лист `masters/fx-*.png` — кадры одинаковой ширины слева направо, вне рисунка
+прозрачно. Кадр правят на месте, не меняя размер листа. Первый кадр лежит поверх карты Двора и
+должен совпадать с ней: слой стоит точно над своим рисунком. Затем `build core/fx-leaves-olive.webp`.
 
-| Рецепт | Как | Где |
-|---|---|---|
-| `1x` | мастер как есть, WebP `quality` | картины 1536 px |
-| `2x` | вдвое больше: Lanczos в линейном свете, лёгкая резкость | картины для Retina |
-| `width` | к ширине `width`, Lanczos в линейном свете | кадры телефона 780 и 1170 |
-| `band` | панель комнаты, видны только строки `rows`, выше и ниже столбец повторяет крайний пиксель; размер панели | полосы покоев и приближённых на телефоне (M12.5) |
-| `frames` | `banners.py` / `leaves.py` из мастера карты → `crisp.py` → каждый кадр вдвое → полоса, WebP 75 | знамёна, листва |
-| `pen` | `pen.py` | SVG пером |
-| `copy` | файл static — сам мастер | всё сделанное вручную |
+**Готовый WebP без мастера.** Открыть файл сайта (он и есть эталон), исправить и сохранить PNG в
+`masters/` под тем же именем, добавить его строки в `export.txt` и выпустить. С этого момента
+картина — «из мастера». Помнить, что такой PNG начинается со сжатого WebP.
 
-## Спецификация мастеров
+**SVG.** Править сам файл сайта, как текст или в векторном редакторе; если он есть в обоих модулях —
+одинаково в обоих.
 
-| Место показа | Мастер | Выпуск |
+**Новая картина.** `prompts.md` → ChatGPT → законченный PNG нужного размера → `masters/` → строки в
+`export.txt` → `build`.
+
+**Полосы покоев и приближённых на телефоне** (`scene-chambers-band`, `scene-residents-band`, M12.5)
+— не отдельные работы, а панель, у которой видны только строки полосы (покои 464–856 из 1024,
+приближённые 176–472), а выше и ниже каждый столбец повторяет свой крайний пиксель. Размер — как у
+панели, чтобы браузер рисовал полосу ровно как панель. Если панель изменилась, полосу делают заново
+из WebP панели (для `@2x` строки и размеры вдвое, качество 75):
+
+```sh
+magick scene-chambers-panel.webp -crop 683x392+0+464 +repage \
+  -set option:distort:viewport 683x1024+0-464 -virtual-pixel Edge -filter Point -distort SRT 0 \
+  +repage -strip -define webp:method=6 -define webp:use-sharp-yuv=true -quality 82 scene-chambers-band.webp
+```
+
+## Экспорт
+
+Нужен только ImageMagick 7 (`brew install imagemagick`). `export.py` делает из мастера WebP
+так, как написано в строке `export.txt`:
+
+| Размер | Как |
+|---|---|
+| `1x` | мастер как есть |
+| `2x` | вдвое больше для Retina: Lanczos в линейном свете, лёгкая резкость; у прозрачного мастера край прозрачности — фильтром Triangle |
+| `780`, `1170` | к этой ширине: кадры телефона |
+| `2x/8` | лист из 8 кадров: каждый кадр вдвое отдельно, чтобы соседние не смешивались |
+
+Прозрачность сохраняется с полным качеством. `check` делает все 35 файлов во временной папке и
+сравнивает с сайтом байт в байт; тест `npm run check` следит, что каждый мастер упомянут в таблице,
+а каждый файл таблицы есть на сайте.
+
+## Размеры мастеров
+
+| Где показывается | Мастер | Файлы сайта |
 |---|---|---|
 | Сцена на весь экран компьютера (вход, основание, ошибки) | 1536×1024, картина слева, справа бумага под форму | `1x` 82, `2x` 75 (основание и ошибки — 72) |
-| Карта Двора | 1536×1024, до краёв | `1x` 82, `2x` 75; кадры анимаций — из неё |
+| Карта Двора | 1536×1024, до краёв | `1x` 82, `2x` 75 |
 | Шапки и панели комнат | кадр по главной зоне, до краёв | `1x` 82, `2x` 75 |
-| Сцена на телефоне | свой кадр, до краёв; ширина 1170, если есть | `width` 780 и `1x` — вся ширина мастера (до 1170), 80 |
-| Эмблемы, материалы, виньетки | по месту (таблица размеров ниже) | вручную, `copy` |
+| Сцена на телефоне | свой кадр, до краёв; ширина 1170, если есть | `780` и `1x` (или `1170`), 80 |
+| Лист кадров | кадры в размере карты, рядом | `2x/8`, 75 |
+| Эмблемы, материалы, виньетки | по месту: знамя меню — по высоте 1800, лента — 144, рамка — 1024, вывеска — 400 по ширине, бирки — 192 по высоте, виньетки — 720…840, эмблемы — 48/96 и 120/240, бумага — плитка 1124 | — |
 
-Цвет бумаги интерфейса — `#F7EFE0`; у картин бумага около (248, 239, 223). Новая генерация, у
-которой поплыли цвета, приводится к прежней картине кривыми по общей части (так сведены кадры
-телефона M12.6), а не на глаз.
+Цвет бумаги интерфейса — `#F7EFE0`; у картин бумага около (248, 239, 223). Вес: фон входа @2x
+~650 КБ, полосы до ~300 КБ, остальное до ~100 КБ.
 
-Размеры прочего: знамя меню — по высоте 1800, лента — 144, рамка — 1024 (9 частей), вывеска — 400
-по ширине, бирки ключей — 192 по высоте, виньетки — 720…840, эмблемы — крупный план 48/96, целиком
-120/240, бумага — плитка 1124, пятна 750 → 1500. Генерация ChatGPT: 1536×1024, 1024×1536 или
-1024×1024. Вес: фон входа @2x ~650 КБ, полосы до ~300 КБ, остальное до ~100 КБ.
+## Откуда что взялось
 
-## Как сделать новую картинку
-
-1. ChatGPT, проект «Hof assets»: в инструкции проекта — блок STYLE ниже, в файлах проекта — только
-   `masters/login-desktop-v2.png`, `references/scene-treasury-v1.png`, `references/emblem-saeckel.png`,
-   `references/07-services.png`. Одна картинка — одно сообщение, 2–3 варианта, дальше — правки.
-2. Сцены не увеличивать нейросетью (Upscayl стирает штриховку). Знак Hof и служебные значки не
-   генерировать — это SVG.
-3. Сведение в мастер: размер и кадр по спецификации, цвета — к эталону. Достроенная ChatGPT картина
-   склеивается с прежней по шву наименьшей разницы, левая часть остаётся прежней пиксель в пиксель.
-4. Позы кота и двери карты — правки ChatGPT «пиксель в пиксель» (промпты Д и Е). Правка мягче
-   исходника: она подгоняется по резкости (`crisp.py <мастер> <правка> <выход>`), и из неё
-   вырезается только то, что заметно изменилось (размытая разница > 26 из 255, без крапинок, +8 px,
-   мягкий край 6 px).
-5. Мастер — в `masters/`, запись — в `assets.json`, затем `export.py build` и `check`.
-
-## STYLE — постоянный блок
-
-```text
-STYLE — Hof
-Pen-and-ink illustration in the style of the attached reference image
-(login-desktop-v2.png for outdoor scenes, scene-treasury-v1.png for rooms,
-emblem-saeckel.png for emblems and materials):
-a blue-and-white storybook etching on warm off-white paper. Cobalt / ultramarine ink,
-crisp dark navy outlines, fine blue hatching and cross-hatching for shading,
-a very light blue wash.
-
-Outdoors (courtyard, gate): warm color only as pale, desaturated washes under the
-blue hatching on wood, terracotta, linen, bread, brass and the tabby cat. Stone, paving,
-walls, sky and foliage stay blue ink on bare paper (foliage may have a very pale sage
-tint).
-Indoors (rooms): wooden furniture, brass, linen and leather may carry fuller warm
-washes, as in scene-treasury-v1.png; stone walls and floors stay blue.
-Never saturated colors, no colored sky, no realistic watercolor painting,
-no photographic light.
-
-World: a sunny, peaceful medieval-Mediterranean castle courtyard and its rooms —
-pale stone walls, round arches, crenellations, a round stone fountain, cypresses,
-olive and laurel trees, terracotta pots with plants, ivy, blue banners with a white
-fleur-de-lis, iron lanterns, stone paving, wooden furniture. Calm, cozy, lived-in.
-Not dark, not gothic, not fantasy, not cartoonish.
-
-Recurring character: one small tabby cat may appear in scenes and vignettes (never in
-emblems or materials) — always the same cat.
-
-Background: plain, even warm paper (close to #F7EFE0). No stains, no vignette,
-no drop shadow, no frame or border around the picture (unless the subject itself
-is a frame).
-
-Strictly: no text, no letters, no numbers, no signatures, no watermarks, no logos,
-no buttons or screen interface, no people.
-
-Consistency: match the attached reference exactly — the same blue, line weight,
-hatching density, amount of warm color and level of detail.
-
-EMBLEM VARIANT (only for emblems of services like Säckel; Hof's own emblems are a plain
-object without ledge and sprigs): match emblem-saeckel.png — one object standing
-on a small ledge of three flagstones with two small laurel sprigs behind it; the object
-itself may have one warm wash (cloth, wood, brass); ledge and sprigs stay blue.
-
-MATERIAL VARIANT (only for menu-banner, ribbon, frame, signboard, key-tag, hook-empty,
-sprig-*): one isolated decorative object, drawn in the same ink style as
-emblem-saeckel.png. Straight front view: no perspective, no tilt, perfectly level and
-symmetric. Plain even paper background with a wide empty margin, no shadow, nothing else
-in the picture. Parts marked "stretchable" are perfectly straight and uniform, with a
-simple even texture, so they can be cut and repeated. No text, no letters, no symbols unless asked.
-```
-
-## Промпты для новой службы двора
-
-Скопировать блок, заменить слова в [КВАДРАТНЫХ СКОБКАХ], приложить указанную картинку.
-
-```text
-А. Шапка службы — сцена до краёв (как казначейская у Säckel)
-   Приложить: references/scene-treasury-v1.png
-
-ASSET: scene-[service]
-Follow STYLE — Hof. Indoor room, match the attached reference exactly.
-Subject: [PLACE] inside the castle, seen from the front at eye level, calm and tidy.
-Main zone (keep it in the middle band of the picture, from 40% to 80% of the height):
-[OBJECTS] on a long wooden table or shelf, clearly readable as one group.
-Composition: painted all the way to the edges of the image — no blank paper, no fading edges,
-no frame. Full detail and depth, dense hatching, like a finished book illustration.
-No people, no text or letters on anything.
-Format: landscape 3:2, highest resolution.
-
-
-Б. Вертикальная картина рядом с формой (как ключница у Приближённых, комната в Моих покоях)
-   Приложить: references/scene-treasury-v1.png (комната) или masters/login-desktop-v2.png (на улице)
-
-ASSET: scene-[service]-panel
-Follow STYLE — Hof. Match the attached reference exactly.
-Subject: [PLACE], tall view. The key objects — [OBJECTS] — stand in the middle 60% of the width,
-from top to bottom; the sides may be cropped on narrow screens.
-The tabby cat from the reference may sit somewhere in the scene, small, not in the center.
-Composition: portrait, painted all the way to the edges, no blank paper, no frame.
-Full detail, dense hatching. No people, no text or letters.
-Format: portrait 2:3, highest resolution.
-
-
-В. Виньетка пустого состояния (как «Мешков пока нет»)
-   Приложить: masters/login-desktop-v2.png
-
-ASSET: empty-[service]
-Follow STYLE — Hof. Match the attached reference exactly.
-Subject: a small still life — [EMPTY OBJECTS, e.g. empty jars on a bare shelf] — and the tabby
-cat from the reference, curious, sniffing at them.
-Composition: a vignette in the center, about half of the frame, lots of air around it.
-All edges dissolve softly into blank paper: hatching gets sparser toward the edges.
-Plain even paper background, no frame, no text.
-Format: landscape 3:2, highest resolution.
-
-
-Г. Эмблема службы (в меню и на карточках, как мешок Säckel)
-   Приложить: references/emblem-saeckel.png
-
-ASSET: emblem-[service]
-Follow STYLE — Hof, EMBLEM VARIANT. Match the attached emblem exactly: the same ledge of three
-flagstones, the same two small laurel sprigs behind, the same line weight and blue.
-Object: [ONE OBJECT, e.g. a small oak barrel], standing on the ledge, front view, slightly
-from above. The object may have one warm wash (wood, cloth or brass); ledge and sprigs stay blue.
-Plain even paper background, wide empty margin, nothing else in the picture, no text.
-Format: square 1:1, highest resolution.
-
-
-Д. Дверь службы на карте открывается (кадр для наведения, как у казначейской)
-   Приложить: masters/scene-courtyard-map.png
-
-ASSET: scene-courtyard-map-[service]
-Edit the attached image. Keep EVERYTHING exactly as it is — same size, same position of every
-line — and change only one thing: the [WHICH DOOR, e.g. second wooden door from the left in the
-middle wall] is now half open inwards, a warm dim interior visible behind it.
-Nothing else moves or changes. No new objects, no text.
-   После: Claude Code вырежет из правки только дверь с мягким краем (как map-treasury-door).
-
-
-Е. Кот меняет позу на картинке (кадр по щелчку)
-   Приложить: мастер той картины, где сидит кот
-
-ASSET: [scene]-cat
-Edit the attached image. Keep EVERYTHING exactly as it is — same size, same position of every
-line — and change only the tabby cat: [NEW POSE, e.g. it stretches and yawns].
-Nothing else moves or changes.
-   После: Claude Code вырежет только кота с мягким краем и проверит, что остальное совпало.
-```
-
-## Правки (в том же чате, после неудачной генерации)
-
-```text
-Неровный фон:
-  Repaint only the background as flat, even paper color. Keep the illustration unchanged.
-
-Буквы на флагах, книгах или вывесках:
-  Remove all letters and symbols. Keep everything else unchanged.
-
-Край обрывается резко:
-  Make the <left> edge dissolve gradually into blank paper; hatching gets sparser toward the edge.
-
-Слишком много цвета:
-  Keep the blue ink drawing; reduce warm colors to pale, desaturated washes only on wood,
-  terracotta, linen, brass and the cat, exactly as subtle as in login-desktop-v2.png.
-
-Материал нарисован в перспективе или с наклоном:
-  Redraw it in a straight front view: perfectly level and symmetric, no perspective, no tilt.
-
-Растягиваемая часть неровная:
-  Make the <middle band> perfectly straight and uniform along its whole length; keep the ends unchanged.
-
-Стиль уплыл (приложить удачный ассет):
-  Match this image's style exactly: same line weight, hatching density, blue hue and warm accents.
-```
-
-## Журнал: что сделано однажды
-
-- Позы кота (`pose-*`, `map-cat`, `chambers-cat`, `empty-saeckel-sniff-*`), двери карты
-  (`map-*-door`, `map-gatehouse-window`), пустая летопись — вырезаны из правок ChatGPT по пункту 4.
-- Створки «Основания двора» (`setup-gate-open`) — арка из сцены входа (совпадает корреляцией),
-  с M12.4 кадр кончается над низом дверей и прозрачен над головой кота.
-- Вода фонтана (`fx-fountain`) — `fountain.py` M10.3; нынешняя полоса собрана до нынешнего пути
-  кадров и не повторяется им байт в байт (`copy`).
-- Эмблемы, знаки мешков, кнопки, печати, знамя меню, лента, рамка, вывеска, бирки, кляксы, веточки,
-  рука — вырезаны с листов ChatGPT; бумага у виньеток переведена в белый (деление на цвет бумаги).
-  Лента и вывеска смягчены под сцены (`*-soft`).
-- Птицы в небе карты стёрты (M12.11), красные яблоки на 500 приглушены.
-- Кадры телефона M12.6 (`*-mobile.png`): 403 — квадрат 896 мастера компьютера с (0, 88); 404 —
-  картина, которую ChatGPT нарисовал заново до краёв, цвета приведены к 404 компьютера кривыми по
-  гистограммам, квадрат 1086 с x = 181; 500 и «Основание двора» — картина компьютера пиксель в
-  пиксель слева и её достройка ChatGPT справа, цвета достройки — кривыми по общей части, шов там,
-  где картины различаются меньше всего; у 500 левая часть — выпущенный файл (его яблоки
-  приглушены), яблоки достройки приглушены тем же преобразованием RGB, измеренным на прежних
-  яблоках. Кадры 500 — квадрат 1024 с (48, 0), основания — 1000×703 с (60, 321): кот и створки
-  стоят в px картины компьютера. Сырые картины ChatGPT остались вне репозитория.
-- Поза кота 500 (M12.6): лапа касается бока яблока, листик виден; вырезана по пункту 4 внутри
-  многоугольника вокруг кота — правка перерисовала и куст рядом; яблоко в кадре приглушено.
-- Прототипы этапа дизайна (`design/preview/*.html`, `screens.css`, `canvas.py`), листы и сырые
-  генерации (`design/generated/`) убраны в M12.12; они есть в истории git до этой задачи.
-  Эталон экранов — холст «Hof — экраны MVP» (ARCHITECTURE.md, «Визуальный язык»).
+- Сырые генерации ChatGPT, листы, из которых вырезаны эмблемы, знаки, кляксы и материалы, правки с
+  позами котов и прототипы этапа дизайна — в истории git до коммита 9171df2 (M12.12),
+  `design/generated/` и `design/preview/`.
+- Листы знамён и листвы сделаны в M12.4 скриптами из карты (кадры движутся только тканью и
+  листвой, вне них прозрачно, резкость подогнана к карте) и в M12.13 сохранены законченными
+  мастерами; скрипты — в истории git.
+- Кадры телефона M12.6: 403 — часть мастера компьютера; 404 — картина, которую ChatGPT нарисовал
+  до краёв, с цветами 404 компьютера; 500 и «Основание двора» — картина компьютера слева и её
+  достройка ChatGPT справа. У 500 левая часть взята из WebP картины компьютера (её PNG с
+  приглушёнными яблоками не сохранился), яблоки достройки приглушены так же.
+- Птицы в небе карты стёрты в M12.11.
 
 ## Звуки
 
