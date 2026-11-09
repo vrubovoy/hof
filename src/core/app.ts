@@ -293,7 +293,8 @@ const FORBIDDEN_PAGE = errorPage(403);
 // blue banner the whole height of the window — Двор, the services, Приближённые of the
 // administrator, Мои покои and the way out; on the phone the bar at the top — the mark to the
 // courtyard, the candle to Мои покои. CSS shows one of the two, so the hidden one takes no focus.
-// «Покинуть двор» is a form: sign-out is POST only (§4.2); data-fx names the act for fx.js.
+// «Покинуть двор» is a form: sign-out is POST only (§4.2); data-fx names the act for fx.js, and
+// data-door the gate it goes out through (M12.15). Every form of the way out has no field.
 // The mark at the top of the banner is an ordinary link, as in the prototypes. data-session: fx.js
 // asks on such a page whether the session is still there (M11.6).
 function shell(
@@ -358,7 +359,7 @@ function shell(
               >
             </span>
           </a>
-          <form method="post" action="/logout" data-fx="logout">
+          <form method="post" action="/logout" data-fx="logout" data-door="gate">
             <button type="submit" class="nav">${DOOR}Покинуть двор</button>
           </form>
         </div>
@@ -672,15 +673,26 @@ function loginPage(form: LoginForm) {
 // door on it, and that door is a picture only.
 //
 // M12.5: the map is asked for first, the frames of the layers wait for it (fx.js).
+//
+// M12.15: Приближённые is a plate over the window of the gatehouse, which is too small for a
+// hanging sign. «Выход» over the gate, for everyone signed in, is the form of the way out (POST
+// /logout, as «Покинуть двор»): on a computer its sign is the button and the open gate is the
+// door the page goes out through; on the phone it is the last sign under the map.
 function courtyardPage(user: CurrentUser, services: readonly Service[], alone: boolean) {
   const treasury = services[0];
-  // The places with a door, in the order of the map: the gatehouse, the treasury, the tower.
+  // The places with a door, in the order of the map: the gatehouse, the treasury, the tower; what
+  // its name hangs on. The doors of the phone are theirs and the gate.
   const places = [
-    user.isAdmin ? { href: '/admin/users', name: 'Приближённые', at: 'gatehouse' } : null,
-    treasury === undefined ? null : { href: treasury.path, name: treasury.name, at: 'treasury' },
-    { href: '/account', name: 'Мои покои', at: 'tower' },
+    user.isAdmin
+      ? { href: '/admin/users', name: 'Приближённые', at: 'gatehouse', on: 'plate' }
+      : null,
+    treasury === undefined
+      ? null
+      : { href: treasury.path, name: treasury.name, at: 'treasury', on: 'sign' },
+    { href: '/account', name: 'Мои покои', at: 'tower', on: 'sign' },
   ].filter((place) => place !== null);
   const door = (name: string) => html`<span class="door door-${name}" aria-hidden="true"></span>`;
+  const doors = [...places.map(({ at }) => at), 'gate'].map(door);
   const sign = (href: string, name: string, at: string) =>
     html`<a class="sign sign-sm" href="${href}" data-fx="door" data-door="${at}"
       ><span>${name}</span></a
@@ -712,14 +724,17 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
           <span class="fx fx-leaves fx-tree" aria-hidden="true"></span>
           <span class="fx fx-birds" aria-hidden="true"><i></i><i></i><i></i></span>
           ${cat('map')}
-          <span class="court-doors" aria-hidden="true">${places.map(({ at }) => door(at))}</span>
+          <span class="court-doors" aria-hidden="true">${doors}</span>
           ${places.map(
-            ({ href, name, at }) =>
+            ({ href, name, at, on }) =>
               html`<a class="place" href="${href}" data-fx="door" data-door="${at}"
-                ><span class="sign at-${at}"><span>${name}</span></span
+                ><span class="${on} at-${at}"><span>${name}</span></span
                 >${door(at)}</a
               >`,
           )}
+          <form class="place" method="post" action="/logout" data-fx="logout" data-door="gate">
+            <button type="submit" class="sign at-gate"><span>Выход</span></button>${door('gate')}
+          </form>
         </div>
       </div>
       <nav class="court-places" aria-label="Места двора">
@@ -730,6 +745,9 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
         )}
         ${user.isAdmin ? sign('/admin/users', 'Приближённые', 'gatehouse') : ''}
         ${sign('/account', 'Мои покои', 'tower')}
+        <form method="post" action="/logout" data-fx="logout" data-door="gate">
+          <button type="submit" class="sign sign-sm"><span>Выход</span></button>
+        </form>
       </nav>
       <div class="court-below">
         <div class="court-note">
@@ -935,7 +953,7 @@ function accountPage(user: CurrentUser, services: readonly Service[], form: Acco
           <button type="submit" class="btn btn-blue">Сменить пароль</button>
         </form>
         ${FX_SETTINGS}
-        <form class="chambers-out" method="post" action="/logout" data-fx="logout">
+        <form class="chambers-out" method="post" action="/logout" data-fx="logout" data-door="gate">
           <button type="submit" class="btn" aria-describedby="logout-hint">
             ${DOOR}Покинуть двор
           </button>

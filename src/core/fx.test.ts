@@ -847,16 +847,17 @@ describe('fx-head.js: the page after a form (hof.after)', () => {
   // POST /logout → 303 → /login, a fresh flag, the form of the sign-in on the page.
   const RIGHT = { after: LOGOUT, path: '/login', redirects: 1 };
 
-  test('the right case: /login slides in from the left, the flag is gone', () => {
+  // M12.15: out through the gate, the sign-in comes out of the dark (it slid in from the left).
+  test('the right case: /login comes out of the dark, the flag is gone', () => {
     const page = visit(RIGHT);
-    assert.deepEqual(page.classes(), ['from-left', 'fx-on']);
+    assert.deepEqual(page.classes(), ['from-door', 'fx-on']);
     assert.equal(page.arrived(), 'logout');
     assert.equal(page.session.size, 0);
     page.parsed();
-    assert.deepEqual(page.classes(), ['from-left', 'fx-on']);
-    // The slide in ends with its veil: the classes of the arrival go.
+    assert.deepEqual(page.classes(), ['from-door', 'fx-on']);
+    // The way out of the dark ends with its veil: the classes of the arrival go.
     page.fire('animationend', { animationName: 'out-left' });
-    assert.deepEqual(page.classes(), ['from-left', 'fx-on']);
+    assert.deepEqual(page.classes(), ['from-door', 'fx-on']);
     page.fire('animationend', { animationName: 'veil-out' });
     assert.deepEqual(page.classes(), ['fx-on']);
   });
@@ -903,7 +904,7 @@ describe('fx-head.js: the page after a form (hof.after)', () => {
 
   test('read once: the next page has no effect; a flag the next form took away neither', () => {
     const session = new Map<string, string>();
-    assert.deepEqual(visit({ ...RIGHT, session }).classes(), ['from-left', 'fx-on']);
+    assert.deepEqual(visit({ ...RIGHT, session }).classes(), ['from-door', 'fx-on']);
     assert.deepEqual(visit({ path: '/login', redirects: 1, session }).classes(), ['fx-on']);
 
     // «Покинуть двор» sent, then another form: that one overwrote or took the flag away.
@@ -1174,6 +1175,15 @@ describe('fx-head.js: the page after a link (hof.arrive)', () => {
     to: `https://hof.test${path}`,
     at: NOW - 500,
     keep,
+  });
+
+  // M12.15: the way out by fetch opens /login itself, without a redirect: the flag of a door.
+  test('the sign-in after the way out through the gate: out of the dark, as through a door', () => {
+    const page = visit({ arrive: link('door', '/login'), path: '/login' });
+    assert.deepEqual(page.classes(), ['from-door', 'fx-on']);
+    assert.equal(page.arrived(), 'door');
+    page.fire('animationend', { animationName: 'veil-out' });
+    assert.deepEqual(page.classes(), ['fx-on']);
   });
 
   test('a slide: from the other side; the banner stays where the link said so', () => {

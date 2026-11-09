@@ -3,7 +3,9 @@
 // once must not give a second piece; the ordinary off still stops and lets go of the player; a
 // short sound lets go of its Web Audio nodes when it ends, fails or is refused. The way to the
 // next page (M10.2): a slide waits, a second press goes at once, presses of the browser's own are
-// left alone, a form is never held and leaves the flag of its act, the door opens with it; back
+// left alone, a form is never held and leaves the flag of its act, the door opens with it; the way
+// out through the gate (M12.15) sends its POST at once by fetch and opens the sign-in only after
+// GET /session says 401, or else sends the form the ordinary way; back
 // from the back/forward cache the page is as before it left. The living courtyard (M10.3): the
 // door of a place, the chains of the wind and the birds, the fountain. The cats and the gate of
 // the founding (M10.4). Säckel (M10.5): the chest, the links beside it, the cat at the empty
@@ -149,18 +151,30 @@ class FakeLink extends FakeElement {
   }
 }
 
-// <form method="post"> with the frames of a door in its button.
+// <form method="post"> with the frames of a door in its button. requestSubmit() fires the submit
+// event of the page as the browser does, with the button; `ordinary` — whether each such sending
+// went (no listener held it), so the browser sent the form itself.
+let submitted:
+  ((form: FakeForm, submitter: FakeElement | null) => { defaultPrevented: boolean }) | null = null;
 class FakeForm extends FakeElement {
   method = 'post';
   action: string;
   frames = new FakeElement();
-  constructor(action: string, fx?: string) {
+  ordinary: boolean[] = [];
+  // The button of each requestSubmit().
+  by: (FakeElement | null)[] = [];
+  constructor(action: string, fx?: string, door?: string) {
     super();
     this.action = new URL(action, ORIGIN).href;
     if (fx !== undefined) this.dataset.fx = fx;
+    if (door !== undefined) this.dataset.door = door;
   }
   querySelector(selector: string) {
     return selector === '.frames' ? this.frames : null;
+  }
+  requestSubmit(submitter: FakeElement | null = null) {
+    this.by.push(submitter);
+    this.ordinary.push(!submitted!(this, submitter).defaultPrevented);
   }
 }
 
@@ -219,7 +233,13 @@ function courtyard(door: Box = { left: 722.25, top: 287.75, right: 776.25, botto
     new FakeBox(door, 'door', 'door-treasury'),
     new FakeBox({ left: 0, top: 0, right: 0, bottom: 0 }, 'door', 'door-treasury'),
   ];
-  for (const d of doors) d.outer = { '.court-inner': inner, '.court-map': map };
+  // M12.15: the opening of the gate (175–245 × 440–560 of the map), on the map of the computer and
+  // of the phone.
+  const gates = [
+    new FakeBox({ left: 419.25, top: 296, right: 471.75, bottom: 386 }, 'door', 'door-gate'),
+    new FakeBox({ left: 0, top: 0, right: 0, bottom: 0 }, 'door', 'door-gate'),
+  ];
+  for (const d of [...doors, ...gates]) d.outer = { '.court-inner': inner, '.court-map': map };
   const leaves = ['olive', 'bush-l', 'bush-r', 'tree'].map(
     (name) => new FakeBox(map.box, 'fx', 'fx-leaves', `fx-${name}`),
   );
@@ -230,6 +250,7 @@ function courtyard(door: Box = { left: 722.25, top: 287.75, right: 776.25, botto
     map,
     inner,
     doors,
+    gates,
     leaves,
     banners,
     fountain: new FakeBox(map.box, 'fx', 'fx-fountain'),
@@ -279,7 +300,8 @@ type Settings = Partial<Record<'anim' | 'sound' | 'music', boolean>>;
 // on this device before the page opens; `phone` — the window is as narrow as a phone; `arrived` —
 // what fx-head.js left on <html>; `court` — the page is the courtyard; `reduced` — the system asks
 // for less motion; `active` — whether the person has acted on the page yet (unknown if left out);
-// `local` — the storage of this device, kept from an earlier page.
+// `local` — the storage of this device, kept from an earlier page; `fetching` — the browser has
+// fetch (M12.15: an old one has not).
 let pages = 0;
 async function openChambers({
   settings = {},
@@ -290,6 +312,7 @@ async function openChambers({
   active,
   local = memory(),
   elements = {},
+  fetching = true,
 }: {
   settings?: Settings;
   phone?: boolean;
@@ -300,6 +323,7 @@ async function openChambers({
   local?: ReturnType<typeof memory>;
   // Elements of the page by selector: the gate of the founding, the banner, the cats.
   elements?: Record<string, FakeElement>;
+  fetching?: boolean;
 } = {}) {
   FakeAudio.made = [];
   FakeAudio.refuse = false;
@@ -325,6 +349,25 @@ async function openChambers({
   if (arrived !== undefined) root.dataset.arrived = arrived;
   const forms: FakeForm[] = [];
   const assigned: string[] = [];
+  const replaced: string[] = [];
+  // The requests of fetch (M11.6, M12.15), each waiting until the test answers it: a status (0 is
+  // the redirect fetch cannot read) or an error of the network.
+  const net: {
+    url: string;
+    options?: Record<string, unknown>;
+    answer: (a: number | Error) => void;
+  }[] = [];
+  const fakeFetch = (url: string, options?: Record<string, unknown>) =>
+    new Promise((resolve, reject) =>
+      net.push({
+        url: String(url),
+        options,
+        answer: (a) =>
+          a instanceof Error
+            ? reject(a)
+            : resolve({ status: a, type: a === 0 ? 'opaqueredirect' : 'basic' }),
+      }),
+    );
   // The listeners of the document and of the window, by the type of event.
   const on = { document: new Map<string, Listener[]>(), window: new Map<string, Listener[]>() };
   const listen = (where: Map<string, Listener[]>) => (type: string, listener: Listener) =>
@@ -351,12 +394,17 @@ async function openChambers({
       if (selector !== '.frames.open, .door.open, .gate-open.open, [data-poke="chest"].open') {
         return [];
       }
-      return [...forms.map((form) => form.frames), ...(court?.doors ?? []), ...all].filter(
-        (element) => element.classList.contains('open'),
-      );
+      return [
+        ...forms.map((form) => form.frames),
+        ...(court?.doors ?? []),
+        ...(court?.gates ?? []),
+        ...all,
+      ].filter((element) => element.classList.contains('open'));
     },
     getElementsByClassName: (name: string) =>
-      (court?.doors ?? []).filter((door) => door.classList.contains(name)),
+      [...(court?.doors ?? []), ...(court?.gates ?? [])].filter((door) =>
+        door.classList.contains(name),
+      ),
   };
   const activation = active === undefined ? undefined : { hasBeenActive: active };
   // The system setting «reduce motion», which the page can see change.
@@ -390,7 +438,13 @@ async function openChambers({
           : Promise.resolve();
       }
     },
-    location: { assign: (address: string) => void assigned.push(address) },
+    location: {
+      assign: (address: string) => void assigned.push(address),
+      replace: (address: string) => void replaced.push(address),
+      pathname: '/',
+      search: '',
+    },
+    fetch: fetching ? fakeFetch : undefined,
     matchMedia: (query: string) => ({
       get matches() {
         return query.includes('max-width') ? phone : query.includes('reduce') && motion.reduced;
@@ -429,17 +483,19 @@ async function openChambers({
         this.defaultPrevented = true;
       },
     });
-  const send = (form: FakeForm) => {
+  const send = (form: FakeForm, submitter: FakeElement | null = null) => {
     if (!forms.includes(form)) forms.push(form);
     return fire(on.document, {
       type: 'submit',
       target: form,
+      submitter,
       defaultPrevented: false,
       preventDefault() {
         this.defaultPrevented = true;
       },
     });
   };
+  submitted = send;
   const flag = (key: string) =>
     JSON.parse(session.getItem(key) ?? 'null') as Record<string, unknown> | null;
   const backFromCache = () => fire(on.window, { type: 'pageshow', persisted: true });
@@ -499,6 +555,8 @@ async function openChambers({
     reduce,
     poke,
     local,
+    net,
+    replaced,
   };
 }
 
@@ -725,10 +783,13 @@ describe('fx.js in a page: the way to the next page by a link', () => {
 });
 
 describe('fx.js in a page: a form', () => {
-  test('«Покинуть двор» goes at once: the flag of its act, the door opens, then creaks', async (t: TestContext) => {
+  test('«Покинуть двор» not taken over (a browser without fetch) goes at once: the flag of its act, the door opens, then creaks', async (t: TestContext) => {
     t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 2_000_000 });
-    const { send, flag } = await openChambers({ settings: { anim: true, sound: true } });
-    const logout = new FakeForm('/logout', 'logout');
+    const { send, flag, net } = await openChambers({
+      settings: { anim: true, sound: true },
+      fetching: false,
+    });
+    const logout = new FakeForm('/logout', 'logout', 'gate');
     assert.equal(send(logout).defaultPrevented, false, 'never held');
     assert.deepEqual(flag('hof.after'), { act: 'logout', action: '/logout', at: 2_000_000 });
     assert.ok(logout.frames.classList.contains('open'));
@@ -745,6 +806,7 @@ describe('fx.js in a page: a form', () => {
     // Any other form takes the flag away.
     assert.equal(send(new FakeForm('/account/password')).defaultPrevented, false);
     assert.equal(flag('hof.after'), null);
+    assert.equal(net.length, 0);
   });
 
   test('without «Анимации» the door stays closed; with «Звуки» it creaks; with neither no flag', async (t: TestContext) => {
@@ -769,9 +831,215 @@ describe('fx.js in a page: a form', () => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const { press, send, assigned } = await openChambers({ settings: { anim: true } });
     press(new FakeLink('/account', 'left', true));
-    assert.equal(send(new FakeForm('/logout', 'logout')).defaultPrevented, false);
+    assert.equal(send(new FakeForm('/account/password')).defaultPrevented, false);
     t.mock.timers.tick(1000);
     assert.deepEqual(assigned, []);
+  });
+});
+
+describe('fx.js in a page: the way out through the gate (M12.15)', () => {
+  const out = () => new FakeForm('/logout', 'logout', 'gate');
+  // The requests of fetch so far, as "METHOD path".
+  const asked = (net: { url: string; options?: Record<string, unknown> }[]) =>
+    net.map(
+      ({ url, options }) =>
+        `${typeof options?.method === 'string' ? options.method : 'GET'} ${new URL(url, ORIGIN).pathname}`,
+    );
+
+  test('the POST at once by fetch, the zoom into the gate; the sign-in only after the 401 of /session and the animation', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 4_000_000 });
+    const court = courtyard();
+    const { send, root, flag, assigned, net } = await openChambers({
+      settings: { anim: true, sound: true },
+      court,
+    });
+    const logout = out();
+    assert.equal(send(logout, new FakeElement()).defaultPrevented, true, 'taken over');
+    assert.deepEqual(asked(net), ['POST /logout']);
+    const { body, ...options } = net[0]!.options!;
+    assert.deepEqual(options, {
+      method: 'POST',
+      credentials: 'same-origin',
+      redirect: 'manual',
+      keepalive: true,
+    });
+    assert.equal(String(body), '', 'as empty as the body of the form');
+    assert.ok(root.classList.contains('go-door'));
+    assert.ok(logout.frames.classList.contains('open'), 'the door of the button opens');
+    assert.deepEqual(
+      court.gates.map((gate) => gate.classList.contains('open')),
+      [true, false],
+      'the gate drawn, not the one of the phone',
+    );
+    // The middle of the opening of the gate in per cent of the map: 210 and 500 of 1536×1024.
+    const [x, y] = court.inner.style.transformOrigin.split(' ').map((v) => parseFloat(v));
+    assert.ok(Math.abs(x! - (210 / 1536) * 100) < 0.01, String(x));
+    assert.ok(Math.abs(y! - (500 / 1024) * 100) < 0.01, String(y));
+    assert.equal(flag('hof.after'), null);
+    t.mock.timers.tick(0);
+    assert.equal(sounds('door').length, 1);
+    // The answer of the POST is a redirect fetch cannot read: it proves nothing, /session is asked.
+    net[0]!.answer(0);
+    await settle();
+    assert.deepEqual(asked(net), ['POST /logout', 'GET /session']);
+    assert.deepEqual(net[1]!.options, { cache: 'no-store' });
+    net[1]!.answer(401);
+    await settle();
+    t.mock.timers.tick(1699);
+    assert.deepEqual(assigned, [], 'the animation first');
+    t.mock.timers.tick(1);
+    assert.deepEqual(assigned, [`${ORIGIN}/login`]);
+    assert.deepEqual(flag('hof.arrive'), {
+      fx: 'door',
+      to: `${ORIGIN}/login`,
+      at: 4_001_700,
+      keep: false,
+    });
+    t.mock.timers.tick(5000);
+    assert.deepEqual(assigned, [`${ORIGIN}/login`], 'once');
+    assert.deepEqual(logout.ordinary, [], 'the form is not sent');
+  });
+
+  test('the animation over first: the sign-in when the 401 comes; where the gate is not seen, the dark of 0,5 s', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { send, root, assigned, net } = await openChambers({ settings: { anim: true } });
+    send(out());
+    assert.ok(root.classList.contains('go-dark'));
+    t.mock.timers.tick(2000);
+    assert.deepEqual(assigned, []);
+    net[0]!.answer(new Error('the answer lost'));
+    await settle();
+    net[1]!.answer(401);
+    await settle();
+    assert.deepEqual(assigned, [`${ORIGIN}/login`], 'the POST got there: no session is enough');
+  });
+
+  test('no proof, no way out: a session still there, a refusal, no network — the same form the ordinary way, once', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const cases: [string, number | Error, number | Error][] = [
+      ['a session still there', 0, 204],
+      ['refused (403), the session still there', 403, 204],
+      ['an error of the server (500)', 500, 204],
+      ['an answer of /session that is not 401', 0, 502],
+      ['no network', new Error('offline'), new Error('offline')],
+    ];
+    for (const [name, post, session] of cases) {
+      const { send, flag, assigned, net } = await openChambers({ settings: { anim: true } });
+      const logout = out();
+      const button = new FakeElement();
+      send(logout, button);
+      net[0]!.answer(post);
+      await settle();
+      net[1]!.answer(session);
+      await settle();
+      assert.deepEqual(logout.ordinary, [true], `${name}: sent by the browser, past the guard`);
+      assert.deepEqual(logout.by, [button], `${name}: with its button`);
+      assert.equal(flag('hof.after')?.act, 'logout', name);
+      t.mock.timers.tick(5000);
+      assert.deepEqual(assigned, [], `${name}: no sign-in of its own`);
+      assert.deepEqual(logout.ordinary, [true], `${name}: once`);
+      assert.equal(send(logout).defaultPrevented, true, `${name}: then the guard holds it`);
+    }
+  });
+
+  test('nothing known within 3 s: the ordinary sending; an answer after it opens nothing', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { send, assigned, net } = await openChambers({
+      settings: { anim: true },
+      court: courtyard(),
+    });
+    const logout = out();
+    send(logout);
+    t.mock.timers.tick(2999);
+    assert.deepEqual(logout.ordinary, []);
+    t.mock.timers.tick(1);
+    assert.deepEqual(logout.ordinary, [true]);
+    net[0]!.answer(0);
+    await settle();
+    net[1]?.answer(401);
+    await settle();
+    assert.deepEqual(assigned, [], 'one way only');
+  });
+
+  test('a second press waits for the same end; no other form or link goes meanwhile', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { send, press, flag, net, assigned } = await openChambers({ settings: { anim: true } });
+    const logout = out();
+    send(logout);
+    assert.equal(send(logout).defaultPrevented, true, 'pressed again');
+    assert.equal(send(out()).defaultPrevented, true, 'the other form of the way out');
+    assert.equal(send(new FakeForm('/account/password')).defaultPrevented, true, 'another form');
+    assert.equal(press(new FakeLink('/account', 'left', true)).defaultPrevented, true, 'a link');
+    assert.equal(flag('hof.arrive'), null);
+    const tab = new FakeLink('/account', 'left');
+    assert.equal(
+      press(tab, { ctrlKey: true }).defaultPrevented,
+      false,
+      'a new tab is the browser’s',
+    );
+    assert.deepEqual(asked(net), ['POST /logout'], 'one POST');
+    net[0]!.answer(0);
+    await settle();
+    net[1]!.answer(401);
+    await settle();
+    t.mock.timers.tick(500);
+    assert.deepEqual(assigned, [`${ORIGIN}/login`]);
+    assert.equal(send(logout).defaultPrevented, true, 'on its way to the sign-in');
+    assert.deepEqual(logout.ordinary, []);
+  });
+
+  test('without «Анимации», with less motion, without fetch: the form goes at once, nothing fetched', async () => {
+    for (const page of [
+      { settings: { sound: true } },
+      { settings: { anim: true }, reduced: true },
+      { settings: { anim: true }, fetching: false },
+    ]) {
+      const { send, net, root } = await openChambers(page);
+      assert.equal(send(out()).defaultPrevented, false, JSON.stringify(page));
+      assert.equal(net.length, 0, JSON.stringify(page));
+      assert.ok(!root.classList.contains('go-dark'), JSON.stringify(page));
+    }
+  });
+
+  test('put away on its way out (Back, a closed tab): nothing opens; back from the cache as before', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const court = courtyard();
+    const { send, root, assigned, net, hide, backFromCache } = await openChambers({
+      settings: { anim: true },
+      court,
+    });
+    const logout = out();
+    send(logout);
+    hide();
+    net[0]!.answer(0);
+    await settle();
+    net[1]!.answer(401);
+    await settle();
+    t.mock.timers.tick(5000);
+    assert.deepEqual(assigned, []);
+    assert.deepEqual(logout.ordinary, []);
+    backFromCache();
+    assert.deepEqual([...root.classList.names], ['fx-on']);
+    assert.ok(!logout.frames.classList.contains('open'));
+    assert.ok(court.gates.every((gate) => !gate.classList.contains('open')));
+    assert.equal(court.inner.style.transformOrigin, '');
+    assert.equal(send(logout).defaultPrevented, true, 'a new way out');
+    assert.deepEqual(asked(net), ['POST /logout', 'GET /session', 'POST /logout']);
+  });
+
+  test('the watch of the session (M11.6) leads nowhere while the page goes out', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { send, net, replaced } = await openChambers({
+      settings: { anim: true },
+      elements: { '[data-session]': new FakeElement() },
+    });
+    t.mock.timers.tick(59_000);
+    send(out());
+    t.mock.timers.tick(1000);
+    assert.deepEqual(asked(net), ['POST /logout', 'GET /session'], 'the minute of the watch');
+    net[1]!.answer(401);
+    await settle();
+    assert.deepEqual(replaced, []);
   });
 });
 
@@ -780,6 +1048,7 @@ describe('fx.js in a page: back from the back/forward cache and the arrival', ()
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const { press, send, root, assigned, backFromCache } = await openChambers({
       settings: { anim: true },
+      fetching: false,
     });
     const logout = new FakeForm('/logout', 'logout');
     send(logout);
