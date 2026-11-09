@@ -48,6 +48,7 @@ export default defineConfig(
         HTMLMediaElement: 'readonly',
         Image: 'readonly',
         URL: 'readonly',
+        URLSearchParams: 'readonly',
         addEventListener: 'readonly',
         clearTimeout: 'readonly',
         document: 'readonly',

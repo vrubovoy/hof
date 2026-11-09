@@ -412,7 +412,8 @@ img {
 /* надпись на ленте и вывеске — как написанная на них: чернила впитываются (multiply) и чуть
    расплываются, поэтому не выглядят резче материала */
 .ribbon > span,
-.sign > span {
+.sign > span,
+.plate > span {
   mix-blend-mode: multiply;
   color: var(--pen);
   text-shadow: 0 0 0.8px rgb(27 46 82 / 0.75);
@@ -473,6 +474,33 @@ img {
   border-image-width: 0 37px 0 38px;
   font-size: 19px;
   line-height: 20px;
+}
+/* M12.15: «Выход» is the button of a form — the same sign, without the look of a button */
+button.sign {
+  margin: 0;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+/* M12.15: a plate on a wall — the board of the sign without its bar and chains, for a door too
+   small for a hanging sign. Its ends stay as drawn, the board stretches under the text; it does
+   not swing. The size is set where it hangs */
+.plate {
+  display: inline-block;
+  height: 1.7em;
+  padding: 0.36em 0 0;
+  border-style: solid;
+  border-width: 0 0.45em;
+  border-color: transparent;
+  border-image: url(img/plate-soft.webp) 0 30 fill / 0 0.45em stretch;
+  font-style: italic;
+  font-weight: 600;
+  line-height: 1.1em;
+  text-align: center;
+  white-space: nowrap;
 }
 
 /* веточка — разделитель под заголовком */
@@ -786,10 +814,12 @@ img {
   --pw: 155;
   --ph: 152;
 }
-/* место на карте компьютера — одна ссылка: вывеска и дверь (окно сторожки). Ссылка во всю карту
-   не ловит нажатий, ловят вывеска и дверь. Кадр открытой двери вырезан из той же карты с
-   открытыми дверями; он появляется сразу, без наплыва (fx.js, .open) — при плавной смене обе
-   двери полупрозрачны и дверь мутнеет. На телефоне вывески под картой, двери на ней — картинки */
+/* a place on the map of a computer is one link: its sign (or plate) and its door (the window of
+   the gatehouse). The link over the whole map catches no press; the sign and the door do. The
+   frame of the open door is cut from the same map with the doors open; it comes at once, without
+   a fade (fx.js, .open) — in a fade both doors are half seen and the door clouds. M12.15: «Выход»
+   is a form; only its sign is pressed, the gate is where the page goes (fx.js) and takes no
+   press. On the phone the signs are under the map and the doors on it are pictures */
 .place {
   position: absolute;
   inset: 0;
@@ -802,7 +832,7 @@ img {
 .place:focus-visible {
   outline: none;
 }
-.place:focus-visible .sign {
+.place:focus-visible :is(.sign, .plate) {
   filter: brightness(0.82);
 }
 .court-doors {
@@ -835,6 +865,15 @@ img {
   width: calc(100% * 84 / 1536);
   height: calc(100% * 227 / 1024);
 }
+/* M12.15: the gate is open on the map, it has no frame — only the opening between its leaves,
+   below the sign, where the page goes out */
+.door-gate {
+  left: calc(100% * 175 / 1536);
+  top: calc(100% * 440 / 1024);
+  width: calc(100% * 70 / 1536);
+  height: calc(100% * 120 / 1024);
+  pointer-events: none;
+}
 
 @media (min-width: 1024px) {
   .court {
@@ -862,10 +901,12 @@ img {
     left: 30px;
     top: 22px;
   }
-  /* вывески: сторожка, дверь казначейской, башня. Где карта уже 1152 px (окно уже 1440), вывески
-     уменьшаются вместе с ней, но надпись не мельче 16 px; размеры вывески — в долях её надписи.
-     Левая на узкой карте не подходит к краю ближе, чем в прототипе (44 px) */
-  .at-gatehouse,
+  /* the signs: «Выход» over the arch of the gate, the door of the treasury, the tower. Where the
+     map is narrower than 1152 px (the window narrower than 1440), the signs get smaller with it,
+     but the text not smaller than 16 px; the sizes of a sign are in parts of its text. The left
+     one on a narrow map comes no nearer the edge than in the prototype (44 px; 3.59em is half of
+     «Выход») */
+  .at-gate,
   .at-treasury,
   .at-tower {
     position: absolute;
@@ -877,9 +918,23 @@ img {
     line-height: calc(22em / 21);
     transform: translateX(-50%);
   }
-  .at-gatehouse {
-    left: max(14%, 5.58em + 44px);
+  .at-gate {
+    left: max(14%, 3.59em + 44px);
     top: 29.1%;
+  }
+  /* M12.15: Приближённые — a plate on the eave of the gatehouse, 2 px over its window (its top at
+     476 of 1024), in the middle of the window (473 of 1536); on a narrow map no nearer than 2 px
+     to the door of the treasury (579), so it covers less of the blue banner of the gate. The text
+     15–17 px; 3.73em is half of the plate. --plate is read by the sign of the treasury as well */
+  .court-inner {
+    --plate: clamp(15px, (100vw - 288px) * 17 / 1152, 17px);
+  }
+  .at-gatehouse {
+    position: absolute;
+    left: min(100% * 473 / 1536, 100% * 579 / 1536 - 2px - 3.73em);
+    top: calc(100% * 476 / 1024 - 2px - 1.7em);
+    font-size: var(--plate);
+    transform: translateX(-50%);
   }
   .at-treasury {
     left: 39.84%;
@@ -890,9 +945,21 @@ img {
     top: 31.05%;
   }
   /* M12.14: a sign hangs on the wall in front of its door: the open door is drawn behind it, not
-     over the lower edge of the sign */
-  .place > .sign {
+     over the lower edge of the sign. M12.15: so does the plate */
+  .place > :is(.sign, .plate) {
     z-index: 1;
+  }
+  /* M12.15: where the plate reaches down past the bottom of the sign of the treasury (a window
+     narrower than 1551 px), that sign moves right just enough to clear it by 2 px, no further:
+     the right edge of the plate as above, 3.52em is half of the sign «Säckel». Only where the
+     plate is: the place of the gatehouse comes before that of the treasury */
+  @media (max-width: 1550.98px) {
+    .place[data-door='gatehouse'] ~ .place .at-treasury {
+      left: max(
+        39.84%,
+        min(100% * 473 / 1536 + 3.73 * var(--plate), 100% * 579 / 1536 - 2px) + 2px + 3.52em
+      );
+    }
   }
   .court-places,
   .court-doors {
@@ -2389,8 +2456,9 @@ img {
     animation-duration: 0.7s;
     animation-delay: -0.5s;
   }
-  /* вывеска на карте качается на цепях при наведении и фокусе */
-  .fx-on .place:is(:hover, :focus-visible) .sign {
+  /* a sign on the map swings on its chains under the pointer and in focus; M12.15: the focus of
+     «Выход» is on its button, inside the place; the plate does not swing */
+  .fx-on .place:is(:hover, :focus-visible, :has(:focus-visible)) .sign {
     transform-origin: 50% 0;
     animation: swing 1.4s ease-out;
   }

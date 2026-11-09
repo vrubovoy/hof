@@ -1,7 +1,8 @@
 // Hof — effects (ARCHITECTURE.md §6): the settings «Звуки и движение» of this device, sounds,
 // music, the guard against a form sent twice (§4.8) and the way a page leaves for the next one.
 // Without this file everything works the same: links and forms are ordinary, the court is still
-// and silent.
+// and silent. The one request it sends of its own is the way out through the gate (M12.15): the
+// same POST /logout as its form, with «Анимации» only.
 //
 // The top of the file decides: small functions without the page, tested by src/core/fx.test.ts.
 // start() at the bottom joins them to the page; it runs only in a browser. A module runs once a
@@ -308,6 +309,12 @@ export const SLIDE_MS = 500;
  */
 export const DOOR_MS = 1700;
 export const DARK_MS = 500;
+
+/**
+ * M12.15: the way out through the gate waits no longer than this for the server to say that the
+ * session has ended; then the same form is sent the ordinary way, and the browser shows what comes.
+ */
+export const OUT_WAIT_MS = 3000;
 
 /**
  * How a page leaves through a door: into it while the middle of the door is seen — in the window
@@ -796,11 +803,55 @@ function start() {
     clearTimeout(sliding);
     sliding = undefined;
   };
+  /**
+   * The way out now on (M12.15), from the first press of its form until the page is gone: its
+   * form and button; whether the server has said that the session is over, whether the
+   * animation is over, whether the form has been let go the ordinary way; the two timers.
+   * @typedef {{ form: HTMLFormElement, submitter: HTMLElement | null, ended: boolean, shown: boolean, ordinary: boolean, timers: ReturnType<typeof setTimeout>[] }} Out
+   * @type {Out | null}
+   */
+  let out = null;
+
+  /**
+   * Through the door `named` of the map — the one drawn now: in its place on a computer, on the
+   * map of the phone for a sign under it or for the banner — or into the dark where it is not
+   * seen. The door opens and the scene zooms into its middle; the creak comes in the same frame.
+   * @param {string | undefined} named
+   */
+  function goThrough(named) {
+    const door =
+      named === undefined
+        ? undefined
+        : [...document.getElementsByClassName(`door-${named}`)].find(
+            (element) => element.getClientRects().length > 0,
+          );
+    const inner = door?.closest('.court-inner');
+    const map = door?.closest('.court-map');
+    const way = doorWay(
+      door?.getBoundingClientRect() ?? null,
+      map?.getBoundingClientRect() ?? null,
+      { width: innerWidth, height: innerHeight },
+    );
+    if (way.away === 'go-door' && door !== undefined && inner instanceof HTMLElement) {
+      // The zoom goes into the middle of the door, in per cent of the map.
+      const d = door.getBoundingClientRect();
+      const r = inner.getBoundingClientRect();
+      const x = ((d.left + d.width / 2 - r.left) / r.width) * 100;
+      const y = ((d.top + d.height / 2 - r.top) / r.height) * 100;
+      inner.style.transformOrigin = `${x}% ${y}%`;
+      // Pressed before the page has loaded, the door asks for its frame itself (M12.5).
+      door.classList.add('wake', 'open');
+    }
+    setTimeout(() => playSound('door'), 0);
+    return way;
+  }
 
   document.addEventListener('click', (event) => {
     if (event.defaultPrevented || !(event.target instanceof Element)) return;
     const link = event.target.closest('a[href]');
     if (!(link instanceof HTMLAnchorElement) || !plainPress(event, link)) return;
+    // The page is going out through the gate: no other way now (M12.15).
+    if (out !== null) return event.preventDefault();
     // A second press while the page slides away: the browser follows the link pressed now.
     const second = sliding !== undefined;
     stopSliding();
@@ -822,35 +873,7 @@ function start() {
     event.preventDefault();
     let away = effect.away;
     let ms = SLIDE_MS;
-    if (away === 'go-door') {
-      // The door of the place on the map — the one drawn now: in the link on a computer, on the
-      // map of the phone for a sign under it or for the banner. The creak comes in the same frame.
-      const named = link.dataset.door;
-      const door =
-        named === undefined
-          ? undefined
-          : [...document.getElementsByClassName(`door-${named}`)].find(
-              (element) => element.getClientRects().length > 0,
-            );
-      const inner = door?.closest('.court-inner');
-      const map = door?.closest('.court-map');
-      ({ away, ms } = doorWay(
-        door?.getBoundingClientRect() ?? null,
-        map?.getBoundingClientRect() ?? null,
-        { width: innerWidth, height: innerHeight },
-      ));
-      if (away === 'go-door' && door !== undefined && inner instanceof HTMLElement) {
-        // The zoom goes into the middle of the door, in per cent of the map.
-        const d = door.getBoundingClientRect();
-        const r = inner.getBoundingClientRect();
-        const x = ((d.left + d.width / 2 - r.left) / r.width) * 100;
-        const y = ((d.top + d.height / 2 - r.top) / r.height) * 100;
-        inner.style.transformOrigin = `${x}% ${y}%`;
-        // Pressed before the page has loaded, the door asks for its frame itself (M12.5).
-        door.classList.add('wake', 'open');
-      }
-      setTimeout(() => playSound('door'), 0);
-    }
+    if (away === 'go-door') ({ away, ms } = goThrough(link.dataset.door));
     root.classList.add(away);
     if (keep) root.classList.add('keep-banner');
     sliding = setTimeout(() => {
@@ -860,23 +883,108 @@ function start() {
   });
 
   // A page put away while it slides (Back pressed at once) does not follow the link when it
-  // comes back, and the next page does not come as if it had.
+  // comes back, and the next page does not come as if it had. Nor does a page put away on its
+  // way out open the sign-in: it learns on its return that the session has ended (M11.6).
   addEventListener('pagehide', () => {
     if (sliding !== undefined) writeFlag(session, ARRIVE_KEY, null);
     stopSliding();
+    if (out !== null) out.timers.forEach(clearTimeout);
+    out = null;
   });
+
+  // ---- the way out through the gate (M12.15), only with «Анимации». The first press sends the
+  // same POST /logout at once, by fetch — the browser adds the cookie and Origin, the server checks
+  // them and ends the session as for the form — and the page goes through the gate meanwhile
+  // (DOOR_MS), or into the dark where the gate is not seen (DARK_MS). The answer of that POST is a
+  // redirect, which fetch cannot read; so the page then asks GET /session (M11.6): only its 401
+  // says that this browser has no session any more. Then, the animation over, the sign-in opens
+  // and comes out of the dark. Anything else — a refusal (403, 500), no answer, a session still
+  // alive, nothing known within OUT_WAIT_MS — and the same form is sent the ordinary way, once,
+  // by the browser itself (requestSubmit): the guard lets that sending through, and the browser
+  // shows what the server answers, as without the script. That second POST is safe: without a
+  // session it ends nothing and clears the cookie again. Meanwhile no other link or form goes;
+  // a second press waits for the same end. keepalive asks the browser to finish the POST even if
+  // the tab is closed — it is no promise. Without fetch or requestSubmit nothing is taken over.
+  /** @param {HTMLFormElement} form @param {HTMLElement | null} submitter */
+  function signOut(form, submitter) {
+    stopSliding();
+    writeFlag(session, AFTER_KEY, null);
+    /** @type {Out} */
+    const me = { form, submitter, ended: false, shown: false, ordinary: false, timers: [] };
+    out = me;
+    form.querySelector('.frames')?.classList.add('open');
+    const { away, ms } = goThrough(form.dataset.door);
+    root.classList.add(away);
+    const now = () => out === me && !me.ordinary;
+    const signIn = () => {
+      writeFlag(session, ARRIVE_KEY, {
+        fx: 'door',
+        to: new URL('/login', form.action).href,
+        at: Date.now(),
+        keep: false,
+      });
+      location.assign(new URL('/login', form.action).href);
+    };
+    const ordinary = () => {
+      me.ordinary = true;
+      form.requestSubmit(submitter);
+    };
+    fetch(form.action, {
+      method: 'POST',
+      // The form of the way out has no field: the body is as empty as the one the form sends.
+      body: new URLSearchParams(),
+      credentials: 'same-origin',
+      redirect: 'manual',
+      keepalive: true,
+    })
+      .catch(() => undefined)
+      .then(() => fetch('/session', { cache: 'no-store' }))
+      .then(
+        (answer) => answer.status === 401,
+        () => false,
+      )
+      .then((ended) => {
+        if (!now()) return;
+        if (!ended) return ordinary();
+        me.ended = true;
+        if (me.shown) signIn();
+      });
+    me.timers.push(
+      setTimeout(() => {
+        if (!now()) return;
+        me.shown = true;
+        if (me.ended) signIn();
+      }, ms),
+      setTimeout(() => {
+        if (now() && !me.ended) ordinary();
+      }, OUT_WAIT_MS),
+    );
+  }
 
   // ---- a form goes once (§4.8). The first sending is not held or changed in any way: what comes
   // with it — the flag of its act for the next page, the door — is beside it, never before it.
+  // The one exception is the way out above: its first press is taken over, and is not a sending.
   const guard = createGuard();
   document.addEventListener('submit', (event) => {
     if (event.defaultPrevented || !(event.target instanceof HTMLFormElement)) return;
     const form = event.target;
+    // On the way out nothing else goes; only its own ordinary sending, once it is let go.
+    if (out !== null && !(out.ordinary && out.form === form)) return event.preventDefault();
+    const move = canMove(settings, reduced.matches);
+    const act = form.dataset.fx;
+    if (
+      act === 'logout' &&
+      move &&
+      out === null &&
+      typeof fetch === 'function' &&
+      typeof form.requestSubmit === 'function'
+    ) {
+      event.preventDefault();
+      return signOut(form, event.submitter ?? null);
+    }
     if (!guard.allow(form)) return event.preventDefault();
     stopSliding();
-    const move = canMove(settings, reduced.matches);
     // Any other form takes the flag of the last one away.
-    const act = form.dataset.fx;
     writeFlag(
       session,
       AFTER_KEY,
@@ -884,7 +992,7 @@ function start() {
         ? { act, action: new URL(form.action).pathname, at: Date.now() }
         : null,
     );
-    if (act === 'logout') {
+    if (act === 'logout' && out === null) {
       // The open door lies over the closed one (0,75 s in the CSS) while the form goes. The creak
       // comes after the sending has begun: the first sound of a page may take the browser a while.
       if (move) form.querySelector('.frames')?.classList.add('open');
@@ -943,12 +1051,15 @@ function start() {
 
   // ---- M11.6: a page of a signed-in person (data-session) learns within a minute of being seen
   // that its session has ended, and goes to the sign-in, which then says so. The address back is
-  // only the path and query of this page; /login takes it through safeNext.
+  // only the path and query of this page; /login takes it through safeNext. A page on its way out
+  // (M12.15) has a way of its own.
   if (document.querySelector('[data-session]') !== null) {
     const watch = createSessionWatch(
       async () => (await fetch('/session', { cache: 'no-store' })).status,
-      () =>
-        location.replace(`/login?next=${encodeURIComponent(location.pathname + location.search)}`),
+      () => {
+        if (out !== null) return;
+        location.replace(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
+      },
       {
         set: (go, ms) => setTimeout(go, ms),
         clear: (timer) => clearTimeout(/** @type {ReturnType<typeof setTimeout>} */ (timer)),
@@ -970,8 +1081,10 @@ function start() {
   addEventListener('pageshow', (event) => {
     if (!event.persisted) return;
     guard.reset();
-    // As before it left: light, in its place, the doors closed.
+    // As before it left: light, in its place, the doors closed, no way out on (M12.15).
     stopSliding();
+    if (out !== null) out.timers.forEach(clearTimeout);
+    out = null;
     root.classList.remove(
       ...LEAVING,
       'from-left',

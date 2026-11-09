@@ -17,7 +17,8 @@
 // What arrived is left for fx.js in `data-arrived` (the sound of a page is its own); the classes
 // of the arrival go when its animation ends.
 //
-// Through a door of the courtyard (M10.3) a page comes out of the dark (from-door). After the
+// Through a door of the courtyard (M10.3) a page comes out of the dark (from-door), and so does
+// the sign-in after the way out through the gate (M12.15). After the
 // sign-in and the founding (M10.4) the courtyard comes out of the dark and the banner unrolls
 // (unroll); after «Забрать ключ» the key fades into the empty hook (key-off). After an expense of
 // Säckel (M10.5) its record is written in and the sign of the pouch squeezed (spent); an income,
@@ -35,11 +36,13 @@
   // (null): only the redirect and the address count.
   /** @type {Record<string, { action: RegExp, leads: (path: string, match: RegExpExecArray) => boolean, marker: (match: RegExpExecArray) => string | null, fx?: string, arrive?: string }>} */
   const AFTER = {
+    // M12.15: out through the gate, the sign-in comes out of the dark — after the ordinary sending
+    // of the form; after the way out of fx.js (a fetch) it comes by the flag of a door.
     logout: {
       action: /^\/logout$/,
       leads: (path) => path === '/login',
       marker: () => 'form[action="/login"]',
-      fx: 'right',
+      arrive: 'from-door',
     },
     // Signed in, or the court founded: the banner is drawn only for a person signed in, so a way
     // on to a page without it (`next` of Säckel) comes without an effect.

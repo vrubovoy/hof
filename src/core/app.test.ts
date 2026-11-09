@@ -966,7 +966,9 @@ describe('sign-out', () => {
   test('the courtyard has the way out', async (t) => {
     const { app, cookie } = await found(t);
     const page = await (await get(app, '/', { cookie })).text();
-    assert.ok(page.includes('<form method="post" action="/logout" data-fx="logout">'));
+    assert.ok(
+      page.includes('<form method="post" action="/logout" data-fx="logout" data-door="gate">'),
+    );
     assert.ok(page.includes('Покинуть двор'));
   });
 
@@ -1065,7 +1067,7 @@ describe('my chambers', () => {
       'name="password2"',
       'Не короче 15 символов. На других устройствах вы выйдете со двора.',
       '<button type="submit" class="btn btn-blue">Сменить пароль</button>',
-      '<form class="chambers-out" method="post" action="/logout" data-fx="logout">',
+      '<form class="chambers-out" method="post" action="/logout" data-fx="logout" data-door="gate">',
       '<button type="submit" class="btn" aria-describedby="logout-hint">',
       'на этом устройстве; всё во дворе останется на месте',
     ]) {
@@ -2815,7 +2817,7 @@ describe('the shell and the courtyard', () => {
       assert.match(
         part(page, '<nav class="banner"', '</nav>'),
         new RegExp(
-          String.raw`<form method="post" action="/logout" data-fx="logout">\s*<button type="submit" class="nav"><span class="frames"\s*><img src="/static/img/emblem-door-closed-small\.webp${VERSION}" alt="" draggable="false" /><img\s+src="/static/img/emblem-door-small\.webp${VERSION}"\s+alt=""\s+draggable="false"\s*/></span>Покинуть двор</button>\s*</form>`,
+          String.raw`<form method="post" action="/logout" data-fx="logout" data-door="gate">\s*<button type="submit" class="nav"><span class="frames"\s*><img src="/static/img/emblem-door-closed-small\.webp${VERSION}" alt="" draggable="false" /><img\s+src="/static/img/emblem-door-small\.webp${VERSION}"\s+alt=""\s+draggable="false"\s*/></span>Покинуть двор</button>\s*</form>`,
         ),
         path,
       );
@@ -3424,14 +3426,15 @@ describe('the look of Hof: pages, CSS and static files', () => {
     const { pages } = await drawnPages(t);
     const of = (name: string) => pages.find(([page]) => page === name)![1];
     // The doors of the courtyard aside (M10.3); «Принять ко двору» goes through the door of
-    // Приближённые as well (M12.11).
+    // Приближённые as well (M12.11). M12.15: «Выход» over the gate and under the map.
     const main = (page: string) =>
       ways(part(page, '<main', '</main>')).filter((way) => !way.endsWith(' door'));
     assert.deepEqual(doors(part(of('courtyard, alone'), '<aside class="court-alone', '</aside>')), [
       '/admin/users door gatehouse',
     ]);
-    assert.deepEqual(main(of('courtyard, alone')), []);
-    assert.deepEqual(main(of('courtyard')), []);
+    const exits = ['form /logout logout', 'form /logout logout'];
+    assert.deepEqual(main(of('courtyard, alone')), exits);
+    assert.deepEqual(main(of('courtyard')), exits);
     const keys = main(of('Приближённые'));
     assert.equal(keys.length, (of('Приближённые').match(/>Открыть ›</g) ?? []).length);
     for (const key of keys) assert.match(key, /^a \/admin\/users\/\d+ flip-fwd keep$/);
@@ -3460,9 +3463,10 @@ describe('the look of Hof: pages, CSS and static files', () => {
     const DOOR = `<span class="frames"><img src="${asset('img/emblem-door-closed-small.webp')}" alt="" draggable="false" /><img src="${asset('img/emblem-door-small.webp')}" alt="" draggable="false" /></span>Покинуть двор`;
     for (const name of ['courtyard', 'my chambers', 'chambers of anna']) {
       const page = pages.find(([page]) => page === name)![1];
-      const forms = [...page.matchAll(/<form [^>]*action="\/logout"[^>]*>[\s\S]*?<\/form>/g)].map(
-        ([form]) => form,
-      );
+      // M12.15: «Выход» of the courtyard aside.
+      const forms = [...page.matchAll(/<form [^>]*action="\/logout"[^>]*>[\s\S]*?<\/form>/g)]
+        .map(([form]) => form)
+        .filter((form) => !form.includes('Выход'));
       assert.equal(forms.length, name.includes('chambers') ? 2 : 1, name);
       for (const form of forms) {
         assert.ok(squeeze(form).includes(DOOR), name);
@@ -3527,10 +3531,12 @@ describe('the look of Hof: pages, CSS and static files', () => {
           `class="place" href="${href}" data-fx="door" data-door="${door}"`,
           `${name}: ${href}`,
         );
+        // M12.15: Приближённые on a plate.
+        const on = door === 'gatehouse' ? 'plate' : 'sign';
         assert.match(
           body!,
           new RegExp(
-            `^<span class="sign at-${door}"><span>[^<]+</span></span\\s*><span class="door door-${door}" aria-hidden="true"></span>$`,
+            `^<span class="${on} at-${door}"><span>[^<]+</span></span\\s*><span class="door door-${door}" aria-hidden="true"></span>$`,
           ),
           `${name}: ${href}`,
         );
@@ -3543,7 +3549,7 @@ describe('the look of Hof: pages, CSS and static files', () => {
         [...phone.matchAll(/<span class="door door-(\w+)" aria-hidden="true"><\/span>/g)].map(
           (match) => match[1],
         ),
-        doors,
+        [...doors, 'gate'],
         name,
       );
       const list = part(page, '<nav class="court-places"', '</nav>');
@@ -3569,14 +3575,106 @@ describe('the look of Hof: pages, CSS and static files', () => {
   test('M12.14: on a computer a sign is drawn in front of its open door', async (t) => {
     const { app } = await drawnPages(t);
     const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
-    const rule = /\n {2}\.place > \.sign \{\s*z-index: 1;\s*\}/.exec(css);
+    // M12.15: and so is the plate.
+    const rule = /\n {2}\.place > :is\(\.sign, \.plate\) \{\s*z-index: 1;\s*\}/.exec(css);
     assert.ok(rule, 'the rule of the sign');
     const media = css.lastIndexOf('@media', rule.index);
     assert.match(css.slice(media, media + 40), /^@media \(min-width: 1024px\) \{/);
-    for (const door of ['door', 'door-gatehouse', 'door-treasury', 'door-tower']) {
+    for (const door of ['door', 'door-gatehouse', 'door-treasury', 'door-tower', 'door-gate']) {
       const body = new RegExp(`\\n\\.${door} \\{([^}]*)\\}`).exec(css)![1]!;
       assert.doesNotMatch(body, /z-index/, door);
     }
+  });
+
+  // M12.15: «Выход» over the gate is the form of the way out, for everyone signed in: on a
+  // computer its sign is the button and the open gate is the door the page goes out through
+  // (fx.js); on the phone it is the last sign under the map. Приближённые hangs on a plate over
+  // the window of the gatehouse. Every form of the way out names the gate and has no field: the
+  // POST fx.js sends by fetch is as empty as the one of the form (§6).
+  test('M12.15: «Выход» over the gate and last under the map, for everyone; Приближённые on a plate', async (t) => {
+    const { pages } = await drawnPages(t);
+    const of = (name: string) => pages.find(([page]) => page === name)![1];
+    const EXIT = '<form method="post" action="/logout" data-fx="logout" data-door="gate">';
+    for (const [name, owner] of [
+      ['courtyard', true],
+      ['courtyard, alone', true],
+      ['courtyard of anna', false],
+    ] as const) {
+      const page = of(name);
+      const map = squeeze(part(page, '<div class="court-inner">', '<nav class="court-places"'));
+      assert.ok(
+        map.includes(
+          `<form class="place" method="post" action="/logout" data-fx="logout" data-door="gate"><button type="submit" class="sign at-gate"><span>Выход</span></button><span class="door door-gate" aria-hidden="true"></span></form>`,
+        ),
+        name,
+      );
+      assert.equal((map.match(/action="\/logout"/g) ?? []).length, 1, name);
+      // The gate is the last door on the map of the phone.
+      assert.match(
+        part(page, '<span class="court-doors" aria-hidden="true">', '</span></span>'),
+        /<span class="door door-gate" aria-hidden="true"><\/span><\/span>$/,
+        name,
+      );
+      // Under the map: the places, then «Выход» last.
+      const list = squeeze(part(page, '<nav class="court-places"', '</nav>'));
+      assert.ok(
+        list.endsWith(
+          `${EXIT}<button type="submit" class="sign sign-sm"><span>Выход</span></button></form></nav>`,
+        ),
+        name,
+      );
+      assert.deepEqual(
+        [...list.matchAll(/<span>([^<]+)<\/span>/g)].map((m) => m[1]),
+        owner ? ['Säckel', 'Приближённые', 'Мои покои', 'Выход'] : ['Säckel', 'Мои покои', 'Выход'],
+        name,
+      );
+      // Приближённые on a plate in its place on the map, the administrator's only.
+      assert.equal(
+        map.includes(
+          '<a class="place" href="/admin/users" data-fx="door" data-door="gatehouse"><span class="plate at-gatehouse"><span>Приближённые</span></span><span class="door door-gatehouse" aria-hidden="true"></span></a>',
+        ),
+        owner,
+        name,
+      );
+      assert.equal(map.includes('class="plate'), owner, name);
+    }
+    // Every form of the way out, on every page: the gate named, no field, a button without a name.
+    let forms = 0;
+    for (const [name, page] of pages) {
+      for (const [form] of page.matchAll(/<form [^>]*action="\/logout"[^>]*>[\s\S]*?<\/form>/g)) {
+        forms += 1;
+        assert.match(form, /data-fx="logout" data-door="gate">/, name);
+        assert.doesNotMatch(form, /<(input|select|textarea)[\s>]|\sname=/, name);
+      }
+    }
+    assert.ok(forms > 10, String(forms));
+  });
+
+  // M12.15: the plate is the board of the sign without its bar and chains, kept as a finished
+  // file of its own (design/README.md); it hangs over the window, 2 px over it. The sign of the
+  // treasury moves right only where the plate is and reaches down past its bottom (narrower than
+  // 1551 px).
+  test('M12.15: the plate over the window; the sign of the treasury moves only for it', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.match(
+      css,
+      /\n\.plate \{[^}]*border-image: url\(img\/plate-soft\.webp(\?v=\w+)?\) 0 30 fill/,
+    );
+    const plate = await get(app, '/static/img/plate-soft.webp');
+    assert.equal(plate.status, 200);
+    assert.equal(plate.headers.get('content-type'), 'image/webp');
+    assert.match(
+      css,
+      /\n {2}\.at-gatehouse \{[^}]*top: calc\(100% \* 476 \/ 1024 - 2px - 1\.7em\);[^}]*font-size: var\(--plate\);/,
+    );
+    const moved =
+      /\n {2}@media \(max-width: 1550\.98px\) \{\s*\.place\[data-door='gatehouse'\] ~ \.place \.at-treasury \{/.exec(
+        css,
+      );
+    assert.ok(moved, 'the sign of the treasury moves only after the place of the gatehouse');
+    const media = css.lastIndexOf('@media (min-width: 1024px)', moved.index);
+    assert.ok(media >= 0 && css.indexOf('\n}', media) > moved.index, 'on a computer only');
   });
 
   // M10.4: a cat is decor for a mouse and a touch (Ж4): a span without a name, a role or a stop of
