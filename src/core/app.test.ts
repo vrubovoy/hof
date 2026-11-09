@@ -3563,6 +3563,22 @@ describe('the look of Hof: pages, CSS and static files', () => {
     assert.deepEqual(courts, ['courtyard, alone', 'courtyard', 'courtyard of anna']);
   });
 
+  // M12.14: on a computer a sign and its door are one link, the door after the sign; the open
+  // door covered the lower edge of the sign of Säckel (16 of its 56 px in a window of 1024). The
+  // sign hangs on the wall in front of its door: it is drawn above it, the door keeps no order.
+  test('M12.14: on a computer a sign is drawn in front of its open door', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = /\n {2}\.place > \.sign \{\s*z-index: 1;\s*\}/.exec(css);
+    assert.ok(rule, 'the rule of the sign');
+    const media = css.lastIndexOf('@media', rule.index);
+    assert.match(css.slice(media, media + 40), /^@media \(min-width: 1024px\) \{/);
+    for (const door of ['door', 'door-gatehouse', 'door-treasury', 'door-tower']) {
+      const body = new RegExp(`\\n\\.${door} \\{([^}]*)\\}`).exec(css)![1]!;
+      assert.doesNotMatch(body, /z-index/, door);
+    }
+  });
+
   // M10.4: a cat is decor for a mouse and a touch (Ж4): a span without a name, a role or a stop of
   // Tab, outside links and forms, on the five pages that draw it; the forms keep their fields.
   test('M10.4: the cats of five pages, outside links and forms; the forms as before', async (t) => {
