@@ -200,6 +200,7 @@ const ERRORS = {
     title: 'Сюда только хозяину',
     text: 'Это место двора открыто только хозяину. Если нужно, попросите его.',
     scene: 'error-403',
+    phone: 896,
     alt: 'Тяжёлая дверь с висячим замком',
     blots: ['ink-drip', 'ink-ring'],
   },
@@ -207,6 +208,7 @@ const ERRORS = {
     title: 'Такой тропы во дворе нет',
     text: 'Возможно, ссылка устарела или в адресе опечатка.',
     scene: 'error-404',
+    phone: 1086,
     alt: 'Заросшая тропинка упирается в глухую стену, увитую плющом',
     blots: ['ink-blot-small', 'ink-splatter-b'],
   },
@@ -214,13 +216,16 @@ const ERRORS = {
     title: 'Во дворе что-то стряслось',
     text: 'Мы уже прибираемся. Попробуйте ещё раз через минуту — записанное раньше на месте.',
     scene: 'error-500',
+    phone: 1024,
     alt: 'Опрокинутая бочка, по двору раскатились яблоки, кот разглядывает беспорядок',
     blots: ['ink-blot-medium', 'ink-splatter-a'],
   },
 } as const;
 
 // An error page: on a computer the picture the whole window with the text on the paper to the
-// right, on the phone the picture at the top; the mark leads to the courtyard. `retry` gives the
+// right, on the phone the picture at the top; the mark leads to the courtyard. M12.6: the phone
+// has a frame of its own, drawn to both edges (design/masters/*-mobile.png): the picture of the
+// computer is paper on its right, where the text lies; `phone` is the width of the larger file. `retry` gives the
 // 500 page «Попробовать ещё раз» as href="": the browser opens the same address again, and the
 // page does not repeat it. Nothing from the request goes into the page.
 export function errorPage(status: keyof typeof ERRORS, retry = false) {
@@ -229,16 +234,26 @@ export function errorPage(status: keyof typeof ERRORS, retry = false) {
     error.title,
     html`<main class="error error-${status}">
       <div class="error-scene">
-        <img
-          src="${asset(`img/${error.scene}.webp`)}"
-          srcset="
-            ${asset(`img/${error.scene}.webp`)} 1536w,
-            ${asset(`img/${error.scene}@2x.webp`)} 3072w
-          "
-          sizes="(max-width: 1023.98px) 164vw, 100vw"
-          alt="${error.alt}"
-          draggable="false"
-        />
+        <picture>
+          <source
+            media="(max-width: 1023.98px)"
+            srcset="
+              ${asset(`img/${error.scene}-mobile@2x.webp`)} 780w,
+              ${asset(`img/${error.scene}-mobile@3x.webp`)} ${error.phone}w
+            "
+            sizes="100vw"
+          />
+          <img
+            src="${asset(`img/${error.scene}.webp`)}"
+            srcset="
+              ${asset(`img/${error.scene}.webp`)} 1536w,
+              ${asset(`img/${error.scene}@2x.webp`)} 3072w
+            "
+            sizes="100vw"
+            alt="${error.alt}"
+            draggable="false"
+          />
+        </picture>
         ${status === 500 ? html`<span class="cat-frame">${cat('500')}</span>` : ''}
       </div>
       <div class="error-paper">
@@ -389,7 +404,8 @@ const LOGO = html`<div class="logo">
 // key in the lock. The phone and a low window of a computer get the shorter texts of SetupMobile
 // (text-short): the key hint without the command, the hints of the login and the password
 // (hint-full) only for a screen reader. The gate key and the passwords are never written back
-// into the page; the login is, as typed.
+// into the page; the login is, as typed. M12.6: on the phone the gate has a frame of its own, drawn
+// to both edges (design/masters/scene-setup-mobile.png); the cat and the gate stay on it.
 function setupPage(form: SetupForm) {
   const describedBy = (field: SetupField, hint: string) =>
     form.error?.field === field
@@ -485,13 +501,26 @@ function setupPage(form: SetupForm) {
         </div>
       </div>
       <div class="gate-scene">
-        <img
-          src="${asset('img/scene-setup.webp')}"
-          srcset="${asset('img/scene-setup.webp')} 1536w, ${asset('img/scene-setup@2x.webp')} 3072w"
-          sizes="(max-width: 1023.98px) 195vw, 100vw"
-          alt="Ворота замка закрыты, в замке ключ, кот ждёт у ворот"
-          draggable="false"
-        />
+        <picture>
+          <source
+            media="(max-width: 1023.98px)"
+            srcset="
+              ${asset('img/scene-setup-mobile@2x.webp')}  780w,
+              ${asset('img/scene-setup-mobile@3x.webp')} 1000w
+            "
+            sizes="100vw"
+          />
+          <img
+            src="${asset('img/scene-setup.webp')}"
+            srcset="
+              ${asset('img/scene-setup.webp')} 1536w,
+              ${asset('img/scene-setup@2x.webp')} 3072w
+            "
+            sizes="100vw"
+            alt="Ворота замка закрыты, в замке ключ, кот ждёт у ворот"
+            draggable="false"
+          />
+        </picture>
         <span class="cat-frame"
           ><span class="gate-open" aria-hidden="true"></span>${cat('setup')}</span
         >

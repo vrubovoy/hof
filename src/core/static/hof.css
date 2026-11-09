@@ -1760,12 +1760,14 @@ img {
     -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 70px), transparent);
     mask-image: linear-gradient(to bottom, #000 calc(100% - 70px), transparent);
   }
+  /* M12.6: the frame of the phone, drawn to both edges, covers the band from below */
   .error-scene img {
     position: absolute;
-    left: -10.26vw;
-    bottom: -4.274vw;
-    width: 164.1vw;
-    max-width: none;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center bottom;
   }
   .error-paper {
     gap: 10px;
@@ -2026,12 +2028,14 @@ img {
     -webkit-mask-image: linear-gradient(to bottom, transparent, #000 70px);
     mask-image: linear-gradient(to bottom, transparent, #000 70px);
   }
+  /* M12.6: the frame of the phone (1000×703), drawn to both edges, covers the band from below */
   .gate-setup .gate-scene img {
     position: absolute;
-    left: -21.79vw;
-    bottom: -18.64vw;
-    width: 194.87vw;
-    max-width: none;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center bottom;
   }
 
   .blot-login-small {
@@ -2166,10 +2170,10 @@ img {
   --y: 736;
   --w: 210;
   --h: 160;
-  --px: 648;
-  --py: 796;
-  --pw: 112;
-  --ph: 115;
+  --px: 630;
+  --py: 729;
+  --pw: 223;
+  --ph: 188;
 }
 .cat-chambers {
   --x: 347;
@@ -2234,16 +2238,17 @@ img {
     --pw: 96;
     --ph: 106;
   }
-  /* основание и 500: картина задана в vw от нижнего края полосы */
+  /* M12.6: the frames of the phone are cut from the pictures of the computer at (60, 321) and
+     (48, 0), so the cat and the gate keep their places in px of those pictures */
   .gate-setup .cat-frame {
-    --s: calc(194.87vw / 1536);
-    --x0: -21.79vw;
-    --y0: calc(100cqh + 18.64vw - 1024 * var(--s));
+    --s: max(100cqw / 1000, 100cqh / 703);
+    --x0: calc((100cqw - 1000 * var(--s)) / 2 - 60 * var(--s));
+    --y0: calc(100cqh - 703 * var(--s) - 321 * var(--s));
   }
   .error .cat-frame {
-    --s: calc(164.1vw / 1536);
-    --x0: -10.26vw;
-    --y0: calc(100cqh + 4.274vw - 1024 * var(--s));
+    --s: max(100cqw / 1024, 100cqh / 1024);
+    --x0: calc((100cqw - 1024 * var(--s)) / 2 - 48 * var(--s));
+    --y0: calc(100cqh - 1024 * var(--s));
   }
   /* покои: полоса 170 px, cover, 50 % 72,33 %; кот ловит нажатие на всём кадре позы */
   .chambers .cat-frame {

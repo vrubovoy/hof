@@ -3198,6 +3198,47 @@ describe('the look of Hof: pages, CSS and static files', () => {
     }
   });
 
+  // The canvas of any WebP, with or without transparency (VP8 or VP8X).
+  function webpCanvas(file: string) {
+    const data = readFileSync(join(import.meta.dirname, 'static', 'img', file));
+    if (data.toString('latin1', 12, 16) !== 'VP8X') return webpSize(file);
+    return { width: data.readUIntLE(24, 3) + 1, height: data.readUIntLE(27, 3) + 1 };
+  }
+
+  // M12.6: the picture of an error page and of the founding is paper on the right, where the text
+  // lies on a computer; on a phone each has a frame of its own, drawn to both edges, 780 px and
+  // the full width of its master. The pose of the cat of 500 has the size its frame names.
+  test('M12.6: the error pages and the founding have frames of their own on the phone', async (t) => {
+    const { app, pages } = await drawnPages(t);
+    const page = (name: string) => pages.find(([n]) => n === name)![1];
+    for (const [name, scene] of [
+      ['403', 'error-403'],
+      ['404', 'error-404'],
+      ['500 after GET', 'error-500'],
+      ['500 after POST', 'error-500'],
+      ['GET /setup', 'scene-setup'],
+    ] as const) {
+      assert.equal(webpSize(`${scene}-mobile@2x.webp`).width, 780, scene);
+      const full = webpSize(`${scene}-mobile@3x.webp`).width;
+      assert.ok(full > 780, scene);
+      const source = new RegExp(
+        String.raw`<picture>\s*<source\s+media="\(max-width: 1023\.98px\)"\s+` +
+          String.raw`srcset="\s*[^"\s]*/${scene}-mobile@2x\.webp\S*\s+780w,\s*` +
+          String.raw`[^"\s]*/${scene}-mobile@3x\.webp\S*\s+${full}w\s*"\s+sizes="100vw"\s*/>\s*` +
+          String.raw`<img\s[^>]*/${scene}\.webp[^>]*\ssizes="100vw"`,
+      );
+      assert.match(page(name), source, name);
+    }
+    const css = await (await get(app, '/static/hof.css')).text();
+    const cat = /\n\.cat-500 \{([^}]*)\}/.exec(css)![1]!;
+    const size = (name: string) => Number(new RegExp(`--${name}: (\\d+);`).exec(cat)![1]);
+    assert.deepEqual(webpCanvas('pose-500.webp'), { width: size('pw'), height: size('ph') });
+    assert.deepEqual(webpCanvas('pose-500@2x.webp'), {
+      width: 2 * size('pw'),
+      height: 2 * size('ph'),
+    });
+  });
+
   test('hof.css: nothing from another site; every url() is a served file with its version', async (t) => {
     const { app } = await found(t);
     const css = await (await get(app, '/static/hof.css')).text();
