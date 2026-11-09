@@ -889,6 +889,11 @@ img {
     left: 86.59%;
     top: 31.05%;
   }
+  /* M12.14: a sign hangs on the wall in front of its door: the open door is drawn behind it, not
+     over the lower edge of the sign */
+  .place > .sign {
+    z-index: 1;
+  }
   .court-places,
   .court-doors {
     display: none;
