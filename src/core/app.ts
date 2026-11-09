@@ -192,8 +192,8 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
     </html>`;
 }
 
-// The three error pages of Hof (design/preview/Error403.html, States.html, Error500.html and
-// ErrorMobile.html): the picture of the place, its title and text, the blots on the paper. The
+// The three error pages of Hof (the prototypes Error403, States, Error500 and
+// ErrorMobile): the picture of the place, its title and text, the blots on the paper. The
 // status of the response is the caller's.
 const ERRORS = {
   403: {
@@ -274,7 +274,7 @@ export function errorPage(status: keyof typeof ERRORS, retry = false) {
 
 const FORBIDDEN_PAGE = errorPage(403);
 
-// The pages of a signed-in person (design/preview/Home.html, HomeMobile.html): on a computer the
+// The pages of a signed-in person (the prototypes Home, HomeMobile): on a computer the
 // blue banner the whole height of the window — Двор, the services, Приближённые of the
 // administrator, Мои покои and the way out; on the phone the bar at the top — the mark to the
 // courtyard, the candle to Мои покои. CSS shows one of the two, so the hidden one takes no focus.
@@ -385,7 +385,7 @@ const LOGO = html`<div class="logo">
   <span><b>Hof</b><small>Ваш личный двор</small></span>
 </div>`;
 
-// Texts and pictures from design/preview/Setup.html and SetupMobile.html: the gate closed, its
+// Texts and pictures from the prototypes Setup and SetupMobile: the gate closed, its
 // key in the lock. The phone and a low window of a computer get the shorter texts of SetupMobile
 // (text-short): the key hint without the command, the hints of the login and the password
 // (hint-full) only for a screen reader. The gate key and the passwords are never written back
@@ -514,7 +514,7 @@ function setupPage(form: SetupForm) {
   );
 }
 
-// The cat of a picture (M10.4, design/preview/Main.html and the others): a transparent area over
+// The cat of a picture (M10.4, the prototypes Main and the others): a transparent area over
 // the cat drawn there — decor for a mouse and a touch only (§6, Ж4): no name, no role, no stop of
 // Tab, outside links and forms. A press on it is a meow (in my chambers a purr) and, with
 // «Анимации», another pose; fx.js does it by data-poke. Where it stands is in the CSS.
@@ -523,7 +523,7 @@ function cat(where: 'login' | 'setup' | 'map' | 'chambers' | '500') {
   return html`<span class="cat cat-${where}" aria-hidden="true" data-poke="${poke}"></span>`;
 }
 
-// Texts and pictures from design/preview/Main.html and LoginMobile.html: the gate open, the cat
+// Texts and pictures from the prototypes Main and LoginMobile: the gate open, the cat
 // looking into the courtyard; the phone has a picture of its own. One error for every refusal,
 // so the page does not tell whether the login exists; only the right password learns that the key
 // was taken away. The login is written back as typed, the password never. On the phone the heading
@@ -631,7 +631,7 @@ function loginPage(form: LoginForm) {
   );
 }
 
-// Texts and pictures from design/preview/Home.html and HomeMobile.html. On a computer the places
+// Texts and pictures from the prototypes Home and HomeMobile. On a computer the places
 // are signs on the map: the first service of the list at the door of the treasury, Приближённые
 // at the gatehouse (the administrator only), Мои покои at the tower. On the phone the same places
 // are signs in a list under the map. «Добрый день!» is the one h1 of both. The note «Пока во
@@ -760,7 +760,7 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
   });
 }
 
-// «Звуки и движение» (design/preview/Account.html, AccountMobile.html, §6): the settings of this
+// «Звуки и движение» (the prototypes Account, AccountMobile, §6): the settings of this
 // device, kept by the browser, not by Hof — so not a form, it sends nothing. Hidden: fx.js shows it
 // and sets the boxes and sliders; without the script there is nothing to set. The phone has the
 // shorter texts of AccountMobile.
@@ -824,7 +824,7 @@ const FX_SETTINGS = html`<section id="fx-settings" class="framed fx-settings" hi
   </p>
 </section>`;
 
-// Texts and the picture from design/preview/Account.html and AccountMobile.html: who is signed
+// Texts and the picture from the prototypes Account and AccountMobile: who is signed
 // in, the change of the password in a frame, «Звуки и движение», the way out. On a computer the
 // picture of the chambers stands to the right the whole height of the window, on the phone it is
 // a band at the top and the longer texts are not drawn (text-full). No password is ever written
@@ -963,7 +963,7 @@ function accountPage(user: CurrentUser, services: readonly Service[], form: Acco
   });
 }
 
-// Texts and the picture from design/preview/Users.html, UsersMobile.html and UsersEmpty.html:
+// Texts and the picture from the prototypes Users, UsersMobile and UsersEmpty:
 // the key board of the court — everybody, the administrator first, a key with its tag or an
 // empty hook, and the way to the card of everybody else — or, while nobody else is in the court,
 // the empty board; then the form for a new user. The keys say nothing the text under them does
@@ -1144,7 +1144,7 @@ function usersPage(
   });
 }
 
-// Texts from design/preview/User.html and UserMobile.html: the way back, the person with their
+// Texts from the prototypes User and UserMobile: the way back, the person with their
 // key or the empty hook, and two frames of one height — the reset of the password and the key of
 // the court. A person without the key is not drawn there: the empty hook, «Ключ взят» and the blue
 // «Вернуть ключ» take the place of the key and the red «Забрать ключ». The phone gets the shorter

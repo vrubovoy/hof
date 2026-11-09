@@ -1,8 +1,9 @@
-/* Säckel — облик (ARCHITECTURE.md §6). Общая основа — копии проверенных правил
-   src/core/static/hof.css: общей static и пакета нет (§4.1), значения повторяются, а не выносятся.
-   Своё — из утверждённого design/screens.css: охра, шапка казначейской, закладки, колонка мешков.
-   Эффектов здесь нет: ни анимаций, ни переходов (M10). Координаты и кадры — только классами: CSP
-   запрещает атрибут style. Компьютер — от 1024 px, ниже — телефон. */
+/* Säckel — the look (ARCHITECTURE.md §6). The common base is a copy of the checked rules of
+   src/core/static/hof.css: there is no common static and no package (§4.1), the values repeat
+   rather than move out. Its own, from the approved prototype styles (screens.css, in the git
+   history before M12.12): the ochre, the head of the treasury, the tabs, the column of pouches.
+   Coordinates and frames only through classes: the CSP forbids the style attribute. A computer
+   from 1024 px, below — a phone. */
 
 /* EB Garamond — одна семья (лицензия OFL, fonts/OFL.txt): прямой и курсив, латиница, кириллица и
    latin-ext — в нём знак ₽. Браузер скачивает файл подмножества, только если на странице есть его

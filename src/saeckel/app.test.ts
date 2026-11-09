@@ -360,7 +360,7 @@ describe('the page of a pouch', () => {
 });
 
 const ICON_ERROR = 'Выберите знак из списка.';
-// Copied from design/preview/PouchEditMobile.html on purpose: the test must not share the set
+// Copied from the prototype PouchEditMobile on purpose: the test must not share the set
 // with the code.
 const SIGNS: [string, string][] = [
   ['pouch', 'мешок'],

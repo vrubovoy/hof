@@ -51,7 +51,7 @@ const CORE_SCRIPTS: CoreScripts = {
 const CONTENT_SECURITY_POLICY =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; media-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 
-// The common 404 page, drawn by Core (design/preview/States.html). Nothing from the request goes
+// The common 404 page, drawn by Core (the prototype States). Nothing from the request goes
 // into it.
 const NOT_FOUND_PAGE = errorPage(404);
 
