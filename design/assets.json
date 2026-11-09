@@ -45,6 +45,19 @@
    "recipe": "copy"
   },
   {
+   "out": "src/core/static/img/error-403-mobile@2x.webp",
+   "recipe": "width",
+   "master": "masters/error-403-mobile.png",
+   "width": 780,
+   "quality": 80
+  },
+  {
+   "out": "src/core/static/img/error-403-mobile@3x.webp",
+   "recipe": "1x",
+   "master": "masters/error-403-mobile.png",
+   "quality": 80
+  },
+  {
    "out": "src/core/static/img/error-403.webp",
    "recipe": "1x",
    "master": "masters/error-403.png",
@@ -57,6 +70,19 @@
    "quality": 72
   },
   {
+   "out": "src/core/static/img/error-404-mobile@2x.webp",
+   "recipe": "width",
+   "master": "masters/error-404-mobile.png",
+   "width": 780,
+   "quality": 80
+  },
+  {
+   "out": "src/core/static/img/error-404-mobile@3x.webp",
+   "recipe": "1x",
+   "master": "masters/error-404-mobile.png",
+   "quality": 80
+  },
+  {
    "out": "src/core/static/img/error-404.webp",
    "recipe": "1x",
    "master": "masters/error-404.png",
@@ -67,6 +93,19 @@
    "recipe": "2x",
    "master": "masters/error-404.png",
    "quality": 72
+  },
+  {
+   "out": "src/core/static/img/error-500-mobile@2x.webp",
+   "recipe": "width",
+   "master": "masters/error-500-mobile.png",
+   "width": 780,
+   "quality": 80
+  },
+  {
+   "out": "src/core/static/img/error-500-mobile@3x.webp",
+   "recipe": "1x",
+   "master": "masters/error-500-mobile.png",
+   "quality": 80
   },
   {
    "out": "src/core/static/img/error-500.webp",
@@ -426,6 +465,19 @@
    "recipe": "2x",
    "master": "masters/scene-residents-panel.png",
    "quality": 75
+  },
+  {
+   "out": "src/core/static/img/scene-setup-mobile@2x.webp",
+   "recipe": "width",
+   "master": "masters/scene-setup-mobile.png",
+   "width": 780,
+   "quality": 80
+  },
+  {
+   "out": "src/core/static/img/scene-setup-mobile@3x.webp",
+   "recipe": "1x",
+   "master": "masters/scene-setup-mobile.png",
+   "quality": 80
   },
   {
    "out": "src/core/static/img/scene-setup.webp",
