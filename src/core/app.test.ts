@@ -3654,6 +3654,32 @@ describe('the look of Hof: pages, CSS and static files', () => {
   // file of its own (design/README.md); it hangs over the window, 2 px over it. The sign of the
   // treasury moves right only where the plate is and reaches down past its bottom (narrower than
   // 1551 px).
+  // M12.15: «Выход» is a button, and a browser puts the text of a button in the middle of the
+  // room under its top padding, where a sign has it at the top (it stood 3–4,5 px lower). The
+  // padding at the bottom leaves only the line, as much as the sign itself has left.
+  test('M12.15: the text of «Выход» stands where a sign has it', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = (selector: string) =>
+      new RegExp(`\\n${selector.replace(/\./g, '\\.')} \\{([^}]*)\\}`).exec(css)![1]!;
+    const px = (body: string, name: string) =>
+      Number(new RegExp(`\\n\\s*${name}: (\\d+)px`).exec(body)![1]);
+    const sign = rule('.sign');
+    const small = rule('.sign-sm');
+    const top = Number(/\n\s*padding: (\d+)px/.exec(sign)![1]);
+    const room = px(sign, 'height') - top - px(sign, 'line-height');
+    const roomSmall = px(small, 'height') - px(small, 'padding-top') - px(small, 'line-height');
+    assert.deepEqual([room, roomSmall], [9, 8]);
+    assert.match(
+      rule('button.sign'),
+      new RegExp(`padding-bottom: calc\\(${room}em / ${px(sign, 'font-size')}\\);`),
+    );
+    assert.match(
+      rule('button.sign-sm'),
+      new RegExp(`padding-bottom: calc\\(${roomSmall}em / ${px(small, 'font-size')}\\);`),
+    );
+  });
+
   test('M12.15: the plate over the window; the sign of the treasury moves only for it', async (t) => {
     const { app } = await drawnPages(t);
     const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');

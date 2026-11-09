@@ -475,15 +475,23 @@ img {
   font-size: 19px;
   line-height: 20px;
 }
-/* M12.15: «Выход» is the button of a form — the same sign, without the look of a button */
+/* M12.15: «Выход» is the button of a form — the same sign, without the look of a button. A
+   browser puts the text of a button in the middle of the room under the top padding, where a sign
+   has it at the top; the padding at the bottom leaves only the line, so the text stands as on the
+   other signs: 74 − 43 − 22 = 9 of 21 (the size of a sign on the map follows its text), and
+   66 − 38 − 20 = 8 of 19 for a small one */
 button.sign {
   margin: 0;
+  padding-bottom: calc(9em / 21);
   background: none;
   -webkit-appearance: none;
   appearance: none;
   font-family: inherit;
   color: inherit;
   cursor: pointer;
+}
+button.sign-sm {
+  padding-bottom: calc(8em / 19);
 }
 /* M12.15: a plate on a wall — the board of the sign without its bar and chains, for a door too
    small for a hanging sign. Its ends stay as drawn, the board stretches under the text; it does
