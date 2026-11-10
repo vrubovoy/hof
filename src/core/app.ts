@@ -233,7 +233,7 @@ export function errorPage(status: keyof typeof ERRORS, retry = false) {
   return page(
     error.title,
     html`<main class="error error-${status}">
-      <div class="error-scene">
+      <div class="error-scene" data-reveal>
         <picture>
           <source
             media="(max-width: 1023.98px)"
@@ -501,7 +501,7 @@ function setupPage(form: SetupForm) {
           </form>
         </div>
       </div>
-      <div class="gate-scene">
+      <div class="gate-scene" data-reveal>
         <picture>
           <source
             media="(max-width: 1023.98px)"
@@ -611,7 +611,7 @@ function loginPage(form: LoginForm) {
           </p>
         </div>
       </div>
-      <div class="gate-scene">
+      <div class="gate-scene" data-reveal>
         <picture>
           <source
             media="(max-width: 1023.98px)"
@@ -701,7 +701,7 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
     class: 'court',
     body: html`<h1 class="ribbon court-title"><span>Добрый день!</span></h1>
       <div class="court-map">
-        <div class="court-inner">
+        <div class="court-inner" data-reveal>
           <img
             src="${asset('img/scene-courtyard-map.webp')}"
             srcset="
@@ -983,7 +983,7 @@ function accountPage(user: CurrentUser, services: readonly Service[], form: Acco
           loading="lazy"
         />
       </div>
-      <div class="chambers-scene room-scene">
+      <div class="chambers-scene room-scene" data-reveal>
         <picture>
           <source
             media="(min-width: 320px) and (max-width: 1023.98px)"
@@ -1036,7 +1036,7 @@ function usersPage(
 
   return shell(user, services, 'users', 'Hof — приближённые', {
     class: 'residents',
-    body: html`<div class="residents-scene room-scene">
+    body: html`<div class="residents-scene room-scene" data-reveal>
         <picture>
           <source
             media="(min-width: 320px) and (max-width: 1023.98px)"

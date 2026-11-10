@@ -356,6 +356,21 @@ describe('the pages of Säckel', () => {
     }
   });
 
+  // M12.16: the band waits on the paper until its image has come (fx-head.js of Core) and is then
+  // shown whole; it is the one thing that waits. The CSS hides it only under .reveal, which only
+  // fx-head.js sets.
+  test('M12.16: the band of the treasury is the one picture that waits, and only under .reveal', async () => {
+    for (const [name, , page] of await drawnPages()) {
+      assert.equal((page.match(/\sdata-reveal(?=[\s>])/g) ?? []).length, 1, name);
+      assert.match(page, /<img\s+class="sk-scene"\s+data-reveal\s/, name);
+    }
+    const css = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    const rules = [...css.matchAll(/([^{}]*)\{([^{}]*)\}/g)]
+      .filter(([, selector]) => selector!.includes('data-reveal'))
+      .map(([, selector, body]) => `${selector!.trim()} {${body!.replace(/\s+/g, ' ')}}`);
+    assert.deepEqual(rules, ['.reveal [data-reveal]:not(.shown) { visibility: hidden; }']);
+  });
+
   test('M12.3: saeckel.css keeps pictures out of a selection, never a field or text', () => {
     const css = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
     const unselectable = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]

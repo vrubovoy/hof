@@ -2744,7 +2744,7 @@ describe('the shell and the courtyard', () => {
     return {
       banner: linksIn(part(page, '<nav class="banner" aria-label="Hof">', '</nav>')),
       bar: linksIn(part(page, '<header class="m-top">', '</header>')),
-      map: signs('<div class="court-inner">', '</div>'),
+      map: signs('<div class="court-inner" data-reveal>', '</div>'),
       list: signs('<nav class="court-places" aria-label="Места двора">', '</nav>'),
     };
   }
@@ -3601,7 +3601,9 @@ describe('the look of Hof: pages, CSS and static files', () => {
       ['courtyard of anna', false],
     ] as const) {
       const page = of(name);
-      const map = squeeze(part(page, '<div class="court-inner">', '<nav class="court-places"'));
+      const map = squeeze(
+        part(page, '<div class="court-inner" data-reveal>', '<nav class="court-places"'),
+      );
       assert.ok(
         map.includes(
           `<form class="place" method="post" action="/logout" data-fx="logout" data-door="gate"><button type="submit" class="sign at-gate"><span>Выход</span></button><span class="door door-gate" aria-hidden="true"></span></form>`,
@@ -3678,6 +3680,39 @@ describe('the look of Hof: pages, CSS and static files', () => {
       rule('button.sign-sm'),
       new RegExp(`padding-bottom: calc\\(${roomSmall}em / ${px(small, 'font-size')}\\);`),
     );
+  });
+
+  // M12.16: a big picture of the first screen waits on the paper until its image has come and is
+  // then shown whole (fx-head.js). What waits is the scene around the picture of the page and
+  // nothing else — no blot, emblem or frame; its first image is that picture. The CSS hides it
+  // only under .reveal, which only fx-head.js sets: without the script every picture is seen.
+  test('M12.16: only the big picture of the first screen waits, and only under .reveal', async (t) => {
+    const { app, pages } = await drawnPages(t);
+    let waiting = 0;
+    for (const [name, page] of pages) {
+      const marks = (page.match(/\sdata-reveal(?=[\s>])/g) ?? []).length;
+      const scene =
+        /<div class="(gate-scene|court-inner|chambers-scene room-scene|residents-scene room-scene|error-scene)"( data-reveal)?>/.exec(
+          page,
+        );
+      if (scene === null) {
+        assert.equal(marks, 0, name);
+        continue;
+      }
+      assert.equal(marks, 1, name);
+      assert.ok(scene[2], `${name}: ${scene[1]}`);
+      const first = /<img\b[^>]*\ssrc="([^"]+)"/.exec(page.slice(scene.index))![1]!;
+      assert.match(first, /^\/static\/img\/(scene-|login-|error-)/, name);
+      waiting += 1;
+    }
+    assert.ok(waiting >= 20, String(waiting));
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const rules = [...css.matchAll(/([^{}]*)\{([^{}]*)\}/g)]
+      .filter(([, selector]) => selector!.includes('data-reveal'))
+      .map(([, selector, body]) => `${selector!.trim()} {${body!.replace(/\s+/g, ' ')}}`);
+    assert.deepEqual(rules, ['.reveal [data-reveal]:not(.shown) { visibility: hidden; }']);
+    const at = css.indexOf('.reveal [data-reveal]');
+    assert.ok(css.slice(css.lastIndexOf('@media', at), at).includes('\n}\n'), 'not in a @media');
   });
 
   test('M12.15: the plate over the window; the sign of the treasury moves only for it', async (t) => {

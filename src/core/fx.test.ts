@@ -406,6 +406,44 @@ interface Visit {
   drawn?: boolean;
   // The sessionStorage of the tab, shared by the visits of one test.
   session?: Map<string, string>;
+  // M12.16: the big pictures of the page.
+  scenes?: (FakeScene | FakeImage)[];
+}
+
+// M12.16: an image as fx-head.js sees it — whether it has come (complete) and the picture it
+// belongs to: a scene around it, or itself (`self`). A scene and an image that is its own picture
+// keep their classes.
+class FakeImage {
+  complete = false;
+  naturalWidth = 0;
+  names = new Set<string>();
+  classList = {
+    add: (name: string) => void this.names.add(name),
+    contains: (name: string) => this.names.has(name),
+  };
+  picture: FakeScene | 'self' | null;
+  constructor(picture: FakeScene | 'self' | null = null) {
+    this.picture = picture;
+  }
+  closest(selector: string) {
+    if (selector !== '[data-reveal]') return null;
+    return this.picture === 'self' ? this : this.picture;
+  }
+}
+class FakeScene {
+  names = new Set<string>();
+  classList = {
+    add: (name: string) => void this.names.add(name),
+    contains: (name: string) => this.names.has(name),
+  };
+  images: FakeImage[];
+  // The first image is the picture; the others (a cat, a sign) are not.
+  constructor(images = 1) {
+    this.images = Array.from({ length: images }, () => new FakeImage(this));
+  }
+  querySelector(selector: string) {
+    return selector === 'img' ? (this.images[0] ?? null) : null;
+  }
 }
 
 function visit({
@@ -420,6 +458,7 @@ function visit({
   shows,
   drawn = true,
   session = new Map(),
+  scenes = [],
 }: Visit) {
   const raw = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value));
   if (arrive !== undefined) session.set('hof.arrive', raw(arrive));
@@ -430,6 +469,7 @@ function visit({
   const listen = (type: string, listener: (event: object) => void) =>
     void listeners.set(type, [...(listeners.get(type) ?? []), listener]);
   const frames: (() => void)[] = [];
+  const timers: { go: () => void; ms: number }[] = [];
   const url = new URL(path, 'https://hof.test');
   const page: Record<string, unknown> = {
     localStorage: { getItem: () => JSON.stringify({ anim }) },
@@ -454,9 +494,15 @@ function visit({
         (shows ? shows.includes(selector) : marker && selector !== '')
           ? { getClientRects: () => (drawn ? [{}] : []) }
           : null,
+      querySelectorAll: (selector: string) =>
+        selector === '[data-reveal]:not(.shown)'
+          ? scenes.filter((scene) => !scene.classList.contains('shown'))
+          : [],
     },
     addEventListener: listen,
     requestAnimationFrame: (frame: () => void) => void frames.push(frame),
+    setTimeout: (go: () => void, ms: number) => void timers.push({ go, ms }),
+    HTMLImageElement: FakeImage,
   };
   page.window = page;
   runInContext(HEAD, createContext(page));
@@ -464,13 +510,18 @@ function visit({
     for (const listener of listeners.get(type) ?? []) listener(event);
   };
   return {
-    classes: () => [...classes].sort(),
+    // The classes of the arrival; `reveal` (M12.16) is on every page and told by reveal().
+    classes: () => [...classes].filter((name) => name !== 'reveal').sort(),
+    reveal: () => classes.has('reveal'),
     arrived: () => dataset.arrived,
     session,
     fire,
     // The parser reaches the end of the page; or the first frame is drawn before it.
     parsed: () => fire('readystatechange'),
     frame: () => frames.splice(0).forEach((frame) => frame()),
+    // The timers set so far, as their lengths; then all of them run.
+    timers: () => timers.map(({ ms }) => ms),
+    tick: () => timers.splice(0).forEach(({ go }) => go()),
   };
 }
 
@@ -1166,6 +1217,79 @@ describe('fx-head.js: money of Säckel (M10.5)', () => {
       assert.deepEqual(page.classes(), [], JSON.stringify(change));
       assert.equal(page.arrived(), 'expense', JSON.stringify(change));
     }
+  });
+});
+
+// M12.16: a big picture of the first screen is not seen half drawn. Its scene waits hidden (the
+// CSS, under .reveal) until the image of the picture has come or failed, and then is shown whole,
+// with no fade; at 3 s a scene whose image has come is shown even if its event was lost, and one
+// still coming waits.
+describe('fx-head.js: the big pictures of the first screen (M12.16)', () => {
+  const shown = (picture: FakeScene | FakeImage) => picture.classList.contains('shown');
+
+  test('every page waits for its pictures: with «Анимации» or without, with less motion', () => {
+    for (const change of [{}, { anim: false }, { reduced: true }]) {
+      assert.equal(visit(change).reveal(), true, JSON.stringify(change));
+    }
+  });
+
+  test('a scene is shown when its picture has come; another image, in it or not, does nothing', () => {
+    const scene = new FakeScene(2);
+    const page = visit({ scenes: [scene] });
+    assert.ok(!shown(scene));
+    page.fire('load', { target: new FakeImage() });
+    page.fire('load', { target: scene.images[1] });
+    page.fire('load', { target: { tagName: 'SCRIPT' } });
+    page.fire('error', { target: null });
+    assert.ok(!shown(scene), 'a blot, a cat, a script: not the picture');
+    page.fire('load', { target: scene.images[0] });
+    assert.ok(shown(scene));
+    assert.deepEqual([...scene.names], ['shown'], 'at once: no class of a fade');
+  });
+
+  test('the picture that is an image itself (Säckel); an image that fails is shown at once', () => {
+    const band = new FakeImage('self');
+    const failed = new FakeScene();
+    const page = visit({ scenes: [band, failed] });
+    page.fire('load', { target: band });
+    assert.ok(shown(band));
+    page.fire('error', { target: failed.images[0] });
+    assert.ok(shown(failed), 'what a broken image shows, not the paper for ever');
+  });
+
+  test('an image the browser has already is shown before the first frame, before its load event', () => {
+    const cached = new FakeScene();
+    cached.images[0]!.complete = true;
+    cached.images[0]!.naturalWidth = 1536;
+    const broken = new FakeScene();
+    broken.images[0]!.complete = true;
+    const coming = new FakeScene();
+    const page = visit({ scenes: [cached, broken, coming] });
+    page.frame();
+    assert.ok(shown(cached), 'in the first frame, as without this');
+    assert.ok(!shown(broken), 'a broken one waits for its error');
+    assert.ok(!shown(coming));
+    // Each frame looks again while a scene waits; it is shown in the frame after it has come.
+    coming.images[0]!.complete = true;
+    coming.images[0]!.naturalWidth = 683;
+    page.frame();
+    assert.ok(shown(coming));
+    page.fire('error', { target: broken.images[0] });
+    page.frame();
+    assert.ok(shown(broken));
+  });
+
+  test('at 3 s: a picture that has come is shown though its event was lost; one still coming waits', () => {
+    const lost = new FakeScene();
+    lost.images[0]!.complete = true;
+    const coming = new FakeScene();
+    const page = visit({ scenes: [lost, coming] });
+    assert.deepEqual(page.timers(), [3000]);
+    page.tick();
+    assert.ok(shown(lost));
+    assert.ok(!shown(coming), 'shown now, it would be half drawn');
+    page.fire('load', { target: coming.images[0] });
+    assert.ok(shown(coming), 'whole, when it has come');
   });
 });
 
