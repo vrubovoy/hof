@@ -1148,8 +1148,9 @@ describe('fx-head.js: the sign-in, the founding and the key (M10.4)', () => {
 });
 
 // M12.7: after the sign-in the banner unrolls whole, from its bar: it waits for its cloth and the
-// roll (the images its CSS names; after the sign-in the browser has forgotten them), at most 3 s.
-// What fails or is late, and a focus that comes into the banner, show it at once, not unrolled.
+// roll (the images its CSS names; after the sign-in the browser has forgotten them), but only
+// while the courtyard comes out of the dark (the end of the veil, 0.7 s). What fails or is late,
+// and a focus that comes into the banner, show it at once, not unrolled.
 describe('fx-head.js: the banner waits for its cloth (M12.7)', () => {
   const SIGNED_IN = {
     after: { act: 'login', action: '/login', at: NOW - 1000 },
@@ -1169,17 +1170,18 @@ describe('fx-head.js: the banner waits for its cloth (M12.7)', () => {
       'https://hof.test/static/img/menu-banner.webp?v=1',
       'https://hof.test/static/img/banner-roll.webp?v=2',
     ]);
-    // Two of 3 s: the check of the pictures (M12.16) and the wait of the banner.
-    const of3s = () => page.timers().filter((ms) => ms === 3000).length;
-    assert.equal(of3s(), 2);
+    // No timer of its own: only the check of the pictures (M12.16) counts 3 s.
+    assert.deepEqual(page.timers(), [3000]);
     page.load('load', 1);
     assert.deepEqual(page.classes(), WAITS, 'the roll alone is not enough');
     page.load('load', 0);
     assert.deepEqual(page.classes(), UNROLLS);
-    assert.equal(of3s(), 1, 'the 3 s of the wait are off');
+    // The end of the veil does not stop a banner that unrolls.
+    page.fire('animationend', { animationName: 'veil-out' });
+    assert.deepEqual(page.classes(), ['fx-on', 'unroll']);
     // A focus into the banner while it unrolls: shown at once.
     page.focus(true);
-    assert.deepEqual(page.classes(), ['from-door', 'fx-on']);
+    assert.deepEqual(page.classes(), ['fx-on']);
   });
 
   test('an image that fails: the banner is shown at once, not unrolled', () => {
@@ -1197,13 +1199,20 @@ describe('fx-head.js: the banner waits for its cloth (M12.7)', () => {
     }
   });
 
-  test('not come in 3 s: shown as it is; what comes later does not unroll it', () => {
+  test('not come while the courtyard comes out of the dark: there at once; what comes later does not unroll it', () => {
     const page = visit(SIGNED_IN);
     page.parsed();
-    page.tick();
-    assert.deepEqual(page.classes(), ['from-door', 'fx-on']);
-    page.load();
-    assert.deepEqual(page.classes(), ['from-door', 'fx-on']);
+    page.load('load', 1);
+    page.fire('animationend', { animationName: 'veil-out' });
+    assert.deepEqual(page.classes(), ['fx-on']);
+    page.load('load', 0);
+    assert.deepEqual(page.classes(), ['fx-on'], 'not rolled up again to unroll');
+    // Before the page is parsed the veil cannot end; nothing waits on a timer of its own.
+    const early = visit(SIGNED_IN);
+    early.fire('animationend', { animationName: 'veil-out' });
+    early.parsed();
+    assert.deepEqual(early.classes(), ['fx-on']);
+    assert.deepEqual(early.asks(), [], 'nothing asked for a banner that is there');
   });
 
   test('a focus into the banner while it waits shows it; a focus elsewhere does not', () => {

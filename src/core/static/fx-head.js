@@ -210,6 +210,9 @@
     if (event.animationName === 'veil-out') {
       end(['from-left', 'from-right', 'from-door', 'keep-banner']);
       if (!document.querySelector('.banner')?.getClientRects().length) end(['unroll']);
+      // M12.7: a banner still waiting for its cloth when the courtyard is out of the dark is not
+      // unrolled: it is there at once.
+      if (root.classList.contains('unroll-wait')) end(['unroll', 'unroll-wait']);
     }
     if (event.animationName === 'fx-settle') end(['unroll']);
     if (event.animationName === 'key-off') end(['key-off']);
@@ -221,18 +224,16 @@
   // down over the bare paper and the cloth came in half unrolled — on a slow line after the end.
   // Until both have come the animations stand at their start (unroll-wait: the CSS shows only the
   // bar, without the roll and its shade); a picture the browser has comes at once. The images are
-  // the ones the CSS names, asked for again: the browser shares one request. One that fails, or
-  // both not come in 3 s — the banner is shown as it is, without unrolling. A focus that comes
-  // into the banner shows it at once: what has the focus is seen. On the phone there is no banner,
-  // and the veil ends it all. The banner stands over the veil while it unrolls (the CSS).
+  // the ones the CSS names, asked for again: the browser shares one request. The menu is not kept
+  // away for the sake of the animation: one that fails, or both not come while the courtyard
+  // comes out of the dark (0.7 s, the end of the veil, above), and the banner is there at once,
+  // without unrolling; a cloth that comes later does not unroll it. A focus that comes into the
+  // banner shows it at once: what has the focus is seen. On the phone there is no banner, and the
+  // veil ends it all. The banner stands over the veil while it unrolls (the CSS).
   if (root.classList.contains('unroll')) {
     root.classList.add('unroll-wait');
     const skip = () => end(['unroll', 'unroll-wait']);
-    const late = setTimeout(skip, 3000);
-    const go = () => {
-      clearTimeout(late);
-      end(['unroll-wait']);
-    };
+    const go = () => end(['unroll-wait']);
     document.addEventListener('focusin', (event) => {
       if (event.target instanceof Element && event.target.closest('.banner') !== null) skip();
     });

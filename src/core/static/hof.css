@@ -524,7 +524,9 @@ button.sign-sm {
    window (M12.7: it goes with the page, see below); on the phone the bar at the top. One of the
    two is seen, the hidden one takes no focus. The banner: the bar and the tail with the lily stay
    as drawn, the cloth stretches to the height. M12.7: its text has a soft shadow — on the light
-   folds of the cloth the letters keep their edge */
+   folds of the cloth the letters keep their edge; under the text is the colour of the middle of
+   the cloth (the cloth covers it), so while the cloth has not come, or if it fails, the menu is
+   read on blue, not on the paper */
 .banner {
   display: flex;
   flex-direction: column;
@@ -534,6 +536,7 @@ button.sign-sm {
   border-width: 126px 55px 160px;
   border-color: transparent;
   border-image: url(img/menu-banner.webp) 300 130 378 fill / 126px 55px 160px stretch;
+  background: padding-box #0a3a78;
   color: var(--cloth);
   text-shadow: 0 1px 2px rgb(6 14 38 / 0.6);
 }
@@ -2824,16 +2827,18 @@ button.place {
     --fall: 1;
   }
 }
-/* M12.7: half the angles of before (7°, −3°, 1°) — calmer, the tail hardly leaves the window */
+/* M12.7: a heavy cloth — about a fifth of the angles of before (7°, −3°, 1°), in the same
+   proportion and time. Tilted to the eye the lower end grows: at 1440×900 the tail passes the
+   window by 24 px for a moment (117 px before), the notch of the tail stays seen */
 @keyframes fx-settle {
   30% {
-    transform: perspective(900px) rotateX(3.5deg);
+    transform: perspective(900px) rotateX(1.5deg);
   }
   62% {
-    transform: perspective(900px) rotateX(-1.5deg);
+    transform: perspective(900px) rotateX(-0.6deg);
   }
   85% {
-    transform: perspective(900px) rotateX(0.5deg);
+    transform: perspective(900px) rotateX(0.2deg);
   }
 }
 @keyframes stamp {

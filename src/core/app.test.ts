@@ -3760,6 +3760,8 @@ describe('the look of Hof: pages, CSS and static files', () => {
     const rule = (selector: string) =>
       new RegExp(`\\n${selector.replace(/[.()[\]:'=]/g, '\\$&')} \\{([^}]*)\\}`).exec(css)![1]!;
     assert.match(rule('.banner'), /text-shadow: 0 1px 2px rgb\(6 14 38 \/ 0\.6\);/);
+    // Under the text, the colour of the middle of the cloth: read while the cloth has not come.
+    assert.match(rule('.banner'), /background: padding-box #0a3a78;/);
     assert.match(rule('.nav'), /text-shadow: inherit;/, 'the button «Покинуть двор» as well');
     assert.match(rule('.nav-label'), /font-size: 12px;[^}]*color: rgb\(251 247 238 \/ 0\.94\);/);
     assert.match(rule('.banner .logo small'), /color: rgb\(251 247 238 \/ 0\.94\);/);
@@ -3776,7 +3778,7 @@ describe('the look of Hof: pages, CSS and static files', () => {
   });
 
   // M12.7: the unrolling after the sign-in keeps its 1.2 s and the swing its 0.9 s, the swing at
-  // half its angles. The cloth, the roll and its shade are drawn from the same two numbers, so the
+  // about a fifth of its angles (a heavy cloth; its tail hardly leaves the window). The cloth, the roll and its shade are drawn from the same two numbers, so the
   // cut of the cloth never runs ahead of the roll; they stand over the veil, and wait at their
   // start, without the roll and its shade, while fx-head.js waits for the images.
   test('M12.7: the banner unrolls whole, over the veil, from one clock', async (t) => {
@@ -3811,7 +3813,7 @@ describe('the look of Hof: pages, CSS and static files', () => {
     assert.ok(!css.includes('@keyframes fx-roll'));
     assert.deepEqual(
       [...block('@keyframes fx-settle {').matchAll(/rotateX\(([-\d.]+)deg\)/g)].map(([, a]) => a),
-      ['3.5', '-1.5', '0.5'],
+      ['1.5', '-0.6', '0.2'],
     );
     const media = block(
       '@media (prefers-reduced-motion: no-preference) and (min-width: 1024px) {\n  .unroll .banner {',
