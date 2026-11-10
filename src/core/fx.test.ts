@@ -519,6 +519,8 @@ function visit({
     // The parser reaches the end of the page; or the first frame is drawn before it.
     parsed: () => fire('readystatechange'),
     frame: () => frames.splice(0).forEach((frame) => frame()),
+    // How many frames are asked for now.
+    asked: () => frames.length,
     // The timers set so far, as their lengths; then all of them run.
     timers: () => timers.map(({ ms }) => ms),
     tick: () => timers.splice(0).forEach(({ go }) => go()),
@@ -1277,6 +1279,27 @@ describe('fx-head.js: the big pictures of the first screen (M12.16)', () => {
     page.fire('error', { target: broken.images[0] });
     page.frame();
     assert.ok(shown(broken));
+  });
+
+  test('an image that hangs past 3 s: the check of each frame ends then; its late load still shows it', () => {
+    const scene = new FakeScene();
+    const page = visit({ scenes: [scene] });
+    page.frame();
+    page.frame();
+    assert.equal(page.asked(), 1, 'each frame looks again while it waits');
+    page.tick();
+    page.frame();
+    assert.equal(page.asked(), 0, 'no frame asked for after the check of 3 s');
+    assert.ok(!shown(scene), 'not half drawn');
+    scene.images[0]!.complete = true;
+    scene.images[0]!.naturalWidth = 1536;
+    page.fire('load', { target: scene.images[0] });
+    assert.ok(shown(scene), 'shown whole when it comes at last');
+    const failing = new FakeScene();
+    const other = visit({ scenes: [failing] });
+    other.tick();
+    other.fire('error', { target: failing.images[0] });
+    assert.ok(shown(failing), 'and a late error too');
   });
 
   test('at 3 s: a picture that has come is shown though its event was lost; one still coming waits', () => {

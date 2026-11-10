@@ -225,7 +225,9 @@
   // the images are caught here, before the body, so none comes too early. An image that fails
   // shows what a broken one shows. At 3 s a scene whose image has come or failed is shown even if
   // its event was lost; one still coming waits for its end — shown before, it would be half drawn.
-  // Without this script there is no class: every picture is seen as it comes.
+  // The check of each frame ends then too: an image that hangs is left to its own load or error,
+  // and no frame is asked for while it waits. Without this script there is no class: every
+  // picture is seen as it comes.
   root.classList.add('reveal');
   /** The image of a scene's picture. @param {Element} scene */
   const pictureOf = (scene) =>
@@ -238,8 +240,10 @@
   };
   document.addEventListener('load', (event) => show(event.target), true);
   document.addEventListener('error', (event) => show(event.target), true);
-  // Before each frame, while the page is parsed or a scene waits.
+  // Before each frame, while the page is parsed or a scene waits, until the check of 3 s.
+  let frames = true;
   const ready = () => {
+    if (!frames) return;
     let waiting = document.readyState === 'loading';
     for (const scene of document.querySelectorAll('[data-reveal]:not(.shown)')) {
       const img = pictureOf(scene);
@@ -250,6 +254,7 @@
   };
   requestAnimationFrame(ready);
   setTimeout(() => {
+    frames = false;
     for (const scene of document.querySelectorAll('[data-reveal]:not(.shown)')) {
       const img = pictureOf(scene);
       if (img === null || img.complete) scene.classList.add('shown');
