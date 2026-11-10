@@ -1091,6 +1091,7 @@ function start() {
       'from-right',
       'from-door',
       'unroll',
+      'unroll-wait',
       'key-off',
       'spent',
     );

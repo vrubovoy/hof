@@ -176,6 +176,7 @@
     'from-door',
     'keep-banner',
     'unroll',
+    'unroll-wait',
     'key-off',
     'spent',
   ];
@@ -187,14 +188,18 @@
     if (cls !== null) root.classList.add(...cls.split(' '));
     if (cls !== null && keep) root.classList.add('keep-banner');
   }
-  // What the act shows is checked when the page is parsed, or at its first frame if the browser
-  // draws it sooner: not there yet — no effect.
+  // What the act shows is checked at the first frame or when the page is parsed, whichever comes
+  // first. There, the effect stays; not there once the page is parsed — no effect. M12.7: a frame
+  // drawn while the page is still being parsed proves nothing (Firefox can draw before the parser
+  // reaches the banner): the end of the parse decides, not the images or anything else after it.
   if (marker !== null) {
     let checked = false;
     const check = () => {
       if (checked) return;
+      const found = document.querySelector(marker) !== null;
+      if (!found && document.readyState === 'loading') return;
       checked = true;
-      if (document.querySelector(marker) !== null) return;
+      if (found) return;
       end(ARRIVALS);
       delete root.dataset.arrived;
     };
@@ -209,11 +214,61 @@
     if (event.animationName === 'veil-out') {
       end(['from-left', 'from-right', 'from-door', 'keep-banner']);
       if (!document.querySelector('.banner')?.getClientRects().length) end(['unroll']);
+      // M12.7: a banner still waiting for its cloth when the courtyard is out of the dark is not
+      // unrolled: it is there at once.
+      if (root.classList.contains('unroll-wait')) end(['unroll', 'unroll-wait']);
     }
     if (event.animationName === 'fx-settle') end(['unroll']);
     if (event.animationName === 'key-off') end(['key-off']);
     if (event.animationName === 'fx-mark') end(['spent']);
   });
+
+  // M12.7: the banner unrolls whole, from its bar, once its cloth and the roll have come. After
+  // the sign-in the browser has forgotten them (§4.2) and they come after the map: the roll went
+  // down over the bare paper and the cloth came in half unrolled — on a slow line after the end.
+  // Until both have come the animations stand at their start (unroll-wait: the CSS shows only the
+  // bar, without the roll and its shade); a picture the browser has comes at once. The images are
+  // the ones the CSS names, asked for again: the browser shares one request. The menu is not kept
+  // away for the sake of the animation: one that fails, or both not come while the courtyard
+  // comes out of the dark (0.7 s, the end of the veil, above), and the banner is there at once,
+  // without unrolling; a cloth that comes later does not unroll it. A focus that comes into the
+  // banner shows it at once: what has the focus is seen. On the phone there is no banner, and the
+  // veil ends it all. The banner stands over the veil while it unrolls (the CSS).
+  if (root.classList.contains('unroll')) {
+    root.classList.add('unroll-wait');
+    const skip = () => end(['unroll', 'unroll-wait']);
+    const go = () => end(['unroll-wait']);
+    document.addEventListener('focusin', (event) => {
+      if (event.target instanceof Element && event.target.closest('.banner') !== null) skip();
+    });
+    document.addEventListener(
+      'readystatechange',
+      () => {
+        if (!root.classList.contains('unroll-wait')) return;
+        const banner = document.querySelector('.banner');
+        if (banner === null || banner.getClientRects().length === 0) return go();
+        // The cloth (the border of the banner) and the roll (after the shell, its parent).
+        const urls = [
+          getComputedStyle(banner).borderImageSource,
+          banner.parentElement === null
+            ? ''
+            : getComputedStyle(banner.parentElement, '::after').backgroundImage,
+        ].flatMap((value) => /^url\("?([^")]*)"?\)$/.exec(value)?.slice(1) ?? []);
+        if (urls.length === 0) return go();
+        let waiting = urls.length;
+        for (const url of urls) {
+          const image = new Image();
+          image.addEventListener('load', () => {
+            waiting -= 1;
+            if (waiting === 0 && root.classList.contains('unroll-wait')) go();
+          });
+          image.addEventListener('error', skip);
+          image.src = url;
+        }
+      },
+      { once: true },
+    );
+  }
 
   // M12.16: a big picture of the first screen (data-reveal: its scene, or the image itself) is
   // not seen half drawn — a browser draws a WebP from the top as its bytes arrive. Until its image

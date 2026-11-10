@@ -678,6 +678,10 @@ function loginPage(form: LoginForm) {
 // hanging sign. «Выход» over the gate, for everyone signed in, is the form of the way out (POST
 // /logout, as «Покинуть двор»): on a computer its sign is the button and the open gate is the
 // door the page goes out through; on the phone it is the last sign under the map.
+//
+// M12.7: on a computer the button of «Выход» is the whole place, as the link of another place:
+// its sign and the gate (gate-way: both leaves and the passage under the arch) — one stop of Tab.
+// The door of the gate stays the passage between the leaves: the page goes out into its middle.
 function courtyardPage(user: CurrentUser, services: readonly Service[], alone: boolean) {
   const treasury = services[0];
   // The places with a door, in the order of the map: the gatehouse, the treasury, the tower; what
@@ -732,8 +736,11 @@ function courtyardPage(user: CurrentUser, services: readonly Service[], alone: b
                 >${door(at)}</a
               >`,
           )}
-          <form class="place" method="post" action="/logout" data-fx="logout" data-door="gate">
-            <button type="submit" class="sign at-gate"><span>Выход</span></button>${door('gate')}
+          <form class="place-form" method="post" action="/logout" data-fx="logout" data-door="gate">
+            <button type="submit" class="place">
+              <span class="sign at-gate"><span>Выход</span></span
+              ><span class="gate-way" aria-hidden="true"></span>${door('gate')}
+            </button>
           </form>
         </div>
       </div>

@@ -1460,7 +1460,8 @@ describe('fx.js in a page: the cats and the gate (M10.4)', () => {
     });
     page.send(new FakeForm('/setup', 'setup'));
     page.poke(cat);
-    page.root.classList.add('unroll', 'key-off', 'spent');
+    // M12.7: and the banner that still waited for its cloth when the page was put away.
+    page.root.classList.add('unroll', 'unroll-wait', 'key-off', 'spent');
     page.backFromCache();
     assert.ok(!gate.classList.contains('open'));
     assert.ok(!cat.classList.contains('meow'));

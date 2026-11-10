@@ -404,11 +404,42 @@ interface Visit {
   // banner is drawn (the phone has none).
   shows?: string[];
   drawn?: boolean;
+  // M12.7: the page comes bit by bit — until parsed() the document is loading and these of what it
+  // shows are not there yet (the parser has not reached them).
+  late?: string[];
   // The sessionStorage of the tab, shared by the visits of one test.
   session?: Map<string, string>;
   // M12.16: the big pictures of the page.
   scenes?: (FakeScene | FakeImage)[];
+  // M12.7: the images of the unrolling the CSS names — the cloth and the roll ('' — none).
+  cloth?: string;
+  roll?: string;
 }
+
+// M12.7: an image fx-head.js asks for (new Image()): its address and its listeners; a test says
+// when it comes (load) or fails (error).
+class FakeLoad {
+  src = '';
+  listeners = new Map<string, (() => void)[]>();
+  addEventListener(type: string, listener: () => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+  fire(type: 'load' | 'error') {
+    for (const listener of this.listeners.get(type) ?? []) listener();
+  }
+}
+// M12.7: what a focus comes into — inside the banner or not.
+class FakeTarget {
+  inBanner: boolean;
+  constructor(inBanner: boolean) {
+    this.inBanner = inBanner;
+  }
+  closest(selector: string) {
+    return selector === '.banner' && this.inBanner ? this : null;
+  }
+}
+const CLOTH = 'url("https://hof.test/static/img/menu-banner.webp?v=1")';
+const ROLL = 'url("https://hof.test/static/img/banner-roll.webp?v=2")';
 
 // M12.16: an image as fx-head.js sees it — whether it has come (complete) and the picture it
 // belongs to: a scene around it, or itself (`self`). A scene and an image that is its own picture
@@ -457,8 +488,11 @@ function visit({
   marker = true,
   shows,
   drawn = true,
+  late,
   session = new Map(),
   scenes = [],
+  cloth = CLOTH,
+  roll = ROLL,
 }: Visit) {
   const raw = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value));
   if (arrive !== undefined) session.set('hof.arrive', raw(arrive));
@@ -469,8 +503,13 @@ function visit({
   const listen = (type: string, listener: (event: object) => void) =>
     void listeners.set(type, [...(listeners.get(type) ?? []), listener]);
   const frames: (() => void)[] = [];
-  const timers: { go: () => void; ms: number }[] = [];
+  const timers: { go: () => void; ms: number; off: boolean }[] = [];
+  const loads: FakeLoad[] = [];
   const url = new URL(path, 'https://hof.test');
+  const shell = {};
+  // Without `late` the document does not say how far it is parsed (as before M12.7).
+  let state: string | undefined = late ? 'loading' : undefined;
+  const shown = new Set(shows ?? []);
   const page: Record<string, unknown> = {
     localStorage: { getItem: () => JSON.stringify({ anim }) },
     sessionStorage: {
@@ -489,10 +528,14 @@ function visit({
           contains: (name: string) => classes.has(name),
         },
       },
+      get readyState() {
+        return state;
+      },
       addEventListener: listen,
       querySelector: (selector: string) =>
-        (shows ? shows.includes(selector) : marker && selector !== '')
-          ? { getClientRects: () => (drawn ? [{}] : []) }
+        (shows ? shown.has(selector) : marker && selector !== '') &&
+        !(state === 'loading' && late?.includes(selector))
+          ? { getClientRects: () => (drawn ? [{}] : []), parentElement: shell }
           : null,
       querySelectorAll: (selector: string) =>
         selector === '[data-reveal]:not(.shown)'
@@ -501,8 +544,22 @@ function visit({
     },
     addEventListener: listen,
     requestAnimationFrame: (frame: () => void) => void frames.push(frame),
-    setTimeout: (go: () => void, ms: number) => void timers.push({ go, ms }),
+    setTimeout: (go: () => void, ms: number) => timers.push({ go, ms, off: false }) - 1,
+    clearTimeout: (id: number) => {
+      if (timers[id]) timers[id].off = true;
+    },
     HTMLImageElement: FakeImage,
+    Element: FakeTarget,
+    Image: class extends FakeLoad {
+      constructor() {
+        super();
+        loads.push(this);
+      }
+    },
+    getComputedStyle: (element: object, pseudo?: string) =>
+      element === shell && pseudo === '::after'
+        ? { backgroundImage: roll || 'none' }
+        : { borderImageSource: cloth || 'none' },
   };
   page.window = page;
   runInContext(HEAD, createContext(page));
@@ -517,13 +574,29 @@ function visit({
     session,
     fire,
     // The parser reaches the end of the page; or the first frame is drawn before it.
-    parsed: () => fire('readystatechange'),
+    parsed: () => {
+      if (state === 'loading') state = 'interactive';
+      fire('readystatechange');
+    },
+    // What the page shows goes away (to see that nothing is checked again).
+    hide: (selector: string) => void shown.delete(selector),
     frame: () => frames.splice(0).forEach((frame) => frame()),
     // How many frames are asked for now.
     asked: () => frames.length,
-    // The timers set so far, as their lengths; then all of them run.
-    timers: () => timers.map(({ ms }) => ms),
-    tick: () => timers.splice(0).forEach(({ go }) => go()),
+    // The timers set and not cleared, as their lengths; then all of them run.
+    timers: () => timers.filter(({ off }) => !off).map(({ ms }) => ms),
+    tick: () =>
+      timers
+        .filter(({ off }) => !off)
+        .forEach((timer) => {
+          timer.off = true;
+          timer.go();
+        }),
+    // M12.7: the images asked for, by address; each comes or fails.
+    asks: () => loads.map(({ src }) => src),
+    load: (type: 'load' | 'error' = 'load', which?: number) =>
+      loads.forEach((image, i) => (which === undefined || which === i ? image.fire(type) : null)),
+    focus: (inBanner: boolean) => fire('focusin', { target: new FakeTarget(inBanner) }),
   };
 }
 
@@ -1000,6 +1073,9 @@ describe('fx-head.js: the sign-in, the founding and the key (M10.4)', () => {
     ] as const) {
       const page = visit(right);
       page.parsed();
+      // M12.7: the banner waits for its cloth and the roll, then unrolls.
+      assert.deepEqual(page.classes(), ['from-door', 'fx-on', 'unroll', 'unroll-wait'], name);
+      page.load();
       assert.deepEqual(page.classes(), ['from-door', 'fx-on', 'unroll'], name);
       assert.equal(page.arrived(), right.after.act, name);
       page.fire('animationend', { animationName: 'veil-out' });
@@ -1011,6 +1087,8 @@ describe('fx-head.js: the sign-in, the founding and the key (M10.4)', () => {
     // The phone has no banner drawn: everything goes with the veil.
     const phone = visit({ ...SIGNED_IN, drawn: false });
     phone.parsed();
+    assert.deepEqual(phone.asks(), [], 'the phone asks for no image');
+    assert.deepEqual(phone.classes(), ['from-door', 'fx-on', 'unroll']);
     phone.fire('animationend', { animationName: 'veil-out' });
     assert.deepEqual(phone.classes(), ['fx-on']);
   });
@@ -1067,7 +1145,12 @@ describe('fx-head.js: the sign-in, the founding and the key (M10.4)', () => {
 
   test('read once; without «Анимации» or with less motion only told, for the sound', () => {
     const session = new Map<string, string>();
-    assert.deepEqual(visit({ ...SIGNED_IN, session }).classes(), ['from-door', 'fx-on', 'unroll']);
+    assert.deepEqual(visit({ ...SIGNED_IN, session }).classes(), [
+      'from-door',
+      'fx-on',
+      'unroll',
+      'unroll-wait',
+    ]);
     assert.deepEqual(visit({ ...IN, path: '/', session }).classes(), ['fx-on']);
     for (const change of [{ anim: false }, { reduced: true }]) {
       const page = visit({ ...SIGNED_IN, ...change });
@@ -1076,6 +1159,239 @@ describe('fx-head.js: the sign-in, the founding and the key (M10.4)', () => {
       assert.equal(page.arrived(), 'login', JSON.stringify(change));
       const key = visit({ ...KEY_TAKEN, ...change });
       assert.deepEqual(key.classes(), [], JSON.stringify(change));
+    }
+  });
+});
+
+// M12.7: after the sign-in the banner unrolls whole, from its bar: it waits for its cloth and the
+// roll (the images its CSS names; after the sign-in the browser has forgotten them), but only
+// while the courtyard comes out of the dark (the end of the veil, 0.7 s). What fails or is late,
+// and a focus that comes into the banner, show it at once, not unrolled.
+describe('fx-head.js: the banner waits for its cloth (M12.7)', () => {
+  const SIGNED_IN = {
+    after: { act: 'login', action: '/login', at: NOW - 1000 },
+    path: '/',
+    redirects: 1,
+    shows: ['.banner'],
+  };
+  const UNROLLS = ['from-door', 'fx-on', 'unroll'];
+  const WAITS = [...UNROLLS, 'unroll-wait'];
+
+  test('the cloth and the roll, asked for as the CSS names them: it unrolls once both have come', () => {
+    const page = visit(SIGNED_IN);
+    assert.deepEqual(page.classes(), WAITS, 'from the start, before the page is drawn');
+    assert.deepEqual(page.asks(), [], 'nothing asked before the page is parsed');
+    page.parsed();
+    assert.deepEqual(page.asks(), [
+      'https://hof.test/static/img/menu-banner.webp?v=1',
+      'https://hof.test/static/img/banner-roll.webp?v=2',
+    ]);
+    // No timer of its own: only the check of the pictures (M12.16) counts 3 s.
+    assert.deepEqual(page.timers(), [3000]);
+    page.load('load', 1);
+    assert.deepEqual(page.classes(), WAITS, 'the roll alone is not enough');
+    page.load('load', 0);
+    assert.deepEqual(page.classes(), UNROLLS);
+    // The end of the veil does not stop a banner that unrolls.
+    page.fire('animationend', { animationName: 'veil-out' });
+    assert.deepEqual(page.classes(), ['fx-on', 'unroll']);
+    // A focus into the banner while it unrolls: shown at once.
+    page.focus(true);
+    assert.deepEqual(page.classes(), ['fx-on']);
+  });
+
+  test('an image that fails: the banner is shown at once, not unrolled', () => {
+    for (const which of [0, 1]) {
+      const page = visit(SIGNED_IN);
+      page.parsed();
+      page.load('error', which);
+      assert.deepEqual(page.classes(), ['from-door', 'fx-on'], String(which));
+      page.load('load');
+      assert.deepEqual(
+        page.classes(),
+        ['from-door', 'fx-on'],
+        `${which}: a late load changes nothing`,
+      );
+    }
+  });
+
+  test('not come while the courtyard comes out of the dark: there at once; what comes later does not unroll it', () => {
+    const page = visit(SIGNED_IN);
+    page.parsed();
+    page.load('load', 1);
+    page.fire('animationend', { animationName: 'veil-out' });
+    assert.deepEqual(page.classes(), ['fx-on']);
+    page.load('load', 0);
+    assert.deepEqual(page.classes(), ['fx-on'], 'not rolled up again to unroll');
+    // Before the page is parsed the veil cannot end; nothing waits on a timer of its own.
+    const early = visit(SIGNED_IN);
+    early.fire('animationend', { animationName: 'veil-out' });
+    early.parsed();
+    assert.deepEqual(early.classes(), ['fx-on']);
+    assert.deepEqual(early.asks(), [], 'nothing asked for a banner that is there');
+  });
+
+  test('a focus into the banner while it waits shows it; a focus elsewhere does not', () => {
+    const page = visit(SIGNED_IN);
+    page.parsed();
+    page.focus(false);
+    assert.deepEqual(page.classes(), WAITS);
+    page.focus(true);
+    assert.deepEqual(page.classes(), ['from-door', 'fx-on']);
+    page.load();
+    assert.deepEqual(page.classes(), ['from-door', 'fx-on']);
+  });
+
+  test('no image named (no CSS), or no banner drawn: nothing waits', () => {
+    const bare = visit({ ...SIGNED_IN, cloth: '', roll: '' });
+    bare.parsed();
+    assert.deepEqual(bare.asks(), []);
+    assert.deepEqual(bare.classes(), UNROLLS);
+    const one = visit({ ...SIGNED_IN, roll: '' });
+    one.parsed();
+    assert.equal(one.asks().length, 1);
+    one.load();
+    assert.deepEqual(one.classes(), UNROLLS);
+  });
+
+  test('the banner of the act not there: no wait, no unrolling, nothing asked', () => {
+    const page = visit({ ...SIGNED_IN, shows: [] });
+    page.parsed();
+    assert.deepEqual(page.classes(), ['fx-on']);
+    assert.deepEqual(page.asks(), []);
+  });
+
+  test('without «Анимации», with less motion, after another act: nothing waits or is asked for', () => {
+    for (const change of [{ anim: false }, { reduced: true }]) {
+      const page = visit({ ...SIGNED_IN, ...change });
+      page.parsed();
+      assert.deepEqual(page.classes(), [], JSON.stringify(change));
+      assert.deepEqual(page.asks(), [], JSON.stringify(change));
+    }
+    const key = visit({
+      after: { act: 'key', action: '/admin/users/7/disable', at: NOW - 1000 },
+      path: '/admin/users/7',
+      redirects: 1,
+      shows: ['form[action="/admin/users/7/enable"]', '.banner'],
+    });
+    key.parsed();
+    assert.deepEqual(key.classes(), ['fx-on', 'key-off']);
+    assert.deepEqual(key.asks(), []);
+  });
+});
+
+// M12.7: what the act shows is checked at the first frame or when the page is parsed, whichever
+// comes first; a frame drawn while the page is still being parsed proves nothing — Firefox drew
+// one before the parser reached the banner, and the arrival was lost (2 runs of 17).
+describe('fx-head.js: a frame before the page is parsed (M12.7)', () => {
+  const at = NOW - 1000;
+  const SIGNED_IN = {
+    after: { act: 'login', action: '/login', at },
+    path: '/',
+    redirects: 1,
+    shows: ['.banner'],
+  };
+  const UNROLLS = ['from-door', 'fx-on', 'unroll'];
+  const WAITS = [...UNROLLS, 'unroll-wait'];
+
+  test('the first frame before the banner, the banner there once parsed: the arrival stays and unrolls', () => {
+    const page = visit({ ...SIGNED_IN, late: ['.banner'] });
+    page.frame();
+    assert.deepEqual(page.classes(), WAITS, 'a frame while parsing decides nothing');
+    assert.equal(page.arrived(), 'login');
+    page.parsed();
+    assert.deepEqual(page.classes(), WAITS);
+    page.load();
+    assert.deepEqual(page.classes(), UNROLLS, 'it unrolls once its cloth and the roll have come');
+    assert.equal(page.arrived(), 'login');
+  });
+
+  test('parsed without what the act shows: no effect, nothing asked', () => {
+    const page = visit({ ...SIGNED_IN, shows: [], late: [] });
+    page.frame();
+    assert.deepEqual(page.classes(), WAITS, 'not decided while parsing');
+    page.parsed();
+    assert.deepEqual(page.classes(), ['fx-on']);
+    assert.equal(page.arrived(), undefined);
+    assert.deepEqual(page.asks(), []);
+  });
+
+  test('there before the first frame: decided at that frame, nothing waits for the parse', () => {
+    const page = visit({ ...SIGNED_IN, late: [] });
+    page.frame();
+    // Gone afterwards (no page does so): the decision was taken, the parse does not take it again.
+    page.hide('.banner');
+    page.parsed();
+    assert.deepEqual(page.classes(), UNROLLS);
+    assert.equal(page.arrived(), 'login');
+  });
+
+  test('checked once: frames and the parse after the decision change nothing', () => {
+    const page = visit({ ...SIGNED_IN, late: ['.banner'] });
+    page.frame();
+    page.parsed();
+    page.load();
+    page.hide('.banner');
+    page.frame();
+    page.fire('readystatechange');
+    assert.deepEqual(page.classes(), UNROLLS);
+    assert.equal(page.arrived(), 'login');
+  });
+
+  test('a wrong password (400 on /login, no redirect): no unrolling, nothing asked', () => {
+    const page = visit({ ...SIGNED_IN, path: '/login', redirects: 0, shows: [], late: [] });
+    page.frame();
+    page.parsed();
+    assert.deepEqual(page.classes(), ['fx-on']);
+    assert.equal(page.arrived(), undefined);
+    assert.deepEqual(page.asks(), []);
+    assert.equal(page.session.size, 0);
+  });
+
+  test('the other acts the same: the way out, the key, an expense', () => {
+    const cases: [string, Visit, string[]][] = [
+      [
+        'the way out',
+        {
+          after: { act: 'logout', action: '/logout', at },
+          path: '/login',
+          redirects: 1,
+          shows: ['form[action="/login"]'],
+        },
+        ['from-door', 'fx-on'],
+      ],
+      [
+        'the key',
+        {
+          after: { act: 'key', action: '/admin/users/7/disable', at },
+          path: '/admin/users/7',
+          redirects: 1,
+          shows: ['form[action="/admin/users/7/enable"]'],
+        },
+        ['fx-on', 'key-off'],
+      ],
+      [
+        'an expense',
+        {
+          after: { act: 'expense', action: '/saeckel/pouches/7/expense', at },
+          path: '/saeckel/pouches/7',
+          redirects: 1,
+          shows: ['mark.move'],
+        },
+        ['fx-on', 'spent'],
+      ],
+    ];
+    for (const [name, change, kept] of cases) {
+      const late = visit({ ...change, late: change.shows });
+      late.frame();
+      assert.deepEqual(late.classes(), kept, `${name}: while parsing`);
+      late.parsed();
+      assert.deepEqual(late.classes(), kept, name);
+      const missing = visit({ ...change, shows: [], late: [] });
+      missing.frame();
+      missing.parsed();
+      assert.deepEqual(missing.classes(), ['fx-on'], `${name}: not there`);
+      assert.equal(missing.arrived(), undefined, `${name}: not there`);
     }
   });
 });

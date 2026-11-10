@@ -3604,12 +3604,14 @@ describe('the look of Hof: pages, CSS and static files', () => {
       const map = squeeze(
         part(page, '<div class="court-inner" data-reveal>', '<nav class="court-places"'),
       );
+      // M12.7: one button — the sign and the gate, with its door (the passage) inside.
       assert.ok(
         map.includes(
-          `<form class="place" method="post" action="/logout" data-fx="logout" data-door="gate"><button type="submit" class="sign at-gate"><span>Выход</span></button><span class="door door-gate" aria-hidden="true"></span></form>`,
+          `<form class="place-form" method="post" action="/logout" data-fx="logout" data-door="gate"><button type="submit" class="place"><span class="sign at-gate"><span>Выход</span></span><span class="gate-way" aria-hidden="true"></span><span class="door door-gate" aria-hidden="true"></span></button></form>`,
         ),
         name,
       );
+      assert.equal((map.match(/<button[\s>]/g) ?? []).length, 1, name);
       assert.equal((map.match(/action="\/logout"/g) ?? []).length, 1, name);
       // The gate is the last door on the map of the phone.
       assert.match(
@@ -3680,6 +3682,184 @@ describe('the look of Hof: pages, CSS and static files', () => {
       rule('button.sign-sm'),
       new RegExp(`padding-bottom: calc\\(${roomSmall}em / ${px(small, 'font-size')}\\);`),
     );
+  });
+
+  // M12.7: «Выход» goes out from its sign and from the gate as drawn — both leaves and the passage
+  // under the arch, rounded as the arch, not a box over the map; one button, one stop of Tab, the
+  // focus on the sign. The door of the gate is still the passage, where the page goes out; the
+  // sign swings for the pointer and the focus on the button as for a link of another place. The
+  // plate does not move: under the pointer and in the focus it only darkens.
+  test('M12.7: the gate goes out as its sign does; the plate darkens and stays', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = (selector: string) => {
+      const found = new RegExp(
+        `\\n *${selector.replace(/[.()[\]:*>+~]/g, '\\$&')} \\{([^}]*)\\}`,
+      ).exec(css);
+      assert.ok(found, selector);
+      return found[1]!;
+    };
+    assert.match(rule('.place-form'), /^\s*display: contents;\s*$/);
+    const button = rule('button.place');
+    for (const reset of [
+      'margin: 0;',
+      'padding: 0;',
+      'border: 0;',
+      'background: none;',
+      'appearance: none;',
+      'font: inherit;',
+      'cursor: pointer;',
+    ]) {
+      assert.ok(button.includes(reset), reset);
+    }
+    // The place is the whole map without a press of its own; what is inside it takes the press.
+    assert.match(rule('.place'), /inset: 0;[^}]*pointer-events: none;/);
+    assert.match(rule('.place > *'), /pointer-events: auto;/);
+    const map = (body: string) =>
+      ['left', 'top', 'width', 'height'].map(
+        (side) => new RegExp(`${side}: calc\\(100% \\* (\\d+) / (1536|1024)\\);`).exec(body)?.[1],
+      );
+    const way = rule('.gate-way');
+    assert.deepEqual(map(way), ['129', '385', '164', '255']);
+    assert.match(way, /position: absolute;/);
+    assert.match(way, /border-radius: 50% 50% 0 0 \/ 27% 27% 0 0;/);
+    const door = rule('.door-gate');
+    assert.deepEqual(map(door), ['175', '440', '70', '120'], 'the zoom goes into the passage');
+    assert.match(door, /pointer-events: none;/);
+    assert.ok(css.includes('.fx-on .place:is(:hover, :focus-visible) .sign {'));
+    assert.ok(!css.includes(':has(:focus-visible)'));
+    assert.match(rule('.place:focus-visible :is(.sign, .plate)'), /filter: brightness\(0\.82\);/);
+    assert.match(rule('.place:hover .plate'), /^\s*filter: brightness\(0\.82\);\s*$/);
+    for (const [selector] of css.matchAll(/[^{}]*\.plate[^{}]*(?=\{)/g)) {
+      const body = css.slice(css.indexOf('{', css.indexOf(selector)) + 1);
+      assert.doesNotMatch(
+        body.slice(0, body.indexOf('}')),
+        /animation|transform|scale|rotate/,
+        selector,
+      );
+    }
+  });
+
+  // M12.7: the banner of a computer is one thing and goes with the page: as high as its items,
+  // not lower than the window, the start of its row — never stretched by a long page beside it,
+  // nothing scrolled inside it. Its small text is larger and more opaque, all of it with a soft
+  // shadow, a little denser on the light plate; the focus on the current place keeps 4.5:1.
+  test('M12.7: the banner goes with the page; its text reads on the folds', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const banners = [...css.matchAll(/\n *\.banner \{([^}]*)\}/g)].map(([, body]) => body!);
+    for (const body of banners) {
+      assert.doesNotMatch(body, /sticky|overflow|\s(height: 100vh|top:)/, body);
+    }
+    const computer =
+      /@media \(min-width: 1024px\) \{\s*\.shell \{[^}]*\}[^}]*?\.banner \{([^}]*)\}/.exec(css);
+    assert.ok(computer, 'the banner of a computer');
+    assert.match(computer[1]!, /position: relative;/);
+    assert.match(computer[1]!, /align-self: start;/);
+    assert.match(computer[1]!, /min-height: 100vh;/);
+    const rule = (selector: string) =>
+      new RegExp(`\\n${selector.replace(/[.()[\]:'=]/g, '\\$&')} \\{([^}]*)\\}`).exec(css)![1]!;
+    assert.match(rule('.banner'), /text-shadow: 0 1px 2px rgb\(6 14 38 \/ 0\.6\);/);
+    // Under the text, the colour of the middle of the cloth: read while the cloth has not come.
+    assert.match(rule('.banner'), /background: padding-box #0a3a78;/);
+    assert.match(rule('.nav'), /text-shadow: inherit;/, 'the button «Покинуть двор» as well');
+    assert.match(rule('.nav-label'), /font-size: 12px;[^}]*color: rgb\(251 247 238 \/ 0\.94\);/);
+    assert.match(rule('.banner .logo small'), /color: rgb\(251 247 238 \/ 0\.94\);/);
+    assert.match(rule('.nav-who .small'), /opacity: 0\.92;/);
+    assert.match(
+      rule(".nav:is(:hover, :focus-visible, [aria-current='page'])"),
+      /text-shadow:\s*0 1px 2px rgb\(6 14 38 \/ 0\.8\),\s*0 0 4px rgb\(6 14 38 \/ 0\.4\);/,
+    );
+    assert.match(rule(".nav[aria-current='page']"), /background: rgb\(251 247 238 \/ 0\.16\);/);
+    assert.match(
+      rule(".nav[aria-current='page']:focus-visible"),
+      /background: rgb\(251 247 238 \/ 0\.22\);/,
+    );
+  });
+
+  // M12.7: the unrolling after the sign-in keeps its 1.2 s and the swing its 0.9 s, the swing at
+  // about a fifth of its angles (a heavy cloth; its tail hardly leaves the window). The cloth, the roll and its shade are drawn from the same two numbers, so the
+  // cut of the cloth never runs ahead of the roll; they stand over the veil, and wait at their
+  // start, without the roll and its shade, while fx-head.js waits for the images.
+  test('M12.7: the banner unrolls whole, over the veil, from one clock', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const block = (start: string) => {
+      const at = css.indexOf(start);
+      assert.ok(at >= 0, start);
+      return css.slice(at, css.indexOf('\n}', at));
+    };
+    for (const name of ['--unroll', '--fall']) {
+      assert.match(
+        block(`@property ${name} {`),
+        /syntax: '<number>';\s*inherits: false;\s*initial-value: 1;/,
+      );
+    }
+    const unroll = block('@keyframes fx-unroll {');
+    assert.deepEqual(
+      [...unroll.matchAll(/\n {4}([a-z-]+):/g)].map(([, name]) => name).sort(),
+      [
+        '--fall',
+        '--fall',
+        '--fall',
+        '--unroll',
+        '--unroll',
+        '--unroll',
+        'animation-timing-function',
+        'animation-timing-function',
+      ].sort(),
+      'only the two numbers move',
+    );
+    assert.ok(!css.includes('@keyframes fx-roll'));
+    assert.deepEqual(
+      [...block('@keyframes fx-settle {').matchAll(/rotateX\(([-\d.]+)deg\)/g)].map(([, a]) => a),
+      ['1.5', '-0.6', '0.2'],
+    );
+    const media = block(
+      '@media (prefers-reduced-motion: no-preference) and (min-width: 1024px) {\n  .unroll .banner {',
+    );
+    assert.match(
+      media,
+      /\.unroll \.banner \{[^}]*z-index: 51;[^}]*clip-path: inset\([^;]*var\(--unroll\)[^;]*var\(--fall\)[^;]*;[^}]*fx-unroll 1\.2s both,\s*fx-settle 0\.9s ease-out 1\.2s;/,
+    );
+    assert.match(
+      media,
+      /\.unroll \.shell::after \{[^}]*z-index: 52;[^}]*top: calc\(40px \+ \(100vh - 114px\) \* var\(--unroll\)\);[^}]*animation: fx-unroll 1\.2s both;/,
+    );
+    assert.match(
+      media,
+      /\.unroll-wait \.banner,\s*\.unroll-wait \.shell::before,\s*\.unroll-wait \.shell::after \{\s*animation-play-state: paused;\s*\}/,
+    );
+    assert.match(
+      media,
+      /\.unroll-wait \.shell::before,\s*\.unroll-wait \.shell::after \{\s*visibility: hidden;\s*\}/,
+    );
+    // The veil of the arrival is under them.
+    assert.match(css, /body::after \{[^}]*z-index: 50;/);
+  });
+
+  // M12.7: Приближённые on a computer (f7): the key board on the left drawn whole, without
+  // dissolving on the left, only its last 24 px into the paper; the column of the keys starts over
+  // those 24 px and is not narrower than 568 px, so the form stays on one line. The blot the keys
+  // reached is 30 px further right. The phone is as it was.
+  test('M12.7: Приближённые — the key board whole, no key on a half-seen board', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const at = css.indexOf('\n  .residents {\n    display: grid;');
+    assert.ok(at > 0);
+    const media = css.slice(css.lastIndexOf('@media', at), css.indexOf('\n}', at));
+    assert.match(media, /^@media \(min-width: 1024px\) \{/);
+    assert.match(media, /grid-template-columns: minmax\(0, 420px\) minmax\(568px, 1fr\);/);
+    const fade = 'linear-gradient(to right, #000 calc(100% - 24px), transparent)';
+    assert.ok(
+      media.includes(`-webkit-mask-image: ${fade};`) && media.includes(`  mask-image: ${fade};`),
+    );
+    assert.match(
+      media,
+      /\.residents-main \{[^}]*margin-left: -24px;[^}]*padding: 34px 24px 30px 0;/,
+    );
+    assert.match(media, /\.blot-residents-splatter-b \{\s*right: 64px;\s*top: 250px;/);
+    assert.doesNotMatch(media, /13\.33%|64\.29%|-60px/);
   });
 
   // M12.16: a big picture of the first screen waits on the paper until its image has come and is
