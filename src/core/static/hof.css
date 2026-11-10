@@ -475,7 +475,8 @@ img {
   font-size: 19px;
   line-height: 20px;
 }
-/* M12.15: «Выход» is the button of a form — the same sign, without the look of a button. A
+/* M12.15: «Выход» under the map of the phone is the button of a form — the same sign, without the
+   look of a button. A
    browser puts the text of a button in the middle of the room under the top padding, where a sign
    has it at the top; the padding at the bottom leaves only the line, so the text stands as on the
    other signs: 74 − 43 − 22 = 9 of 21 (the size of a sign on the map follows its text), and
@@ -840,8 +841,9 @@ button.sign-sm {
    the gatehouse). The link over the whole map catches no press; the sign and the door do. The
    frame of the open door is cut from the same map with the doors open; it comes at once, without
    a fade (fx.js, .open) — in a fade both doors are half seen and the door clouds. M12.15: «Выход»
-   is a form; only its sign is pressed, the gate is where the page goes (fx.js) and takes no
-   press. On the phone the signs are under the map and the doors on it are pictures */
+   is a form. M12.7: its button is the place — the sign and the gate, both leaves and the passage;
+   the form itself takes no room. On the phone the signs are under the map and the doors on it are
+   pictures */
 .place {
   position: absolute;
   inset: 0;
@@ -856,6 +858,25 @@ button.sign-sm {
 }
 .place:focus-visible :is(.sign, .plate) {
   filter: brightness(0.82);
+}
+/* M12.7: the plate does not swing (it is fixed to the wall), so under the pointer it darkens as in
+   the focus, at once, without a move */
+.place:hover .plate {
+  filter: brightness(0.82);
+}
+.place-form {
+  display: contents;
+}
+button.place {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
 }
 .court-doors {
   position: absolute;
@@ -888,13 +909,23 @@ button.sign-sm {
   height: calc(100% * 227 / 1024);
 }
 /* M12.15: the gate is open on the map, it has no frame — only the opening between its leaves,
-   below the sign, where the page goes out */
+   below the sign, where the page goes out. M12.7: it takes no press itself — the gate does */
 .door-gate {
   left: calc(100% * 175 / 1536);
   top: calc(100% * 440 / 1024);
   width: calc(100% * 70 / 1536);
   height: calc(100% * 120 / 1024);
   pointer-events: none;
+}
+/* M12.7: the gate as drawn, where a press goes out: under the arch from its inner edge to the
+   other (129–293 of 1536), from its top (385) to the foot of the leaves (640), rounded as the arch */
+.gate-way {
+  position: absolute;
+  left: calc(100% * 129 / 1536);
+  top: calc(100% * 385 / 1024);
+  width: calc(100% * 164 / 1536);
+  height: calc(100% * 255 / 1024);
+  border-radius: 50% 50% 0 0 / 27% 27% 0 0;
 }
 
 @media (min-width: 1024px) {
@@ -2479,9 +2510,9 @@ button.sign-sm {
     animation-duration: 0.7s;
     animation-delay: -0.5s;
   }
-  /* a sign on the map swings on its chains under the pointer and in focus; M12.15: the focus of
-     «Выход» is on its button, inside the place; the plate does not swing */
-  .fx-on .place:is(:hover, :focus-visible, :has(:focus-visible)) .sign {
+  /* a sign on the map swings on its chains under the pointer and in focus; the plate does not
+     swing. M12.7: the button of «Выход» is its place, as a link of another place */
+  .fx-on .place:is(:hover, :focus-visible) .sign {
     transform-origin: 50% 0;
     animation: swing 1.4s ease-out;
   }

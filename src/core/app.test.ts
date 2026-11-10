@@ -3604,12 +3604,14 @@ describe('the look of Hof: pages, CSS and static files', () => {
       const map = squeeze(
         part(page, '<div class="court-inner" data-reveal>', '<nav class="court-places"'),
       );
+      // M12.7: one button — the sign and the gate, with its door (the passage) inside.
       assert.ok(
         map.includes(
-          `<form class="place" method="post" action="/logout" data-fx="logout" data-door="gate"><button type="submit" class="sign at-gate"><span>Выход</span></button><span class="door door-gate" aria-hidden="true"></span></form>`,
+          `<form class="place-form" method="post" action="/logout" data-fx="logout" data-door="gate"><button type="submit" class="place"><span class="sign at-gate"><span>Выход</span></span><span class="gate-way" aria-hidden="true"></span><span class="door door-gate" aria-hidden="true"></span></button></form>`,
         ),
         name,
       );
+      assert.equal((map.match(/<button[\s>]/g) ?? []).length, 1, name);
       assert.equal((map.match(/action="\/logout"/g) ?? []).length, 1, name);
       // The gate is the last door on the map of the phone.
       assert.match(
@@ -3680,6 +3682,62 @@ describe('the look of Hof: pages, CSS and static files', () => {
       rule('button.sign-sm'),
       new RegExp(`padding-bottom: calc\\(${roomSmall}em / ${px(small, 'font-size')}\\);`),
     );
+  });
+
+  // M12.7: «Выход» goes out from its sign and from the gate as drawn — both leaves and the passage
+  // under the arch, rounded as the arch, not a box over the map; one button, one stop of Tab, the
+  // focus on the sign. The door of the gate is still the passage, where the page goes out; the
+  // sign swings for the pointer and the focus on the button as for a link of another place. The
+  // plate does not move: under the pointer and in the focus it only darkens.
+  test('M12.7: the gate goes out as its sign does; the plate darkens and stays', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = (selector: string) => {
+      const found = new RegExp(
+        `\\n *${selector.replace(/[.()[\]:*>+~]/g, '\\$&')} \\{([^}]*)\\}`,
+      ).exec(css);
+      assert.ok(found, selector);
+      return found[1]!;
+    };
+    assert.match(rule('.place-form'), /^\s*display: contents;\s*$/);
+    const button = rule('button.place');
+    for (const reset of [
+      'margin: 0;',
+      'padding: 0;',
+      'border: 0;',
+      'background: none;',
+      'appearance: none;',
+      'font: inherit;',
+      'cursor: pointer;',
+    ]) {
+      assert.ok(button.includes(reset), reset);
+    }
+    // The place is the whole map without a press of its own; what is inside it takes the press.
+    assert.match(rule('.place'), /inset: 0;[^}]*pointer-events: none;/);
+    assert.match(rule('.place > *'), /pointer-events: auto;/);
+    const map = (body: string) =>
+      ['left', 'top', 'width', 'height'].map(
+        (side) => new RegExp(`${side}: calc\\(100% \\* (\\d+) / (1536|1024)\\);`).exec(body)?.[1],
+      );
+    const way = rule('.gate-way');
+    assert.deepEqual(map(way), ['129', '385', '164', '255']);
+    assert.match(way, /position: absolute;/);
+    assert.match(way, /border-radius: 50% 50% 0 0 \/ 27% 27% 0 0;/);
+    const door = rule('.door-gate');
+    assert.deepEqual(map(door), ['175', '440', '70', '120'], 'the zoom goes into the passage');
+    assert.match(door, /pointer-events: none;/);
+    assert.ok(css.includes('.fx-on .place:is(:hover, :focus-visible) .sign {'));
+    assert.ok(!css.includes(':has(:focus-visible)'));
+    assert.match(rule('.place:focus-visible :is(.sign, .plate)'), /filter: brightness\(0\.82\);/);
+    assert.match(rule('.place:hover .plate'), /^\s*filter: brightness\(0\.82\);\s*$/);
+    for (const [selector] of css.matchAll(/[^{}]*\.plate[^{}]*(?=\{)/g)) {
+      const body = css.slice(css.indexOf('{', css.indexOf(selector)) + 1);
+      assert.doesNotMatch(
+        body.slice(0, body.indexOf('}')),
+        /animation|transform|scale|rotate/,
+        selector,
+      );
+    }
   });
 
   // M12.7: the banner of a computer is one thing and goes with the page: as high as its items,
