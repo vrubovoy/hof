@@ -3838,6 +3838,30 @@ describe('the look of Hof: pages, CSS and static files', () => {
     assert.match(css, /body::after \{[^}]*z-index: 50;/);
   });
 
+  // M12.7: Приближённые on a computer (f7): the key board on the left drawn whole, without
+  // dissolving on the left, only its last 24 px into the paper; the column of the keys starts over
+  // those 24 px and is not narrower than 568 px, so the form stays on one line. The blot the keys
+  // reached is 30 px further right. The phone is as it was.
+  test('M12.7: Приближённые — the key board whole, no key on a half-seen board', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const at = css.indexOf('\n  .residents {\n    display: grid;');
+    assert.ok(at > 0);
+    const media = css.slice(css.lastIndexOf('@media', at), css.indexOf('\n}', at));
+    assert.match(media, /^@media \(min-width: 1024px\) \{/);
+    assert.match(media, /grid-template-columns: minmax\(0, 420px\) minmax\(568px, 1fr\);/);
+    const fade = 'linear-gradient(to right, #000 calc(100% - 24px), transparent)';
+    assert.ok(
+      media.includes(`-webkit-mask-image: ${fade};`) && media.includes(`  mask-image: ${fade};`),
+    );
+    assert.match(
+      media,
+      /\.residents-main \{[^}]*margin-left: -24px;[^}]*padding: 34px 24px 30px 0;/,
+    );
+    assert.match(media, /\.blot-residents-splatter-b \{\s*right: 64px;\s*top: 250px;/);
+    assert.doesNotMatch(media, /13\.33%|64\.29%|-60px/);
+  });
+
   // M12.16: a big picture of the first screen waits on the paper until its image has come and is
   // then shown whole (fx-head.js). What waits is the scene around the picture of the page and
   // nothing else — no blot, emblem or frame; its first image is that picture. The CSS hides it

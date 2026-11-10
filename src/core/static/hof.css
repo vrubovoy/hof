@@ -1412,9 +1412,10 @@ button.place {
   }
 }
 
-/* Приближённые — Users, UsersMobile, UsersEmpty. Как в прототипе, бумага заходит под край
-   картины: лента и ключи — под её растворяющимся краем, записка с печатью и рамка — поверх.
-   Кляксы обрезает край страницы (clip, в отличие от hidden, не мешает картине стоять на месте) */
+/* Приближённые — Users, UsersMobile, UsersEmpty. M12.7: on a computer the key board is drawn
+   whole, without dissolving on the left; only its last 24 px pass into the paper, under the start
+   of the column of the keys — no key lies on a half-seen board. The blots are cut by the edge of
+   the page (clip, unlike hidden, does not keep the picture from standing in its place) */
 .residents {
   position: relative;
   overflow: clip;
@@ -1456,24 +1457,19 @@ button.place {
 }
 
 @media (min-width: 1024px) {
-  /* картина слева — 420 px, на узком окне уже: форма «Принять ко двору» остаётся в одну строку;
-     бумага с ключницей заходит на край картины */
+  /* the picture on the left, 420 px, narrower on a narrow window; the column of the keys not
+     narrower than 568 px, so the form «Принять ко двору» stays on one line. The column starts
+     24 px over the picture, where the picture passes into the paper */
   .residents {
     display: grid;
-    grid-template-columns: minmax(0, 420px) minmax(548px, 1fr);
+    grid-template-columns: minmax(0, 420px) minmax(568px, 1fr);
     min-height: 100vh;
   }
   .residents-scene {
     grid-column: 1;
     grid-row: 1;
-    -webkit-mask-image: linear-gradient(
-      to right,
-      transparent,
-      #000 13.33%,
-      #000 64.29%,
-      transparent
-    );
-    mask-image: linear-gradient(to right, transparent, #000 13.33%, #000 64.29%, transparent);
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
   }
   .residents-scene img {
     object-position: 30% 50%;
@@ -1481,12 +1477,13 @@ button.place {
   .residents-main {
     grid-column: 2;
     grid-row: 1;
-    margin-left: -60px;
-    padding: 34px 40px 30px 0;
+    margin-left: -24px;
+    padding: 34px 24px 30px 0;
   }
   /* кляксы в кадре 1440×900, от правого края */
+  /* M12.7: 30 px to the right of before — the keys, 16 px wider, reached it at every width */
   .blot-residents-splatter-b {
-    right: 94px;
+    right: 64px;
     top: 250px;
     width: 96px;
     opacity: 0.55;
