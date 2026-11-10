@@ -2852,3 +2852,11 @@ button.sign-sm {
     transform: translateX(-32%);
   }
 }
+
+/* M12.16: a big picture of the first screen waits on the paper until its image has come
+   (fx-head.js: .reveal on <html>, .shown on the scene), then appears whole, at once. Hidden,
+   nothing in it is seen, pressed or reached by Tab, and its place stays. Without the script there
+   is no class, and the picture is seen as it comes */
+.reveal [data-reveal]:not(.shown) {
+  visibility: hidden;
+}

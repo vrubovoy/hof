@@ -214,4 +214,50 @@
     if (event.animationName === 'key-off') end(['key-off']);
     if (event.animationName === 'fx-mark') end(['spent']);
   });
+
+  // M12.16: a big picture of the first screen (data-reveal: its scene, or the image itself) is
+  // not seen half drawn — a browser draws a WebP from the top as its bytes arrive. Until its image
+  // has come, the scene is hidden (the CSS: nothing in it is seen, pressed or reached by Tab; its
+  // place stays) and the paper shows; then it appears whole, at once, with no fade (a fade put
+  // off the whole picture by its own length). An image the browser already has (its cache) is
+  // complete as soon as it is in the page, before its load event: each frame, before it is drawn,
+  // shows such a scene, so it is in the first frame that has it, as without this. The events of
+  // the images are caught here, before the body, so none comes too early. An image that fails
+  // shows what a broken one shows. At 3 s a scene whose image has come or failed is shown even if
+  // its event was lost; one still coming waits for its end — shown before, it would be half drawn.
+  // The check of each frame ends then too: an image that hangs is left to its own load or error,
+  // and no frame is asked for while it waits. Without this script there is no class: every
+  // picture is seen as it comes.
+  root.classList.add('reveal');
+  /** The image of a scene's picture. @param {Element} scene */
+  const pictureOf = (scene) =>
+    scene instanceof HTMLImageElement ? scene : scene.querySelector('img');
+  /** The scene of an image that has come or failed, if it is that scene's picture. @param {EventTarget | null} img */
+  const show = (img) => {
+    if (!(img instanceof HTMLImageElement)) return;
+    const scene = img.closest('[data-reveal]');
+    if (scene !== null && pictureOf(scene) === img) scene.classList.add('shown');
+  };
+  document.addEventListener('load', (event) => show(event.target), true);
+  document.addEventListener('error', (event) => show(event.target), true);
+  // Before each frame, while the page is parsed or a scene waits, until the check of 3 s.
+  let frames = true;
+  const ready = () => {
+    if (!frames) return;
+    let waiting = document.readyState === 'loading';
+    for (const scene of document.querySelectorAll('[data-reveal]:not(.shown)')) {
+      const img = pictureOf(scene);
+      if (img === null || (img.complete && img.naturalWidth > 0)) scene.classList.add('shown');
+      else waiting = true;
+    }
+    if (waiting) requestAnimationFrame(ready);
+  };
+  requestAnimationFrame(ready);
+  setTimeout(() => {
+    frames = false;
+    for (const scene of document.querySelectorAll('[data-reveal]:not(.shown)')) {
+      const img = pictureOf(scene);
+      if (img === null || img.complete) scene.classList.add('shown');
+    }
+  }, 3000);
 })();

@@ -390,6 +390,7 @@ function saeckelPage(place: Place, body: HtmlEscapedString | Promise<HtmlEscaped
       <header class="sk-head">
         <img
           class="sk-scene"
+          data-reveal
           src="${asset('img/scene-treasury-band.webp')}"
           srcset="
             ${asset('img/scene-treasury-band.webp')} 1536w,

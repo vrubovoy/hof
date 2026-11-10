@@ -44,6 +44,7 @@ export default defineConfig(
         HTMLAnchorElement: 'readonly',
         HTMLElement: 'readonly',
         HTMLFormElement: 'readonly',
+        HTMLImageElement: 'readonly',
         HTMLInputElement: 'readonly',
         HTMLMediaElement: 'readonly',
         Image: 'readonly',
