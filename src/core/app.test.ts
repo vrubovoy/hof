@@ -3682,6 +3682,102 @@ describe('the look of Hof: pages, CSS and static files', () => {
     );
   });
 
+  // M12.7: the banner of a computer is one thing and goes with the page: as high as its items,
+  // not lower than the window, the start of its row — never stretched by a long page beside it,
+  // nothing scrolled inside it. Its small text is larger and more opaque, all of it with a soft
+  // shadow, a little denser on the light plate; the focus on the current place keeps 4.5:1.
+  test('M12.7: the banner goes with the page; its text reads on the folds', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const banners = [...css.matchAll(/\n *\.banner \{([^}]*)\}/g)].map(([, body]) => body!);
+    for (const body of banners) {
+      assert.doesNotMatch(body, /sticky|overflow|\s(height: 100vh|top:)/, body);
+    }
+    const computer =
+      /@media \(min-width: 1024px\) \{\s*\.shell \{[^}]*\}[^}]*?\.banner \{([^}]*)\}/.exec(css);
+    assert.ok(computer, 'the banner of a computer');
+    assert.match(computer[1]!, /position: relative;/);
+    assert.match(computer[1]!, /align-self: start;/);
+    assert.match(computer[1]!, /min-height: 100vh;/);
+    const rule = (selector: string) =>
+      new RegExp(`\\n${selector.replace(/[.()[\]:'=]/g, '\\$&')} \\{([^}]*)\\}`).exec(css)![1]!;
+    assert.match(rule('.banner'), /text-shadow: 0 1px 2px rgb\(6 14 38 \/ 0\.6\);/);
+    assert.match(rule('.nav'), /text-shadow: inherit;/, 'the button «Покинуть двор» as well');
+    assert.match(rule('.nav-label'), /font-size: 12px;[^}]*color: rgb\(251 247 238 \/ 0\.94\);/);
+    assert.match(rule('.banner .logo small'), /color: rgb\(251 247 238 \/ 0\.94\);/);
+    assert.match(rule('.nav-who .small'), /opacity: 0\.92;/);
+    assert.match(
+      rule(".nav:is(:hover, :focus-visible, [aria-current='page'])"),
+      /text-shadow:\s*0 1px 2px rgb\(6 14 38 \/ 0\.8\),\s*0 0 4px rgb\(6 14 38 \/ 0\.4\);/,
+    );
+    assert.match(rule(".nav[aria-current='page']"), /background: rgb\(251 247 238 \/ 0\.16\);/);
+    assert.match(
+      rule(".nav[aria-current='page']:focus-visible"),
+      /background: rgb\(251 247 238 \/ 0\.22\);/,
+    );
+  });
+
+  // M12.7: the unrolling after the sign-in keeps its 1.2 s and the swing its 0.9 s, the swing at
+  // half its angles. The cloth, the roll and its shade are drawn from the same two numbers, so the
+  // cut of the cloth never runs ahead of the roll; they stand over the veil, and wait at their
+  // start, without the roll and its shade, while fx-head.js waits for the images.
+  test('M12.7: the banner unrolls whole, over the veil, from one clock', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const block = (start: string) => {
+      const at = css.indexOf(start);
+      assert.ok(at >= 0, start);
+      return css.slice(at, css.indexOf('\n}', at));
+    };
+    for (const name of ['--unroll', '--fall']) {
+      assert.match(
+        block(`@property ${name} {`),
+        /syntax: '<number>';\s*inherits: false;\s*initial-value: 1;/,
+      );
+    }
+    const unroll = block('@keyframes fx-unroll {');
+    assert.deepEqual(
+      [...unroll.matchAll(/\n {4}([a-z-]+):/g)].map(([, name]) => name).sort(),
+      [
+        '--fall',
+        '--fall',
+        '--fall',
+        '--unroll',
+        '--unroll',
+        '--unroll',
+        'animation-timing-function',
+        'animation-timing-function',
+      ].sort(),
+      'only the two numbers move',
+    );
+    assert.ok(!css.includes('@keyframes fx-roll'));
+    assert.deepEqual(
+      [...block('@keyframes fx-settle {').matchAll(/rotateX\(([-\d.]+)deg\)/g)].map(([, a]) => a),
+      ['3.5', '-1.5', '0.5'],
+    );
+    const media = block(
+      '@media (prefers-reduced-motion: no-preference) and (min-width: 1024px) {\n  .unroll .banner {',
+    );
+    assert.match(
+      media,
+      /\.unroll \.banner \{[^}]*z-index: 51;[^}]*clip-path: inset\([^;]*var\(--unroll\)[^;]*var\(--fall\)[^;]*;[^}]*fx-unroll 1\.2s both,\s*fx-settle 0\.9s ease-out 1\.2s;/,
+    );
+    assert.match(
+      media,
+      /\.unroll \.shell::after \{[^}]*z-index: 52;[^}]*top: calc\(40px \+ \(100vh - 114px\) \* var\(--unroll\)\);[^}]*animation: fx-unroll 1\.2s both;/,
+    );
+    assert.match(
+      media,
+      /\.unroll-wait \.banner,\s*\.unroll-wait \.shell::before,\s*\.unroll-wait \.shell::after \{\s*animation-play-state: paused;\s*\}/,
+    );
+    assert.match(
+      media,
+      /\.unroll-wait \.shell::before,\s*\.unroll-wait \.shell::after \{\s*visibility: hidden;\s*\}/,
+    );
+    // The veil of the arrival is under them.
+    assert.match(css, /body::after \{[^}]*z-index: 50;/);
+  });
+
   // M12.16: a big picture of the first screen waits on the paper until its image has come and is
   // then shown whole (fx-head.js). What waits is the scene around the picture of the page and
   // nothing else — no blot, emblem or frame; its first image is that picture. The CSS hides it

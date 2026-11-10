@@ -519,9 +519,11 @@ button.sign-sm {
   margin: -2px 0 2px;
 }
 
-/* оболочка вошедшего: на компьютере знамя слева во всю высоту окна, содержимое прокручивается
-   рядом; на телефоне полоса сверху. Видна одна из двух, скрытая не получает фокус.
-   Знамя: стержень и хвост с лилией неизменны, ткань тянется по высоте */
+/* the shell of a person signed in: on a computer the banner on the left, not shorter than the
+   window (M12.7: it goes with the page, see below); on the phone the bar at the top. One of the
+   two is seen, the hidden one takes no focus. The banner: the bar and the tail with the lily stay
+   as drawn, the cloth stretches to the height. M12.7: its text has a soft shadow — on the light
+   folds of the cloth the letters keep their edge */
 .banner {
   display: flex;
   flex-direction: column;
@@ -532,13 +534,14 @@ button.sign-sm {
   border-color: transparent;
   border-image: url(img/menu-banner.webp) 300 130 378 fill / 126px 55px 160px stretch;
   color: var(--cloth);
+  text-shadow: 0 1px 2px rgb(6 14 38 / 0.6);
 }
 .banner .logo {
   padding: 0 4px 10px;
   color: var(--cloth);
 }
 .banner .logo small {
-  color: rgb(251 247 238 / 0.78);
+  color: rgb(251 247 238 / 0.94);
 }
 .banner .logo:focus-visible {
   outline: none;
@@ -547,11 +550,11 @@ button.sign-sm {
 }
 .nav-label {
   padding: 14px 8px 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgb(251 247 238 / 0.78);
+  color: rgb(251 247 238 / 0.94);
 }
 .nav {
   display: flex;
@@ -569,20 +572,28 @@ button.sign-sm {
   text-align: left;
   text-decoration: none;
   color: var(--cloth);
+  text-shadow: inherit;
   cursor: pointer;
 }
-/* наведение и фокус с клавиатуры — без рамки: пункт светлеет; текущее место светлее и жирнее,
-   а в фокусе — ещё светлее, чтобы фокус был виден и на нём */
+/* the pointer and the focus of the keyboard — without a frame: the item lightens; the current
+   place is lighter and bolder, and in the focus lighter still, so the focus is seen on it too.
+   M12.7: on the light plate the shadow is a little denser, and the focus on the current place
+   lightens it to 0.22 (0.26 before) — the letters keep 4.5:1 against the light folds */
 .nav:is(:hover, :focus-visible) {
   outline: none;
   background: rgb(251 247 238 / 0.1);
+}
+.nav:is(:hover, :focus-visible, [aria-current='page']) {
+  text-shadow:
+    0 1px 2px rgb(6 14 38 / 0.8),
+    0 0 4px rgb(6 14 38 / 0.4);
 }
 .nav[aria-current='page'] {
   background: rgb(251 247 238 / 0.16);
   font-weight: 600;
 }
 .nav[aria-current='page']:focus-visible {
-  background: rgb(251 247 238 / 0.26);
+  background: rgb(251 247 238 / 0.22);
 }
 .nav img {
   flex: none;
@@ -599,7 +610,7 @@ button.sign-sm {
   overflow-wrap: anywhere;
 }
 .nav-who .small {
-  opacity: 0.8;
+  opacity: 0.92;
 }
 .banner-foot {
   display: flex;
@@ -643,12 +654,15 @@ button.sign-sm {
     grid-template-columns: 288px minmax(0, 1fr);
     min-height: 100vh;
   }
-  /* если пункты не помещаются между стержнем и хвостом, прокручивается только ткань */
+  /* M12.7: the banner is one thing and goes with the page — the bar, the cloth and the tail
+     together, nothing scrolls inside it. It is as high as its items, not lower than the window;
+     with more items it is higher than the window, and the page scrolls to its tail. It starts
+     the row of the grid and does not stretch with a long page beside it: under its tail is
+     paper. Positioned, so it can stand over the veil (.keep-banner, .unroll) */
   .banner {
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    overflow-y: auto;
+    position: relative;
+    align-self: start;
+    min-height: 100vh;
   }
   .m-top {
     display: none;
@@ -887,9 +901,10 @@ button.sign-sm {
   .court {
     min-height: 100vh;
   }
-  /* кадр Home при любой высоте окна: 610 px при ширине 1152, верх карты срезан на 34 px, слева
-     и снизу карта растворяется в бумаге. Если окно ниже кадра со строкой под ним, страница
-     прокручивается, а знамя стоит на месте */
+  /* the frame of Home at any height of the window: 610 px at the width 1152, the top of the map
+     cut by 34 px, on the left and at the bottom the map dissolves into the paper. Where the window
+     is lower than the frame with the line under it, the page scrolls, and (M12.7) the banner goes
+     with it */
   .court-map {
     aspect-ratio: 1152 / 610;
     -webkit-mask-image:
@@ -2618,13 +2633,22 @@ button.sign-sm {
     background-image: url(img/pose-login-m.webp);
   }
 }
-/* после входа и основания (fx-head.js, .unroll, вместе с .from-door): знамя разворачивается за
-   1,2 с — под древком рулон катится вниз и худеет, у начала выреза (74 px от низа) он кончается и
-   концы выпадают; потом знамя качнётся. Рулон и тень над ним стоят в окне: знамя прилипает к его
-   верху во всю высоту. На телефоне знамени нет — только завеса */
+/* after the sign-in and the founding (fx-head.js, .unroll, with .from-door) the banner unrolls in
+   1.2 s: under the bar the roll goes down and grows thin, at the start of the cut of the tail
+   (74 px from the bottom of the window) it ends and the ends fall out; then the banner swings. The
+   roll and its shade over it stand in the window: the banner starts at its top. On the phone
+   there is no banner — only the veil. M12.7: the banner and the roll stand over the veil, so the
+   unrolling is seen from its start while the courtyard comes out of the dark; until the cloth and
+   the roll have come (fx-head.js, .unroll-wait) the animations wait at their start, without the
+   roll and its shade. A banner higher than the window unrolls in the window, the rest of it with
+   the ends */
 @media (prefers-reduced-motion: no-preference) and (min-width: 1024px) {
   .unroll .banner {
+    z-index: 51;
     transform-origin: 50% 0;
+    clip-path: inset(
+      0 0 calc((100% - 40px - (100vh - 114px) * var(--unroll)) * (1 - var(--fall))) 0
+    );
     animation:
       fx-unroll 1.2s both,
       fx-settle 0.9s ease-out 1.2s;
@@ -2633,18 +2657,19 @@ button.sign-sm {
   .unroll .shell::after {
     content: '';
     position: fixed;
-    z-index: 3;
+    z-index: 52;
     left: 40px;
-    top: 40px;
+    top: calc(40px + (100vh - 114px) * var(--unroll));
     width: 208px;
     pointer-events: none;
+    opacity: calc(1 - var(--fall));
+    animation: fx-unroll 1.2s both;
   }
   .unroll .shell::after {
-    height: 42px;
+    height: calc((42px - 24px * var(--unroll)) * (1 - var(--fall)));
     transform: translateY(-50%);
     filter: drop-shadow(0 4px 3px rgb(14 26 46 / 0.35));
     background: url(img/banner-roll.webp) 0 0 / 100% 100% no-repeat;
-    animation: fx-roll 1.2s both;
   }
   .unroll .shell::before {
     left: 42px;
@@ -2652,7 +2677,15 @@ button.sign-sm {
     height: 28px;
     transform: translateY(-100%);
     background: linear-gradient(to bottom, transparent, rgb(8 18 40 / 0.4));
-    animation: fx-roll-shade 1.2s both;
+  }
+  .unroll-wait .banner,
+  .unroll-wait .shell::before,
+  .unroll-wait .shell::after {
+    animation-play-state: paused;
+  }
+  .unroll-wait .shell::before,
+  .unroll-wait .shell::after {
+    visibility: hidden;
   }
 }
 @media (prefers-reduced-motion: no-preference) and (max-width: 1023.98px) {
@@ -2729,60 +2762,47 @@ button.sign-sm {
     opacity: 0;
   }
 }
+/* M12.7: one clock for the cloth, the roll and its shade — the CSS draws all three from the same
+   two numbers, so they move together in every frame. Animated each by itself, the cut of the
+   cloth went on while the page was busy (Chrome draws a clip-path apart from the page) and the
+   roll stood: the cloth showed under the roll. --unroll goes 0 → 1 while the roll goes down (86 %
+   of the time), --fall 0 → 1 while the ends fall out. Each of the three runs it, all at once */
+@property --unroll {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
+@property --fall {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
 @keyframes fx-unroll {
   from {
-    clip-path: inset(0 0 calc(100% - 40px) 0);
+    --unroll: 0;
+    --fall: 0;
     animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 1);
   }
   86% {
-    clip-path: inset(0 0 74px 0);
+    --unroll: 1;
+    --fall: 0;
     animation-timing-function: ease-in;
   }
   to {
-    clip-path: inset(0 0 0 0);
+    --unroll: 1;
+    --fall: 1;
   }
 }
+/* M12.7: half the angles of before (7°, −3°, 1°) — calmer, the tail hardly leaves the window */
 @keyframes fx-settle {
   30% {
-    transform: perspective(900px) rotateX(7deg);
+    transform: perspective(900px) rotateX(3.5deg);
   }
   62% {
-    transform: perspective(900px) rotateX(-3deg);
+    transform: perspective(900px) rotateX(-1.5deg);
   }
   85% {
-    transform: perspective(900px) rotateX(1deg);
-  }
-}
-@keyframes fx-roll {
-  from {
-    top: 40px;
-    height: 42px;
-    animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 1);
-  }
-  86% {
-    top: calc(100% - 74px);
-    height: 18px;
-    opacity: 1;
-    animation-timing-function: ease-in;
-  }
-  to {
-    top: calc(100% - 74px);
-    height: 0;
-    opacity: 0;
-  }
-}
-@keyframes fx-roll-shade {
-  from {
-    top: 40px;
-    animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 1);
-  }
-  86% {
-    top: calc(100% - 74px);
-    opacity: 1;
-  }
-  to {
-    top: calc(100% - 74px);
-    opacity: 0;
+    transform: perspective(900px) rotateX(0.5deg);
   }
 }
 @keyframes stamp {
