@@ -188,14 +188,18 @@
     if (cls !== null) root.classList.add(...cls.split(' '));
     if (cls !== null && keep) root.classList.add('keep-banner');
   }
-  // What the act shows is checked when the page is parsed, or at its first frame if the browser
-  // draws it sooner: not there yet — no effect.
+  // What the act shows is checked at the first frame or when the page is parsed, whichever comes
+  // first. There, the effect stays; not there once the page is parsed — no effect. M12.7: a frame
+  // drawn while the page is still being parsed proves nothing (Firefox can draw before the parser
+  // reaches the banner): the end of the parse decides, not the images or anything else after it.
   if (marker !== null) {
     let checked = false;
     const check = () => {
       if (checked) return;
+      const found = document.querySelector(marker) !== null;
+      if (!found && document.readyState === 'loading') return;
       checked = true;
-      if (document.querySelector(marker) !== null) return;
+      if (found) return;
       end(ARRIVALS);
       delete root.dataset.arrived;
     };

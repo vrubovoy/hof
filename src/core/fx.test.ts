@@ -404,6 +404,9 @@ interface Visit {
   // banner is drawn (the phone has none).
   shows?: string[];
   drawn?: boolean;
+  // M12.7: the page comes bit by bit — until parsed() the document is loading and these of what it
+  // shows are not there yet (the parser has not reached them).
+  late?: string[];
   // The sessionStorage of the tab, shared by the visits of one test.
   session?: Map<string, string>;
   // M12.16: the big pictures of the page.
@@ -485,6 +488,7 @@ function visit({
   marker = true,
   shows,
   drawn = true,
+  late,
   session = new Map(),
   scenes = [],
   cloth = CLOTH,
@@ -503,6 +507,9 @@ function visit({
   const loads: FakeLoad[] = [];
   const url = new URL(path, 'https://hof.test');
   const shell = {};
+  // Without `late` the document does not say how far it is parsed (as before M12.7).
+  let state: string | undefined = late ? 'loading' : undefined;
+  const shown = new Set(shows ?? []);
   const page: Record<string, unknown> = {
     localStorage: { getItem: () => JSON.stringify({ anim }) },
     sessionStorage: {
@@ -521,9 +528,13 @@ function visit({
           contains: (name: string) => classes.has(name),
         },
       },
+      get readyState() {
+        return state;
+      },
       addEventListener: listen,
       querySelector: (selector: string) =>
-        (shows ? shows.includes(selector) : marker && selector !== '')
+        (shows ? shown.has(selector) : marker && selector !== '') &&
+        !(state === 'loading' && late?.includes(selector))
           ? { getClientRects: () => (drawn ? [{}] : []), parentElement: shell }
           : null,
       querySelectorAll: (selector: string) =>
@@ -563,7 +574,12 @@ function visit({
     session,
     fire,
     // The parser reaches the end of the page; or the first frame is drawn before it.
-    parsed: () => fire('readystatechange'),
+    parsed: () => {
+      if (state === 'loading') state = 'interactive';
+      fire('readystatechange');
+    },
+    // What the page shows goes away (to see that nothing is checked again).
+    hide: (selector: string) => void shown.delete(selector),
     frame: () => frames.splice(0).forEach((frame) => frame()),
     // How many frames are asked for now.
     asked: () => frames.length,
@@ -1261,6 +1277,122 @@ describe('fx-head.js: the banner waits for its cloth (M12.7)', () => {
     key.parsed();
     assert.deepEqual(key.classes(), ['fx-on', 'key-off']);
     assert.deepEqual(key.asks(), []);
+  });
+});
+
+// M12.7: what the act shows is checked at the first frame or when the page is parsed, whichever
+// comes first; a frame drawn while the page is still being parsed proves nothing — Firefox drew
+// one before the parser reached the banner, and the arrival was lost (2 runs of 17).
+describe('fx-head.js: a frame before the page is parsed (M12.7)', () => {
+  const at = NOW - 1000;
+  const SIGNED_IN = {
+    after: { act: 'login', action: '/login', at },
+    path: '/',
+    redirects: 1,
+    shows: ['.banner'],
+  };
+  const UNROLLS = ['from-door', 'fx-on', 'unroll'];
+  const WAITS = [...UNROLLS, 'unroll-wait'];
+
+  test('the first frame before the banner, the banner there once parsed: the arrival stays and unrolls', () => {
+    const page = visit({ ...SIGNED_IN, late: ['.banner'] });
+    page.frame();
+    assert.deepEqual(page.classes(), WAITS, 'a frame while parsing decides nothing');
+    assert.equal(page.arrived(), 'login');
+    page.parsed();
+    assert.deepEqual(page.classes(), WAITS);
+    page.load();
+    assert.deepEqual(page.classes(), UNROLLS, 'it unrolls once its cloth and the roll have come');
+    assert.equal(page.arrived(), 'login');
+  });
+
+  test('parsed without what the act shows: no effect, nothing asked', () => {
+    const page = visit({ ...SIGNED_IN, shows: [], late: [] });
+    page.frame();
+    assert.deepEqual(page.classes(), WAITS, 'not decided while parsing');
+    page.parsed();
+    assert.deepEqual(page.classes(), ['fx-on']);
+    assert.equal(page.arrived(), undefined);
+    assert.deepEqual(page.asks(), []);
+  });
+
+  test('there before the first frame: decided at that frame, nothing waits for the parse', () => {
+    const page = visit({ ...SIGNED_IN, late: [] });
+    page.frame();
+    // Gone afterwards (no page does so): the decision was taken, the parse does not take it again.
+    page.hide('.banner');
+    page.parsed();
+    assert.deepEqual(page.classes(), UNROLLS);
+    assert.equal(page.arrived(), 'login');
+  });
+
+  test('checked once: frames and the parse after the decision change nothing', () => {
+    const page = visit({ ...SIGNED_IN, late: ['.banner'] });
+    page.frame();
+    page.parsed();
+    page.load();
+    page.hide('.banner');
+    page.frame();
+    page.fire('readystatechange');
+    assert.deepEqual(page.classes(), UNROLLS);
+    assert.equal(page.arrived(), 'login');
+  });
+
+  test('a wrong password (400 on /login, no redirect): no unrolling, nothing asked', () => {
+    const page = visit({ ...SIGNED_IN, path: '/login', redirects: 0, shows: [], late: [] });
+    page.frame();
+    page.parsed();
+    assert.deepEqual(page.classes(), ['fx-on']);
+    assert.equal(page.arrived(), undefined);
+    assert.deepEqual(page.asks(), []);
+    assert.equal(page.session.size, 0);
+  });
+
+  test('the other acts the same: the way out, the key, an expense', () => {
+    const cases: [string, Visit, string[]][] = [
+      [
+        'the way out',
+        {
+          after: { act: 'logout', action: '/logout', at },
+          path: '/login',
+          redirects: 1,
+          shows: ['form[action="/login"]'],
+        },
+        ['from-door', 'fx-on'],
+      ],
+      [
+        'the key',
+        {
+          after: { act: 'key', action: '/admin/users/7/disable', at },
+          path: '/admin/users/7',
+          redirects: 1,
+          shows: ['form[action="/admin/users/7/enable"]'],
+        },
+        ['fx-on', 'key-off'],
+      ],
+      [
+        'an expense',
+        {
+          after: { act: 'expense', action: '/saeckel/pouches/7/expense', at },
+          path: '/saeckel/pouches/7',
+          redirects: 1,
+          shows: ['mark.move'],
+        },
+        ['fx-on', 'spent'],
+      ],
+    ];
+    for (const [name, change, kept] of cases) {
+      const late = visit({ ...change, late: change.shows });
+      late.frame();
+      assert.deepEqual(late.classes(), kept, `${name}: while parsing`);
+      late.parsed();
+      assert.deepEqual(late.classes(), kept, name);
+      const missing = visit({ ...change, shows: [], late: [] });
+      missing.frame();
+      missing.parsed();
+      assert.deepEqual(missing.classes(), ['fx-on'], `${name}: not there`);
+      assert.equal(missing.arrived(), undefined, `${name}: not there`);
+    }
   });
 });
 
