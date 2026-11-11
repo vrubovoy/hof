@@ -2664,6 +2664,24 @@ button.place {
     background-image: url(img/pose-login-m.webp);
   }
 }
+/* M12.9: on a phone held upright (narrower than 600 px) a frame of the leaves is drawn smaller
+   than in its master (0.76 of it at 390 px and 3x), so the strip is the master as it is, not the
+   one twice as large: a third of its bytes, a quarter of its memory once decoded. The same frames
+   and steps; a wider screen (a tablet, a phone on its side) would enlarge it, so it keeps the 2x */
+@media (prefers-reduced-motion: no-preference) and (max-width: 599.98px) {
+  .fx-on .fx-olive.wake {
+    background-image: url(img/fx-leaves-olive-mobile.webp);
+  }
+  .fx-on .fx-bush-l.wake {
+    background-image: url(img/fx-leaves-bush-l-mobile.webp);
+  }
+  .fx-on .fx-bush-r.wake {
+    background-image: url(img/fx-leaves-bush-r-mobile.webp);
+  }
+  .fx-on .fx-tree.wake {
+    background-image: url(img/fx-leaves-tree-mobile.webp);
+  }
+}
 /* after the sign-in and the founding (fx-head.js, .unroll, with .from-door) the banner unrolls in
    1.2 s: under the bar the roll goes down and grows thin, at the start of the cut of the tail
    (74 px from the bottom of the window) it ends and the ends fall out; then the banner swings. The

@@ -20,9 +20,13 @@ error-500-mobile.png       core/error-500-mobile@3x.webp        1x    80
 fx-banner-gate-l.png       core/fx-banner-gate-l.webp           2x/8  75
 fx-banner-gate-r.png       core/fx-banner-gate-r.webp           2x/8  75
 fx-banner-tower.png        core/fx-banner-tower.webp            2x/8  75
+fx-leaves-bush-l.png       core/fx-leaves-bush-l-mobile.webp    1x    75
 fx-leaves-bush-l.png       core/fx-leaves-bush-l.webp           2x/8  75
+fx-leaves-bush-r.png       core/fx-leaves-bush-r-mobile.webp    1x    75
 fx-leaves-bush-r.png       core/fx-leaves-bush-r.webp           2x/8  75
+fx-leaves-olive.png        core/fx-leaves-olive-mobile.webp     1x    75
 fx-leaves-olive.png        core/fx-leaves-olive.webp            2x/8  75
+fx-leaves-tree.png         core/fx-leaves-tree-mobile.webp      1x    75
 fx-leaves-tree.png         core/fx-leaves-tree.webp             2x/8  75
 icon-bag.png               saeckel/icon-bag.webp                1x    86
 icon-basket.png            saeckel/icon-basket.webp             1x    86
