@@ -4028,6 +4028,35 @@ describe('the look of Hof: pages, CSS and static files', () => {
     assert.match(gust, /to \{[^}]*background-position: 100% 0;/);
   });
 
+  // M12.9: on a phone held upright a frame of the leaves is drawn smaller than in its master, so the
+  // four crowns take the strip of the master as it is — half the width and the height of the strip
+  // twice as large, the same 8 frames — after the rules of the 2x, so that it wins there. Wider
+  // screens keep the 2x; the water and the banners are the same on every screen.
+  test('M12.9: a narrow phone takes the strips of the leaves at 1x, every other screen the 2x', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const block =
+      /@media \(prefers-reduced-motion: no-preference\) and \(max-width: 599\.98px\) \{([\s\S]*?)\n\}/.exec(
+        css,
+      )!;
+    const narrow = block[1]!;
+    const wide = css.slice(0, block.index);
+    for (const crown of ['olive', 'bush-l', 'bush-r', 'tree']) {
+      const full = webpCanvas(`fx-leaves-${crown}.webp`);
+      const small = webpCanvas(`fx-leaves-${crown}-mobile.webp`);
+      assert.deepEqual(small, { width: full.width / 2, height: full.height / 2 }, crown);
+      assert.equal(small.width % 8, 0, crown);
+      const rule = (file: string) =>
+        new RegExp(
+          String.raw`\.fx-on \.fx-${crown}\.wake \{\s*background-image: url\([^)]*/${file}\.webp[^)]*\);\s*\}`,
+        );
+      assert.match(narrow, rule(`fx-leaves-${crown}-mobile`), crown);
+      assert.match(wide, rule(`fx-leaves-${crown}`), crown);
+    }
+    assert.equal([...narrow.matchAll(/background-image/g)].length, 4);
+    assert.doesNotMatch(narrow, /fx-banner|fx-fountain|animation/);
+  });
+
   // M12.11: a slide (a page of the book) moves away at once and slows down to its stop, the next
   // page starts and stops softly — in the CSS of Hof and of Säckel; before, the page away stood
   // still at full speed while the next page loaded. Säckel goes to the courtyard into the dark.
