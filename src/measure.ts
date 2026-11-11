@@ -6,7 +6,8 @@
 // Headless Chrome is driven over the DevTools protocol with the WebSocket and fetch of Node, so
 // nothing is installed. Two profiles, each with its screen, network and CPU, and «Анимации» off
 // and on. Every page is opened with the cache of the browser emptied (cold) and once more (warm).
-// Two transitions are measured from the press of the link to the first paint of the next page.
+// Two transitions are measured from the press of the link to the first paint of the next page,
+// with the long frames of both pages (requestAnimationFrame and, M12.9, long animation frames).
 // The medians of all runs go to stdout as Markdown tables, the progress to stderr.
 //
 // Data: the script founds a court on an empty development database (the gate key comes from the
@@ -14,7 +15,7 @@
 // is not on this computer is refused.
 
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -86,12 +87,31 @@ const LONG_FRAME_MS = 50;
 // of a link, the frames: on the page left from the press to pagehide, on the next page for its
 // first 4 s. The click time and the frames of the page left go through sessionStorage. Frames are
 // [start as epoch ms, length ms].
+//
+// M12.9: and the long animation frames (LoAF) of the whole page, where the browser has them: every
+// frame of 50 ms or more with all the work in it — the scripts, the style, the layout, the paint.
+// The frames of requestAnimationFrame do not see the work before the first frame of a page, and
+// that is where the long frames of a transition were. The entries are kept here as they come, from
+// the start of the page, so the limited buffer of the browser loses none; what it could not give is
+// counted. Without the API the page says so, and the table shows no number.
 const PROBE = `(() => {
   const lcp = [];
   try {
     new PerformanceObserver((list) => lcp.push(...list.getEntries()))
       .observe({ type: 'largest-contentful-paint', buffered: true });
   } catch {}
+  const long = { known: false, dropped: 0, list: [] };
+  try {
+    long.known = PerformanceObserver.supportedEntryTypes.includes('long-animation-frame');
+    if (long.known) {
+      new PerformanceObserver((list, observer, options) => {
+        for (const e of list.getEntries()) long.list.push([performance.timeOrigin + e.startTime, e.duration]);
+        long.dropped += options?.droppedEntriesCount ?? 0;
+      }).observe({ type: 'long-animation-frame', buffered: true });
+    }
+  } catch {
+    long.known = false;
+  }
   const frames = [];
   let running = false;
   let last = null;
@@ -116,9 +136,25 @@ const PROBE = `(() => {
   }, true);
   addEventListener('pagehide', () => {
     sessionStorage.setItem('hof-measure.frames', JSON.stringify(frames));
+    sessionStorage.setItem('hof-measure.long', JSON.stringify(long));
   });
-  window.__hofMeasure = { lcp, frames };
+  window.__hofMeasure = { lcp, frames, long };
 })();`;
+
+// M12.9: the frames of a page before a press, 30 of them: the median length. On battery Chrome may
+// draw at most 30 frames a second (its energy saver); then every frame and animation is measured
+// at half the rate, so the press is refused rather than measured.
+const FRAME_RATE = `new Promise((done) => {
+  const at = [];
+  const tick = (now) => {
+    at.push(now);
+    if (at.length < 31) return requestAnimationFrame(tick);
+    const lengths = at.slice(1).map((t, i) => t - at[i]).sort((a, b) => a - b);
+    done(lengths[15]);
+  };
+  requestAnimationFrame(tick);
+})`;
+const FRAME_MS_MAX = 25;
 
 const READ_PAGE = `(() => {
   const fcp = performance.getEntriesByName('first-contentful-paint')[0];
@@ -132,8 +168,10 @@ const READ_PAGE = `(() => {
 const READ_TRANSITION = `(() => {
   const click = Number(sessionStorage.getItem('hof-measure.click'));
   const left = JSON.parse(sessionStorage.getItem('hof-measure.frames') ?? '[]');
+  const leftLong = JSON.parse(sessionStorage.getItem('hof-measure.long') ?? 'null');
   sessionStorage.removeItem('hof-measure.click');
   sessionStorage.removeItem('hof-measure.frames');
+  sessionStorage.removeItem('hof-measure.long');
   const t0 = performance.timeOrigin;
   const nav = performance.getEntriesByType('navigation')[0];
   const paint = performance.getEntriesByName('first-paint')[0] ?? performance.getEntriesByName('first-contentful-paint')[0];
@@ -142,6 +180,15 @@ const READ_TRANSITION = `(() => {
   const fresh = window.__hofMeasure.frames
     .filter(([at]) => firstPaint !== null && at >= firstPaint && at < firstPaint + ${AFTER_ARRIVAL_MS})
     .map(([, length]) => length);
+  // LoAF: on the page left, the frames that end after the press; on the next page, from its start
+  // (the frames before its first paint too) to the end of the window of its frames.
+  const here = window.__hofMeasure.long;
+  const oldLoaf = leftLong?.known
+    ? leftLong.list.filter(([at, length]) => at + length >= click).map(([, length]) => length)
+    : null;
+  const newLoaf = here.known && firstPaint !== null
+    ? here.list.filter(([at]) => at < firstPaint + ${AFTER_ARRIVAL_MS}).map(([, length]) => length)
+    : null;
   return {
     path: location.pathname,
     toRequest: t0 + nav.requestStart - click,
@@ -151,6 +198,11 @@ const READ_TRANSITION = `(() => {
     newFrames: fresh.length,
     newLong: fresh.filter((length) => length > ${LONG_FRAME_MS}).length,
     newMax: Math.max(0, ...fresh),
+    oldLoaf: oldLoaf?.length ?? null,
+    oldLoafMax: oldLoaf === null ? null : Math.max(0, ...oldLoaf),
+    newLoaf: newLoaf?.length ?? null,
+    newLoafMax: newLoaf === null ? null : Math.max(0, ...newLoaf),
+    loafDropped: (leftLong?.dropped ?? 0) + here.dropped,
   };
 })()`;
 
@@ -170,6 +222,12 @@ interface TransitionRead {
   newFrames: number;
   newLong: number;
   newMax: number;
+  // null: the browser has no long animation frames.
+  oldLoaf: number | null;
+  oldLoafMax: number | null;
+  newLoaf: number | null;
+  newLoafMax: number | null;
+  loafDropped: number;
 }
 
 interface Load {
@@ -277,6 +335,13 @@ interface Message {
 
 async function startChrome(path: string) {
   const profile = mkdtempSync(join(tmpdir(), 'hof-measure-'));
+  // M12.9: the energy saver of Chrome off in the new profile (the setting of Local State, checked
+  // in Chrome 157: on battery at 19 % the frames stay 16.7 ms). In a new profile it turns on at 20 %
+  // of the battery and halves the frames; the frame rate is checked before each press as well.
+  writeFileSync(
+    join(profile, 'Local State'),
+    JSON.stringify({ performance_tuning: { battery_saver_mode: { state: 0 } } }),
+  );
   const chrome = spawn(
     path,
     [
@@ -527,6 +592,13 @@ async function transition(
   await open(chrome, origin + to);
   await open(chrome, origin + from);
   await sleep(BEFORE_PRESS_MS);
+  const frame = await chrome.evaluate<number>(FRAME_RATE);
+  if (frame > FRAME_MS_MAX) {
+    throw new Refusal(
+      `Chrome рисует кадр раз в ${Math.round(frame)} мс, а не раз в 16,7 мс (энергосбережение?) — ` +
+        'замер остановлен.',
+    );
+  }
   const arrived = chrome.next('Page.loadEventFired', 60_000);
   await press(chrome, links);
   await arrived;
@@ -551,6 +623,21 @@ const ms = (value: number) => String(Math.round(value));
 function spread(values: number[]) {
   if (values.length < 2) return ms(median(values));
   return `${ms(median(values))} (${ms(Math.min(...values))}–${ms(Math.max(...values))})`;
+}
+
+// LoAF of one page over the runs: number / longest, the medians. A browser without the API gives
+// no number; entries it could not give are named.
+function longFrames(
+  list: TransitionRead[],
+  count: 'oldLoaf' | 'newLoaf',
+  longest: 'oldLoafMax' | 'newLoafMax',
+) {
+  if (list.some((read) => read[count] === null)) return 'нет API';
+  const cell =
+    `${ms(median(list.map((read) => read[count]!)))} / ` +
+    `${ms(median(list.map((read) => read[longest]!)))}`;
+  const lost = list.reduce((sum, read) => sum + read.loafDropped, 0);
+  return lost > 0 ? `${cell} (потеряно ${lost})` : cell;
 }
 
 async function main() {
@@ -648,10 +735,11 @@ async function main() {
     }
     out.push(
       '',
-      `Переходы (${profile.name.toLowerCase()}), кадры дольше ${LONG_FRAME_MS} мс: число / самый длинный.`,
+      `Переходы (${profile.name.toLowerCase()}), кадры дольше ${LONG_FRAME_MS} мс: число / самый ` +
+        'длинный — по requestAnimationFrame (rAF) и long animation frames (LoAF).',
       '',
-      '| Переход | Анимации | Нажатие → запрос | Нажатие → первая отрисовка | Кадры старой страницы | Кадры новой страницы |',
-      '|---|---|---|---|---|---|',
+      '| Переход | Анимации | Нажатие → запрос | Нажатие → первая отрисовка | rAF старой страницы | rAF новой страницы | LoAF старой страницы | LoAF новой страницы |',
+      '|---|---|---|---|---|---|---|---|',
     );
     for (const anim of [false, true]) {
       for (const { name } of TRANSITIONS) {
@@ -662,7 +750,8 @@ async function main() {
         out.push(
           `| ${name} | ${anim ? 'вкл' : 'выкл'} | ${spread(pick('toRequest'))} | ` +
             `${spread(pick('toPaint'))} | ${ms(median(pick('oldLong')))} / ${ms(median(pick('oldMax')))} | ` +
-            `${ms(median(pick('newLong')))} / ${ms(median(pick('newMax')))} |`,
+            `${ms(median(pick('newLong')))} / ${ms(median(pick('newMax')))} | ` +
+            `${longFrames(list, 'oldLoaf', 'oldLoafMax')} | ${longFrames(list, 'newLoaf', 'newLoafMax')} |`,
         );
       }
     }
