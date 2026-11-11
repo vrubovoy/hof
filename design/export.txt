@@ -6,6 +6,7 @@
 #            2x/8 — a sheet of 8 frames side by side, each frame twice as large
 #   quality  WebP quality; a master with transparency keeps it at full quality
 # master                   file                                 size  quality
+emblem-saeckel-small.png   saeckel/emblem-saeckel-small.webp    1x    86
 error-403-mobile.png       core/error-403-mobile@2x.webp        780   80
 error-403-mobile.png       core/error-403-mobile@3x.webp        1x    80
 error-403.png              core/error-403.webp                  1x    82
@@ -23,6 +24,23 @@ fx-leaves-bush-l.png       core/fx-leaves-bush-l.webp           2x/8  75
 fx-leaves-bush-r.png       core/fx-leaves-bush-r.webp           2x/8  75
 fx-leaves-olive.png        core/fx-leaves-olive.webp            2x/8  75
 fx-leaves-tree.png         core/fx-leaves-tree.webp             2x/8  75
+icon-bag.png               saeckel/icon-bag.webp                1x    86
+icon-basket.png            saeckel/icon-basket.webp             1x    86
+icon-books.png             saeckel/icon-books.webp              1x    86
+icon-bowl.png              saeckel/icon-bowl.webp               1x    86
+icon-bundle.png            saeckel/icon-bundle.webp             1x    86
+icon-cart.png              saeckel/icon-cart.webp               1x    86
+icon-comb.png              saeckel/icon-comb.webp               1x    86
+icon-hammer.png            saeckel/icon-hammer.webp             1x    86
+icon-hearth.png            saeckel/icon-hearth.webp             1x    86
+icon-jug.png               saeckel/icon-jug.webp                1x    86
+icon-lute.png              saeckel/icon-lute.webp               1x    86
+icon-mortar.png            saeckel/icon-mortar.webp             1x    86
+icon-needle.png            saeckel/icon-needle.webp             1x    86
+icon-pot.png               saeckel/icon-pot.webp                1x    86
+icon-pouch.png             saeckel/icon-pouch.webp              1x    86
+icon-scroll.png            saeckel/icon-scroll.webp             1x    86
+icon-toyhorse.png          saeckel/icon-toyhorse.webp           1x    86
 login-desktop-v2.png       core/login-desktop-v2.webp           1x    82
 login-desktop-v2.png       core/login-desktop-v2@2x.webp        2x    75
 login-mobile-v2.png        core/login-mobile-v2@2x.webp         780   80

@@ -1193,7 +1193,7 @@ describe('Кладовая on Мешки', () => {
       [...storeroom.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]!.trim()),
       [apples, oranges].map(
         (id) =>
-          `<a class="stored" href="/saeckel/pouches/${id}" ><img src="${saeckelStatic.url('img/emblem-saeckel-small.webp')}" srcset="${saeckelStatic.url('img/emblem-saeckel-small@2x.webp')} 2x" alt="" draggable="false" /><span>${id === apples ? 'Яблоки' : 'Апельсины'}</span></a > <form method="post" action="/saeckel/pouches/${id}/restore"> <button type="submit" class="btn">Вернуть</button> </form>`,
+          `<a class="stored" href="/saeckel/pouches/${id}" ><img src="${saeckelStatic.url('img/icon-pouch.webp')}" alt="" draggable="false" /><span>${id === apples ? 'Яблоки' : 'Апельсины'}</span></a > <form method="post" action="/saeckel/pouches/${id}/restore"> <button type="submit" class="btn">Вернуть</button> </form>`,
       ),
     );
     assert.ok(!page.includes('Старый Бориса'));
