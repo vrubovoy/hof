@@ -265,7 +265,7 @@ async function drawnPages(): Promise<[string, number, string][]> {
 // The picture of each sign, copied from the prototype PouchEditMobile on purpose: the test
 // must not share the set with the code.
 const SIGN_FILES: [string, string][] = [
-  ['pouch', 'emblem-saeckel-small'],
+  ['pouch', 'icon-pouch'],
   ['cart', 'icon-cart'],
   ['basket', 'icon-basket'],
   ['hearth', 'icon-hearth'],
@@ -444,6 +444,8 @@ describe('the pages of Säckel', () => {
     for (const address of folderFiles()) {
       assert.equal(await served(address), 200, address);
       if (address === '/saeckel/static/fonts/OFL.txt') continue;
+      // The emblem is named by the banner of Hof (src/main.test.ts), not by a page of Säckel.
+      if (address === '/saeckel/static/img/emblem-saeckel-small.webp') continue;
       assert.ok(named.has(address), `nothing names ${address}`);
     }
   });
@@ -1392,12 +1394,35 @@ describe('the signs, the money and the storeroom of the column', () => {
     ].map((match) => match[1]!);
     assert.deepEqual(pictures, [
       ...SIGN_FILES.map(([, file]) => asset(`img/${file}.webp`)),
-      asset('img/emblem-saeckel-small.webp'),
+      asset('img/icon-pouch.webp'),
     ]);
-    // The default sign has its sharper copy for dense screens.
-    assert.ok(
-      page.includes(`srcset="${asset('img/emblem-saeckel-small@2x.webp')} 2x"`),
-      'the default sign at 2x',
+    // M12.8: one file for every sign, the default one too; no sign names a second file, and the
+    // emblem of Säckel is no sign any more.
+    const signs = [...page.matchAll(/<img\s[^>]*\/img\/icon-[^>]*>/g)].map((match) => match[0]);
+    assert.equal(signs.length, SIGN_FILES.length + 2); // the unknown one and the open pouch
+    for (const sign of signs) assert.match(sign, /^<img src="[^"]*" alt="" draggable="false" \/>$/);
+    assert.ok(!page.includes('emblem-saeckel'));
+  });
+
+  // M12.8: a sign is drawn at most 48 px wide at 3x, so each file is 144 x 144 px, the bag of the
+  // default sign too; the emblem of Säckel in the banner of Hof (28 px) is 96 x 96 like its
+  // neighbours there. One file each: the 2x copy of the old default sign is gone.
+  test('M12.8: each sign a picture of 144 px, the emblem of the banner 96 px', () => {
+    const canvas = (file: string) => {
+      const data = readFileSync(join(STATIC, 'img', file));
+      assert.equal(data.toString('latin1', 0, 4), 'RIFF', file);
+      assert.equal(data.toString('latin1', 8, 16), 'WEBPVP8X', file);
+      return [data.readUIntLE(24, 3) + 1, data.readUIntLE(27, 3) + 1];
+    };
+    for (const [key, file] of SIGN_FILES) {
+      assert.equal(file, `icon-${key}`, key);
+      assert.deepEqual(canvas(`${file}.webp`), [144, 144], file);
+    }
+    assert.deepEqual(canvas('emblem-saeckel-small.webp'), [96, 96]);
+    const pictures = readdirSync(join(STATIC, 'img'));
+    assert.deepEqual(
+      pictures.filter((name) => /^(icon-|emblem-saeckel)/.test(name)).sort(),
+      [...SIGN_FILES.map(([, file]) => `${file}.webp`), 'emblem-saeckel-small.webp'].sort(),
     );
   });
 

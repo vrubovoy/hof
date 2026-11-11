@@ -121,10 +121,11 @@ type Icon = keyof typeof ICONS;
 
 const DEFAULT_ICON: Icon = 'pouch';
 
-// The picture of each sign, a file of the static folder of Säckel; the default sign is the emblem
-// of Säckel. The name of a file comes from this set, never from the database or a form.
+// The picture of each sign, a file of the static folder of Säckel, 144 px for a box of 48 at 3x
+// (M12.8); the default sign is the bag of the emblem of Säckel, cut out on its own. The name of a
+// file comes from this set, never from the database or a form.
 const SIGN_FILES: Record<Icon, string> = {
-  pouch: 'emblem-saeckel-small',
+  pouch: 'icon-pouch',
   cart: 'icon-cart',
   basket: 'icon-basket',
   hearth: 'icon-hearth',
@@ -446,15 +447,7 @@ function blot(file: string, place: string) {
 // does not know. Decorative: the name of the pouch is said by the text beside it.
 function signPicture(stored: string) {
   const icon = parseIcon(stored) ?? DEFAULT_ICON;
-  if (icon !== DEFAULT_ICON) {
-    return html`<img src="${asset(`img/${SIGN_FILES[icon]}.webp`)}" alt="" draggable="false" />`;
-  }
-  return html`<img
-    src="${asset(`img/${SIGN_FILES[icon]}.webp`)}"
-    srcset="${asset(`img/${SIGN_FILES[icon]}@2x.webp`)} 2x"
-    alt=""
-    draggable="false"
-  />`;
+  return html`<img src="${asset(`img/${SIGN_FILES[icon]}.webp`)}" alt="" draggable="false" />`;
 }
 
 // The error of a form, under its field.
