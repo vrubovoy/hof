@@ -402,6 +402,46 @@ describe('the pages of Säckel', () => {
     }
   });
 
+  // M13.1: the lines of the ruling and the small text of Säckel were too thin to read. The main
+  // text is heavier and larger, no text is smaller than 15 px, the secondary ink keeps WCAG AA on
+  // the paper, and the lines of the ruling are at least 2 px, the rows still lighter than the
+  // line under the headers. On a computer the large amount stands above the date and the note.
+  test('M13.1: the text is heavy and large enough, the secondary ink dark enough, the ruling thick enough', () => {
+    const css = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    const sizes = [...css.matchAll(/font-size: (\d+)px/g)].map((match) => Number(match[1]));
+    assert.ok(sizes.length > 0);
+    assert.ok(Math.min(...sizes) >= 15);
+    assert.match(css, /\nbody \{[^}]*font-size: 19px;[^}]*font-weight: 500;/);
+
+    const colour = (name: string) =>
+      /^#[0-9a-f]{6}$/.exec(new RegExp(`--${name}: (#\\w+);`).exec(css)![1]!)![0];
+    const luminance = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((at) => {
+        const part = parseInt(hex.slice(at, at + 2), 16) / 255;
+        return part <= 0.04045 ? part / 12.92 : ((part + 0.055) / 1.055) ** 2.4;
+      }) as [number, number, number];
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrast = (luminance(colour('paper')) + 0.05) / (luminance(colour('ink-2')) + 0.05);
+    assert.ok(contrast >= 4.5, `secondary ink on paper: ${contrast.toFixed(2)}`);
+
+    const stroke = (file: string) => {
+      const svg = readFileSync(join(STATIC, 'img', `${file}.svg`), 'utf8');
+      return {
+        width: Number(/stroke-width="([\d.]+)"/.exec(svg)![1]),
+        colour: /stroke="(#[0-9A-Fa-f]{6})"/.exec(svg)![1]!.toLowerCase(),
+      };
+    };
+    for (const file of ['pen-rule-light', 'pen-vrule-light', 'pen-rule', 'pen-panel', 'pen-pick']) {
+      assert.ok(stroke(file).width >= 2, file);
+    }
+    assert.notEqual(stroke('pen-rule-light').colour, stroke('pen-rule').colour);
+    assert.equal(stroke('pen-vrule-light').colour, stroke('pen-rule-light').colour);
+
+    assert.match(css, /\.entry-row \.field-amount \{\s*grid-column: 1 \/ -1;/);
+    assert.doesNotMatch(css, /\.entry-row \.field-(date|note) \{/);
+  });
+
   test('the font: every face has its range; ₽ is drawn by latin-ext, upright and italic', () => {
     const faces = [...CSS.matchAll(/@font-face\s*{([^}]*)}/g)].map(([, face]) => ({
       style: /font-style:\s*(\w+)/.exec(face!)?.[1],

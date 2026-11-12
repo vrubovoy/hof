@@ -70,7 +70,7 @@
 :root {
   --paper: #f7efe0;
   --ink: #14243d;
-  --ink-2: #4f5868;
+  --ink-2: #2c3443;
   --blue: #1f4e9e;
   --red: #a83224;
   --pen: #1b2e52; /* чернила надписей на ленте */
@@ -103,9 +103,10 @@ body {
   background-blend-mode: multiply, normal;
   color: var(--ink);
   font-family: var(--font);
-  font-size: 18px;
+  font-size: 19px;
   line-height: 1.42;
   font-variant-numeric: lining-nums tabular-nums;
+  font-weight: 500;
 }
 
 a {
@@ -146,15 +147,15 @@ img {
 }
 .caps {
   margin: 0;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-2);
 }
 /* суммы: жирные, одной строкой; минус — красный */
 .money {
-  font-weight: 700;
+  font-weight: 800;
   white-space: nowrap;
 }
 .neg {
@@ -168,8 +169,8 @@ img {
   gap: 5px;
 }
 .field label {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 700;
 }
 .input {
   width: 100%;
@@ -183,14 +184,14 @@ img {
   -webkit-appearance: none;
   appearance: none;
   font: inherit;
-  font-size: 18px;
+  font-size: 19px;
   color: var(--ink);
 }
 /* сумма — поле крупнее, цифры жирные */
 .input.big {
   height: 56px;
   font-size: 26px;
-  font-weight: 700;
+  font-weight: 800;
 }
 /* поле в фокусе: та же линия пером, только синяя и жирнее (у поля с ошибкой — красная) */
 .input:focus {
@@ -235,12 +236,13 @@ img {
 }
 .hint {
   margin: 0;
-  font-size: 15px;
+  font-size: 18px;
   color: var(--ink-2);
+  font-weight: 600;
 }
 .err-text {
   margin: 0;
-  font-size: 15px;
+  font-size: 18px;
   font-style: italic;
   color: var(--red);
 }
@@ -311,7 +313,7 @@ img {
   border-image-slice: 16 fill;
   border-image-width: 16px;
   border-image-repeat: stretch;
-  font-size: 17px;
+  font-size: 18px;
   font-style: italic;
   color: var(--ink);
 }
@@ -343,7 +345,7 @@ img {
 
 .link-plain,
 .link {
-  font-weight: 600;
+  font-weight: 700;
   text-decoration: none;
   color: var(--blue);
 }
@@ -363,8 +365,8 @@ img {
   padding: 8px 10px;
   background: url(img/pen-rule.svg) left bottom / 100% 6px no-repeat;
   text-align: left;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--ink-2);
 }
@@ -406,7 +408,7 @@ img {
   min-width: 0;
 }
 .form-row .btn {
-  margin-top: calc(15px * 1.42 + 5px);
+  margin-top: calc(18px * 1.42 + 5px);
 }
 .form-row > .err-text {
   flex-basis: 100%;
@@ -654,17 +656,18 @@ img {
 }
 .pouch .name {
   font-size: 19px;
-  font-weight: 600;
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 .pouch .sub {
-  font-size: 14px;
+  font-size: 16px;
   color: var(--ink-2);
+  font-weight: 600;
 }
 .pouch .bal {
   max-width: 11em;
   font-size: 19px;
-  font-weight: 700;
+  font-weight: 800;
   text-align: right;
 }
 
@@ -692,15 +695,15 @@ img {
 }
 /* без «+ Новый мешок» раскрытый список начинается под заголовком */
 .storeroom[open]:only-child {
-  padding-top: calc(15px * 1.42 + 6px);
+  padding-top: calc(18px * 1.42 + 6px);
 }
 .storeroom summary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   list-style: none;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 700;
   color: var(--ink-2);
   cursor: pointer;
 }
@@ -739,7 +742,7 @@ img {
   align-items: center;
   gap: 12px;
   min-width: 0;
-  font-weight: 600;
+  font-weight: 700;
   text-decoration: none;
   overflow-wrap: anywhere;
   color: var(--ink);
@@ -856,7 +859,7 @@ mark.move {
   color: var(--ink-2);
 }
 .move-sum {
-  font-weight: 700;
+  font-weight: 800;
   text-align: right;
   white-space: nowrap;
 }
@@ -876,8 +879,9 @@ mark.move {
   margin: 0;
 }
 
-/* «Доход» и «Переложить»: поля, подсказка и кнопка друг под другом; сумма, дата и заметка — одна
-   колонка, на компьютере в ряд (SaeckelForms, IncomeMobile) */
+/* «Доход» and «Переложить»: the fields, the hint and the button one under another; the amount, the
+   date and the note are one column on the phone (IncomeMobile), on a computer the amount stands
+   above the date and the note */
 .entry {
   display: flex;
   flex-direction: column;
@@ -955,6 +959,7 @@ mark.move {
 .assign-name {
   min-width: 0;
   overflow-wrap: anywhere;
+  font-weight: 700;
 }
 .put-head {
   width: 220px;
@@ -1015,8 +1020,8 @@ mark.move {
 }
 .signs legend {
   padding: 0 0 6px;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 700;
 }
 .icons {
   display: grid;
@@ -1030,9 +1035,9 @@ mark.move {
   align-items: center;
   gap: 1px;
   padding: 9px 2px 4px;
-  /* в прототипе подпись знака набрана как подпись поля: 15 px, полужирная */
-  font-size: 15px;
-  font-weight: 600;
+  /* the word of a sign is set as the label of a field */
+  font-size: 18px;
+  font-weight: 700;
   color: var(--ink-2);
   cursor: pointer;
 }
@@ -1157,7 +1162,7 @@ mark.move {
   overflow-wrap: normal;
 }
 .history td.h-sum {
-  font-weight: 700;
+  font-weight: 800;
 }
 .history .h-go {
   width: 40px;
@@ -1215,8 +1220,8 @@ mark.move {
   background: url(img/pen-rule-light.svg) left bottom / 100% 6px no-repeat;
 }
 .record-lines dt {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 700;
   color: var(--ink-2);
 }
 .record-lines dd {
@@ -1224,7 +1229,7 @@ mark.move {
   overflow-wrap: anywhere;
 }
 .line-sum dd {
-  font-weight: 700;
+  font-weight: 800;
 }
 .line-note dd {
   font-style: italic;
@@ -1298,15 +1303,15 @@ mark.move {
     grid-template-columns: 190px 160px minmax(0, 1fr) auto;
   }
   .expense-row .btn {
-    margin-top: calc(15px * 1.42 + 5px);
+    margin-top: calc(18px * 1.42 + 5px);
   }
   .expense-row .input.big {
     height: 46px;
-    font-size: 18px;
-    font-weight: 400;
+    font-size: 19px;
+    font-weight: 500;
   }
   .move {
-    grid-template-columns: 60px minmax(0, 211px) minmax(0, 1fr) auto;
+    grid-template-columns: 60px minmax(0, 240px) minmax(0, 1fr) auto;
   }
   /* вид записи с большой буквы, как в Saeckel; в тексте он прежний */
   .move-kind::first-letter {
@@ -1316,14 +1321,18 @@ mark.move {
     padding-top: 16px;
     background: url(img/pen-rule-light.svg) left top / 100% 6px no-repeat;
   }
-  /* «Доход», «Переложить»: сумма, дата и заметка в ряд; дата и заметка ниже на разницу высоты
-     полей — их нижний край вровень с крупной суммой, ошибка каждого поля под ним */
+  /* «Доход», «Переложить», a record without a list beside the amount (M13.1): the large amount on
+     a line of its own, the date and the note in a row under it — the labels of a row stand on one
+     line, and the note takes the rest of the frame */
   .entry-row {
-    grid-template-columns: 190px 160px minmax(0, 1fr);
+    grid-template-columns: 190px minmax(0, 1fr);
   }
-  .entry-row .field-date,
-  .entry-row .field-note {
-    margin-top: 10px;
+  .entry-row .field-amount {
+    grid-column: 1 / -1;
+  }
+  /* the field alone is narrow: its error under it has the whole line */
+  .entry-row .field-amount .input {
+    max-width: 260px;
   }
   /* запись одного мешка: список рядом с суммой, дата и заметка под ними (SaeckelForms) */
   .record-row {
@@ -1465,7 +1474,7 @@ mark.move {
 }
 
 /* компьютер поуже: виньетка над текстом, а не рядом; поля траты в две строки, кнопка под ними;
-   у дохода и перекладывания сумма и дата в ряд, заметка под ними; у движений столбец вида уже */
+   у движений столбец вида уже */
 @media (min-width: 1024px) and (max-width: 1279.98px) {
   .expense-row {
     grid-template-columns: 170px minmax(0, 1fr);
@@ -1475,13 +1484,6 @@ mark.move {
   }
   .expense-row .btn {
     justify-self: start;
-    margin-top: 0;
-  }
-  .entry-row {
-    grid-template-columns: 190px minmax(0, 1fr);
-  }
-  .entry-row .field-note {
-    grid-column: 1 / -1;
     margin-top: 0;
   }
   .move {
@@ -1605,7 +1607,7 @@ mark.move {
     display: none;
   }
   .sk-empty-text .muted {
-    font-size: 15px;
+    font-size: 18px;
   }
   .new-pouch .btn {
     flex-basis: 100%;
@@ -1625,7 +1627,7 @@ mark.move {
   }
   .pouch-links {
     gap: 4px 16px;
-    font-size: 15px;
+    font-size: 18px;
   }
   .balance .money {
     font-size: 34px;
@@ -1655,7 +1657,7 @@ mark.move {
   .move-date {
     grid-row: span 2;
     align-self: start;
-    font-size: 15px;
+    font-size: 18px;
   }
   .move-sum {
     grid-column: 3;
@@ -1706,7 +1708,7 @@ mark.move {
     flex-direction: column;
   }
   .to-storeroom .muted {
-    font-size: 15px;
+    font-size: 18px;
   }
 
   /* «Доход», «Переложить» — кадр IncomeMobile: поля друг под другом, кнопка во всю ширину */
@@ -1728,7 +1730,7 @@ mark.move {
     gap: 10px;
   }
   .assign-head .muted {
-    font-size: 15px;
+    font-size: 18px;
   }
   .assign {
     gap: 10px;
@@ -1776,7 +1778,7 @@ mark.move {
   .assign-table .num {
     grid-column: 2;
     grid-row: 2;
-    font-size: 15px;
+    font-size: 18px;
     text-align: left;
   }
   .put .input {
@@ -1852,7 +1854,7 @@ mark.move {
   .history .h-date {
     grid-area: 1 / 1;
     width: auto;
-    font-size: 15px;
+    font-size: 18px;
   }
   .history .h-sum {
     grid-area: 1 / 2;
@@ -1868,7 +1870,7 @@ mark.move {
   }
   .history .h-note {
     grid-area: 2 / 2;
-    font-size: 15px;
+    font-size: 18px;
   }
   .history .h-go {
     display: contents;
