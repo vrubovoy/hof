@@ -632,14 +632,18 @@ describe('Säckel in the court', () => {
     assert.equal((await get(saeckelStatic.url('img/emblem-saeckel-small.webp'))).status, 200);
   });
 
-  // §2: the only addresses of Core on a page of Säckel, given by main.ts with their versions.
+  // §2: the only addresses of Core on a page of Säckel, given by main.ts with their versions; then
+  // the script of amounts of Säckel itself (M13.4), which is served.
   test('a page of Säckel names the scripts of the effects of Core with their versions', async () => {
     const { cookie } = await person('anna');
     const page = await (await get('/saeckel/', cookie)).text();
     assert.deepEqual(
       [...page.matchAll(/<script\b[^>]*src="([^"]*)"/g)].map((m) => m[1]),
-      [coreStatic.url('fx-head.js'), coreStatic.url('fx.js')],
+      [coreStatic.url('fx-head.js'), coreStatic.url('fx.js'), saeckelStatic.url('amount.js')],
     );
+    const script = await get(saeckelStatic.url('amount.js'));
+    assert.equal(script.status, 200);
+    assert.equal(script.headers.get('content-type'), 'text/javascript; charset=utf-8');
   });
 
   // M11.6: fx.js asks GET /session only on the pages of a signed-in person, which carry

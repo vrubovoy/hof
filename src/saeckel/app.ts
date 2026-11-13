@@ -328,8 +328,9 @@ interface PouchView {
 }
 
 // Every page of Säckel: its own CSS and its own copy of the mark of Hof as the icon of the tab
-// (§4.1: Säckel names only files of its own static folder), and the two scripts of the effects of
-// Hof — the only addresses of Core a page of Säckel names (§2), as main.ts gave them.
+// (§4.1: Säckel names only files of its own static folder), the two scripts of the effects of
+// Hof — the only addresses of Core a page of Säckel names (§2), as main.ts gave them — and its own
+// script of the groups of an amount (M13.4).
 function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString>) {
   return html`<!doctype html>
     <html lang="ru">
@@ -341,6 +342,7 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
         <link rel="icon" href="${asset('img/hof-mark.svg')}" type="image/svg+xml" />
         <script src="${coreScripts.head}"></script>
         <script type="module" src="${coreScripts.effects}"></script>
+        <script type="module" src="${asset('amount.js')}"></script>
       </head>
       <body>
         ${body}
