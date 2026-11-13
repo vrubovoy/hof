@@ -130,8 +130,9 @@ describe('Мешки', () => {
       '<a class="tab" href="/saeckel/" aria-current="page">Мешки</a>',
       '<h2 class="title">Мешков пока нет</h2>',
       'Заведите первый мешок: «Продукты», «Квартира», «Транспорт». Траты берутся из мешка, а остаток переходит дальше сам.',
-      '<form class="form-row new-pouch" method="post" action="/saeckel/pouches/new">',
+      '<form class="new-pouch" method="post" action="/saeckel/pouches/new">',
       '<label for="name">Название</label>',
+      '<legend>Знак мешка</legend>',
       '<button type="submit" class="btn btn-ochre">Завести мешок</button>',
     ]) {
       assert.ok(page.includes(text), text);
@@ -141,11 +142,11 @@ describe('Мешки', () => {
       /<a class="sk-gate sk-court" href="\/" data-fx="door"\s*><img [^>]*\/>Двор<\/a\s*>/,
     );
     assert.equal(wayBack(page), undefined);
-    assert.ok(
-      page.includes('<p class="hint text-full">Знак мешка можно выбрать потом, в «Изменить».</p>'),
-    );
-    // The first pouch is made from its name only.
-    assert.equal((page.match(/<input/g) ?? []).length, 1);
+    // M13.3: the sign is chosen with the name, so the hint about «Изменить» is gone.
+    assert.ok(!page.includes('выбрать потом'));
+    // The name and the 17 signs, the default one chosen.
+    assert.equal((page.match(/<input/g) ?? []).length, 1 + SIGNS.length);
+    assert.deepEqual(signs(page), { offered: SIGNS.map(([key]) => key), checked: ['pouch'] });
     assert.ok(!page.includes('+ Новый мешок'));
     // Nothing of M6 is shown before it works; the treasury came with M6.1, «Летопись» with M6.3.
     for (const absent of ['Переложить', 'Покрыть']) {
@@ -183,7 +184,7 @@ describe('Мешки', () => {
 });
 
 describe('Новый мешок', () => {
-  test('the page: the name only', async () => {
+  test('the page: the name and the 17 signs, the default one chosen', async () => {
     const res = await get('/saeckel/pouches/new', 'anna');
     assert.equal(res.status, 200);
     const page = await res.text();
@@ -191,15 +192,17 @@ describe('Новый мешок', () => {
       '<title>Säckel — новый мешок</title>',
       '<p class="ribbon ribbon-md"><span>Säckel</span></p>',
       '<h1 class="title t-2">Новый мешок</h1>',
-      '<form class="form-row new-pouch" method="post" action="/saeckel/pouches/new">',
+      '<form class="new-pouch" method="post" action="/saeckel/pouches/new">',
       '<label for="name">Название</label>',
+      '<legend>Знак мешка</legend>',
       '<button type="submit" class="btn btn-ochre">Завести мешок</button>',
     ]) {
-      assert.ok(page.includes(text), text);
+      assert.ok(page.replace(/\s+/g, ' ').includes(text), text);
     }
     assert.equal(wayBack(page), '/saeckel/ Мешки');
     assert.equal(currentTab(page), 'Мешки');
-    assert.equal((page.match(/<input/g) ?? []).length, 1);
+    assert.equal((page.match(/<input/g) ?? []).length, 1 + SIGNS.length);
+    assert.deepEqual(signs(page), { offered: SIGNS.map(([key]) => key), checked: ['pouch'] });
   });
 
   test('made for the one signed in, NFC and trimmed, with the default sign', async () => {
@@ -402,10 +405,35 @@ function signs(page: string) {
 }
 
 describe('Новый мешок: a sign sent with the name', () => {
-  test('a key of the set is kept', async () => {
-    const res = await post('/saeckel/pouches/new', { name: 'Еда', icon: 'basket' }, 'anna');
-    assert.equal(res.status, 303);
-    assert.equal((await pouches())[0]!.icon, 'basket');
+  test('each of the 17 signs: the pouch is made with it in one form', async () => {
+    for (const [key] of SIGNS) {
+      const res = await post('/saeckel/pouches/new', { name: `Мешок ${key}`, icon: key }, 'anna');
+      assert.equal(res.status, 303, key);
+    }
+    assert.deepEqual(
+      (await pouches()).map((row) => row.icon),
+      SIGNS.map(([key]) => key),
+    );
+  });
+
+  test('a name refused: the typed name and the chosen sign kept, nothing made', async () => {
+    for (const fields of [{ name: '' }, { name: 'я'.repeat(51) }]) {
+      const res = await post('/saeckel/pouches/new', { ...fields, icon: 'lute' }, 'anna');
+      assert.equal(res.status, 400);
+      const page = await res.text();
+      assert.ok(page.includes(`value="${fields.name}"`));
+      assert.deepEqual(signs(page).checked, ['lute']);
+      // One field wrong: the name, not the signs.
+      assert.equal((page.match(/aria-invalid="true"/g) ?? []).length, 1);
+      assert.ok(!page.includes('aria-describedby="icon-error"'));
+    }
+    await addPouch(1, 'Продукты');
+    const taken = await (
+      await post('/saeckel/pouches/new', { name: 'Продукты', icon: 'cart' }, 'anna')
+    ).text();
+    assert.ok(taken.includes(`<p id="name-error" class="err-text">${TAKEN}</p>`));
+    assert.deepEqual(signs(taken).checked, ['cart']);
+    assert.equal((await pouches()).length, 1);
   });
 
   for (const icon of ['', 'dragon', 'Cart', 'toString', '__proto__', 'pouch ']) {
@@ -414,7 +442,10 @@ describe('Новый мешок: a sign sent with the name', () => {
       assert.equal(res.status, 400);
       const page = await res.text();
       assert.ok(page.includes(`<p id="icon-error" class="err-text">${ICON_ERROR}</p>`));
+      assert.ok(page.includes('<fieldset class="signs" aria-describedby="icon-error">'));
       assert.ok(page.includes('value="Еда"'));
+      // The 17 signs again, none chosen: what was sent is not one of them.
+      assert.deepEqual(signs(page), { offered: SIGNS.map(([key]) => key), checked: [] });
       assert.deepEqual(await pouches(), []);
     });
   }
@@ -1216,9 +1247,7 @@ describe('Кладовая on Мешки', () => {
     const page = fold(await (await get('/saeckel/', 'anna')).text());
     assert.ok(page.includes('<h2 class="title">Мешков пока нет</h2>'));
     assert.ok(
-      page.includes(
-        '<form class="form-row new-pouch" method="post" action="/saeckel/pouches/new">',
-      ),
+      page.includes('<form class="new-pouch" method="post" action="/saeckel/pouches/new">'),
     );
     assert.ok(page.includes('<summary>Кладовая (1)</summary>'));
     assert.ok(page.includes(`<form method="post" action="/saeckel/pouches/${id}/restore">`));

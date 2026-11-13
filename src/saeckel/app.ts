@@ -158,6 +158,8 @@ interface FormError {
 
 interface NewPouchForm {
   name: string;
+  // The sign to show as chosen; none after an unknown one was sent.
+  icon: Icon | null;
   error?: FormError;
 }
 
@@ -475,13 +477,38 @@ function nameField(name: string, error: FormError | undefined) {
   </div>`;
 }
 
-// The form of a new pouch: the name only, the button beside it. The sign is the default one (§6,
-// SaeckelEmpty); a sign sent anyway is checked like in «Изменить».
+// The sign field of both forms of a pouch (§5.4, the prototype PouchEditMobile): each sign a
+// picture with its word, the chosen one ringed by pen, none after an unknown one was sent; the
+// error under the field.
+function signField(chosen: Icon | null, error: FormError | undefined) {
+  const describedBy = error?.field === 'icon' ? html`aria-describedby="icon-error"` : '';
+  return html`<fieldset class="signs" ${describedBy}>
+      <legend>Знак мешка</legend>
+      <div class="icons">
+        ${(Object.keys(ICONS) as Icon[]).map(
+          (icon) =>
+            html`<label class="icon-pick">
+              <input
+                type="radio"
+                name="icon"
+                value="${icon}"
+                ${icon === chosen ? html`checked` : ''}
+              />
+              ${signPicture(icon)} ${ICONS[icon]}
+            </label>`,
+        )}
+      </div>
+    </fieldset>
+    ${formError(error, 'icon')}`;
+}
+
+// The form of a new pouch, on the empty Мешки and on «Новый мешок» alike: the name, the signs of
+// «Изменить» with the default one chosen (M13.3; SaeckelEmpty and SaeckelForms have the name
+// only), the button under them.
 function newPouchForm(form: NewPouchForm) {
-  return html`<form class="form-row new-pouch" method="post" action="/saeckel/pouches/new">
-    ${nameField(form.name, form.error)}
+  return html`<form class="new-pouch" method="post" action="/saeckel/pouches/new">
+    ${nameField(form.name, form.error)} ${signField(form.icon, form.error)}
     <button type="submit" class="btn btn-ochre">Завести мешок</button>
-    ${formError(form.error, 'icon')}
   </form>`;
 }
 
@@ -626,8 +653,7 @@ function pouchesPage(
             Заведите первый мешок: «Продукты», «Квартира», «Транспорт». Траты берутся из мешка, а
             остаток переходит дальше сам.
           </p>
-          ${newPouchForm({ name: '' })}
-          <p class="hint text-full">Знак мешка можно выбрать потом, в «Изменить».</p>
+          ${newPouchForm({ name: '', icon: DEFAULT_ICON })}
         </div>
       </div>
       <img
@@ -1325,7 +1351,6 @@ function editPouchPage(
   money: MoneyFormat,
   column: PouchColumn,
 ) {
-  const describedBy = form.error?.field === 'icon' ? html`aria-describedby="icon-error"` : '';
   return saeckelPage(
     {
       title: `Säckel — ${pouch.name}`,
@@ -1336,25 +1361,7 @@ function editPouchPage(
     html`<div class="sk-form pouch-edit">
       <form method="post" action="/saeckel/pouches/${pouch.id}/edit">
         <h1 class="title t-2">Мешок «${pouch.name}»</h1>
-        ${nameField(form.name, form.error)}
-        <fieldset class="signs" ${describedBy}>
-          <legend>Знак мешка</legend>
-          <div class="icons">
-            ${(Object.keys(ICONS) as Icon[]).map(
-              (icon) =>
-                html`<label class="icon-pick">
-                  <input
-                    type="radio"
-                    name="icon"
-                    value="${icon}"
-                    ${icon === form.icon ? html`checked` : ''}
-                  />
-                  ${signPicture(icon)} ${ICONS[icon]}
-                </label>`,
-            )}
-          </div>
-        </fieldset>
-        ${formError(form.error, 'icon')}
+        ${nameField(form.name, form.error)} ${signField(form.icon, form.error)}
         <button type="submit" class="btn btn-ochre">Сохранить</button>
       </form>
       <section class="to-storeroom">
@@ -1773,19 +1780,23 @@ export function createSaeckelApp(
   // Registered before /saeckel/pouches/:id, which would match it too.
   saeckel.get('/saeckel/pouches/new', signedIn, async (c) => {
     const column = await columnOf(c.get('user').id);
-    return c.html(newPouchPage({ name: '' }, column, money));
+    return c.html(newPouchPage({ name: '', icon: DEFAULT_ICON }, column, money));
   });
 
-  // A new pouch: the name, and the sign only if one is sent (§4.1); the form itself has the
-  // name only. The user is the one signed in; a user_id or any other field is ignored.
+  // A new pouch: the name and the sign; without a sign, the default one (§4.1). A refused form
+  // keeps what was typed and chosen. The user is the one signed in; a user_id or any other
+  // field is ignored.
   saeckel.post('/saeckel/pouches/new', signedIn, async (c) => {
     const form = await c.req.parseBody();
     const typed = typeof form.name === 'string' ? form.name : '';
+    const icon = form.icon === undefined ? DEFAULT_ICON : parseIcon(form.icon);
     const refuse = async (error: FormError) =>
-      c.html(newPouchPage({ name: typed, error }, await columnOf(c.get('user').id), money), 400);
+      c.html(
+        newPouchPage({ name: typed, icon, error }, await columnOf(c.get('user').id), money),
+        400,
+      );
     const name = parsePouchName(typed);
     if (name === null) return refuse({ field: 'name', text: NAME_ERROR });
-    const icon = form.icon === undefined ? DEFAULT_ICON : parseIcon(form.icon);
     if (icon === null) return refuse({ field: 'icon', text: ICON_ERROR });
 
     // One statement, so no transaction of our own. Two pouches of one name at once are

@@ -395,25 +395,6 @@ img {
   height: auto;
 }
 
-/* поля в ряд с кнопкой: кнопка стоит вровень с полями, и когда под полем ошибка; где места
-   мало, кнопка уходит на следующую строку */
-.form-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 12px;
-}
-.form-row .field {
-  flex: 1 1 140px;
-  min-width: 0;
-}
-.form-row .btn {
-  margin-top: calc(18px * 1.42 + 5px);
-}
-.form-row > .err-text {
-  flex-basis: 100%;
-}
-
 /* кляксы: только на пустой бумаге, бледно; у каждой страницы свои */
 .blot {
   position: absolute;
@@ -989,13 +970,16 @@ mark.move {
 }
 
 /* «Изменить»: имя, знак, «Сохранить»; «В кладовую» — под линией пером */
+/* a new pouch (M13.3): the name, the signs and the button, as in «Изменить» */
 .pouch-edit > form,
-.pouch-edit > section {
+.pouch-edit > section,
+.new-pouch {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
-.pouch-edit .btn-ochre {
+.pouch-edit .btn-ochre,
+.new-pouch .btn {
   align-self: flex-start;
 }
 .to-storeroom p {
@@ -1584,8 +1568,7 @@ mark.move {
     padding-bottom: 44px;
   }
 
-  /* мешков пока нет: виньетка, заголовок во всю ширину, текст, поле и кнопка во всю ширину;
-     подсказки о знаке на телефоне нет (SaeckelEmptyMobile) */
+  /* no pouch yet: the vignette, then the heading, the text and the form the whole width */
   .sk-empty {
     align-items: center;
     gap: 10px;
@@ -1602,16 +1585,18 @@ mark.move {
     font-size: 33px;
   }
   .sk-empty .sprig,
-  .sk-corner,
-  .text-full {
+  .sk-corner {
     display: none;
   }
   .sk-empty-text .muted {
     font-size: 18px;
   }
+  /* a new pouch: the fields closer, as in «Изменить», the button the whole width */
+  .new-pouch {
+    gap: 10px;
+  }
   .new-pouch .btn {
-    flex-basis: 100%;
-    margin-top: 0;
+    align-self: stretch;
   }
 
   /* мешок первым справа на Мешках — только на компьютере */
