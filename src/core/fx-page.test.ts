@@ -14,7 +14,7 @@
 import assert from 'node:assert/strict';
 import { describe, test, type TestContext } from 'node:test';
 
-type Listener = (event: { type: string; target?: unknown }) => void;
+type Listener = (event: { type: string; target?: unknown; animationName?: string }) => void;
 
 class FakeParam {
   value = 1;
@@ -269,10 +269,27 @@ class FakeThing extends FakeElement {
   };
   offsetWidth = 0;
   control: boolean;
+  // M13.7: a cat hears the end of its pose.
+  listeners = new Map<string, Listener[]>();
   constructor(poke: string | null, control = false) {
     super();
     if (poke !== null) this.dataset.poke = poke;
     this.control = control;
+  }
+  addEventListener(type: string, listener: Listener) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+  removeEventListener(type: string, listener: Listener) {
+    this.listeners.set(
+      type,
+      (this.listeners.get(type) ?? []).filter((one) => one !== listener),
+    );
+  }
+  // An animation of the thing over: its listeners hear it, and so do those of the page.
+  fire(type: string, animationName: string) {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener({ type, animationName, target: this });
+    }
   }
   closest(selector: string) {
     if (selector.includes('[data-poke]') && this.dataset.poke !== undefined) return this;
@@ -1396,6 +1413,101 @@ describe('fx.js in a page: the cats and the gate (M10.4)', () => {
     assert.ok(!still.classList.contains('meow'));
   });
 
+  // M13.7: a cat takes no press until its sound and its pose are over; one meow on a page at a time.
+  test('ten presses on a cat: one meow, one pose; again once its sound and its pose are over', async () => {
+    const cat = new FakeThing('meow');
+    const page = await openChambers({ settings: { anim: true, sound: true }, elements: { cat } });
+    const poses = () => cat.style.values.size;
+    for (let press = 0; press < 10; press += 1) page.poke(cat);
+    assert.equal(sounds('meow').length, 1);
+    cat.style.values.clear();
+    page.poke(cat);
+    assert.equal(poses(), 0, 'no pose started again');
+    sounds('meow')[0]!.fire('ended');
+    page.poke(cat);
+    assert.equal(sounds('meow').length, 1, 'the pose still on');
+    cat.fire('animationend', 'pose');
+    page.poke(cat);
+    assert.equal(sounds('meow').length, 2);
+    assert.equal(poses(), 1);
+    // The end of another animation of the cat is not the end of its pose.
+    sounds('meow')[1]!.fire('ended');
+    cat.fire('animationend', 'something');
+    page.poke(cat);
+    assert.equal(sounds('meow').length, 2);
+  });
+
+  test('two cats of a page: one meow; the other takes its pose silently', async () => {
+    const first = new FakeThing('meow');
+    const second = new FakeThing('meow');
+    const page = await openChambers({
+      settings: { anim: true, sound: true },
+      elements: { first, second },
+    });
+    page.poke(first);
+    page.poke(second);
+    assert.equal(sounds('meow').length, 1);
+    assert.ok(second.classList.contains('meow'), 'the second cat in its pose');
+    assert.equal(second.style.values.get('--pose'), '1.2s', 'for 1,2 s, silently');
+  });
+
+  test('the meow over by an error or a refused play(): the next press meows', async () => {
+    const cat = new FakeThing('meow');
+    const page = await openChambers({ settings: { sound: true }, elements: { cat } });
+    page.poke(cat);
+    sounds('meow')[0]!.fire('error');
+    page.poke(cat);
+    assert.equal(sounds('meow').length, 2, 'after an error');
+    sounds('meow')[1]!.fire('pause');
+    FakeAudio.refuse = true;
+    page.poke(cat);
+    await settle();
+    FakeAudio.refuse = false;
+    page.poke(cat);
+    assert.equal(sounds('meow').length, 4, 'after a refused play()');
+    // A late event of an old sound frees nothing.
+    sounds('meow')[0]!.fire('ended');
+    page.poke(cat);
+    assert.equal(sounds('meow').length, 4);
+  });
+
+  test('a pose that never says it ended: the cat is free after 5 s', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const cat = new FakeThing('meow');
+    const page = await openChambers({ settings: { anim: true, sound: true }, elements: { cat } });
+    page.poke(cat);
+    sounds('meow')[0]!.fire('ended');
+    t.mock.timers.tick(4999);
+    page.poke(cat);
+    assert.equal(sounds('meow').length, 1);
+    t.mock.timers.tick(1);
+    page.poke(cat);
+    assert.equal(sounds('meow').length, 2);
+  });
+
+  test('the purring cat: no press until its purr is over; not counted with the meows', async () => {
+    const purring = new FakeThing('purr');
+    const cat = new FakeThing('meow');
+    const page = await openChambers({ settings: { sound: true }, elements: { purring, cat } });
+    page.poke(purring);
+    page.poke(purring);
+    assert.equal(sounds('purr').length, 1);
+    page.poke(cat);
+    assert.equal(sounds('meow').length, 1, 'a meow while purring');
+    sounds('purr')[0]!.fire('ended');
+    page.poke(purring);
+    assert.equal(sounds('purr').length, 2);
+  });
+
+  test('back from the back/forward cache: a cat busy before is free', async () => {
+    const cat = new FakeThing('meow');
+    const page = await openChambers({ settings: { anim: true, sound: true }, elements: { cat } });
+    page.poke(cat);
+    page.backFromCache();
+    page.poke(cat);
+    assert.equal(sounds('meow').length, 2);
+  });
+
   test('a press on a control inside the thing, or on a thing fx.js does not know: nothing', async () => {
     const page = await openChambers({ settings: { anim: true, sound: true } });
     const control = new FakeThing('meow', true);
@@ -1523,7 +1635,7 @@ describe('fx.js in a page: Säckel (M10.5)', () => {
     assert.equal(sounds('coins').length, 0);
   });
 
-  test('the cat at the empty pouches: a sniff at 0 and 1,5 s; a press meanwhile starts it over', async (t: TestContext) => {
+  test('the cat at the empty pouches: a sniff at 0 and 1,5 s; a press meanwhile does nothing (M13.7)', async (t: TestContext) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const cat = new FakeThing('sniff');
     const page = await openChambers({ settings: { anim: true, sound: true }, elements: { cat } });
@@ -1532,20 +1644,24 @@ describe('fx.js in a page: Säckel (M10.5)', () => {
     assert.ok(cat.classList.contains('sniffing'));
     t.mock.timers.tick(700);
     page.poke(cat);
-    assert.equal(sounds('sniff').length, 2);
-    // The second sniff of the first press is not made: 1,5 s after the second.
+    assert.equal(sounds('sniff').length, 1, 'a press while sniffing: nothing');
+    t.mock.timers.tick(800);
+    assert.equal(sounds('sniff').length, 2, 'the second sniff of the first press');
     t.mock.timers.tick(1499);
-    assert.equal(sounds('sniff').length, 2);
+    page.poke(cat);
+    assert.equal(sounds('sniff').length, 2, 'still sniffing at 2,999 s');
     t.mock.timers.tick(1);
-    assert.equal(sounds('sniff').length, 3);
-    t.mock.timers.tick(5000);
-    assert.equal(sounds('sniff').length, 3);
+    page.poke(cat);
+    assert.equal(sounds('sniff').length, 3, 'free at 3 s: sniffing again');
+    // That sniffing over before the next page.
+    t.mock.timers.tick(3000);
 
     const still = new FakeThing('sniff');
     const off = await openChambers({ settings: { sound: true }, elements: { still } });
     off.poke(still);
     t.mock.timers.tick(1500);
-    assert.equal(sounds('sniff').length, 2, 'only the sniffs');
+    off.poke(still);
+    assert.equal(sounds('sniff').length, 2, 'only the sniffs, and none more meanwhile');
     assert.ok(!still.classList.contains('sniffing'));
   });
 
