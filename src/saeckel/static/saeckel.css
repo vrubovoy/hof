@@ -234,6 +234,172 @@ img {
   background: url(img/pen-chevron.svg) 0 0 / 14px no-repeat;
   pointer-events: none;
 }
+/* the calendar of a date field (M13.5, calendar.js): the button inside the field at its right
+   edge, the chevron of a list; without the script there is no button */
+.date-box {
+  position: relative;
+  display: block;
+}
+.date-box .input {
+  padding-right: 40px;
+}
+.date-open {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  bottom: 2px;
+  width: 38px;
+  padding: 0;
+  border: 0;
+  background: url(img/pen-chevron.svg) center / 14px no-repeat;
+  cursor: pointer;
+}
+.date-open[aria-expanded='true'] {
+  transform: rotate(180deg);
+}
+.date-open:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+/* the card: paper in a frame drawn by pen, over the form, on <body> where the script puts it */
+.cal {
+  position: absolute;
+  z-index: 30;
+  /* moved into the window, it keeps a little paper below it */
+  scroll-margin: 12px;
+  width: max-content;
+  padding: 10px 12px 10px;
+  border: 2px solid transparent;
+  border-image: url(img/pen-panel.svg) 16 fill / 20px stretch;
+  background:
+    url(img/paper-tile.webp) 0 0 / 1124px 1124px,
+    var(--paper);
+  box-shadow:
+    0 12px 28px rgb(20 36 61 / 0.2),
+    0 2px 6px rgb(20 36 61 / 0.14);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.2;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.cal-head {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+}
+.cal-month {
+  margin: 0;
+  font-size: 24px;
+  font-style: italic;
+  font-weight: 600;
+  text-align: center;
+}
+.cal-prev,
+.cal-next {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: url(img/pen-chevron.svg) center / 18px no-repeat;
+  cursor: pointer;
+}
+.cal-prev {
+  transform: rotate(90deg);
+}
+.cal-next {
+  transform: rotate(-90deg);
+}
+.cal-prev:disabled,
+.cal-next:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.cal-grid {
+  margin: 2px auto 0;
+  border-collapse: collapse;
+}
+/* the days of the week as the heads of a table, under the line of a table */
+.cal-grid th {
+  height: 30px;
+  padding: 0;
+  background: url(img/pen-rule.svg) left bottom / 100% 6px no-repeat;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.cal-grid td {
+  padding: 1px;
+}
+.cal-day {
+  position: relative;
+  display: block;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 2px solid transparent;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+/* a day under the mouse: a thin frame of ink, apart from the ochre box of today */
+.cal-day:hover:not([aria-disabled]) {
+  border-image: url(img/pen-field.svg) 16 / 16px stretch;
+}
+/* today: the ochre box of the open pouch; the chosen day: the ring of the chosen sign, a layer
+   above the day so that it shows over the box of today too */
+.cal-day[aria-current='date'],
+.cal-day[aria-current='date']:hover {
+  font-weight: 800;
+  border-image: url(img/pen-pick.svg) 16 fill / 16px stretch;
+}
+.cal-day.chosen {
+  font-weight: 800;
+}
+.cal-day.chosen::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: url(img/pen-ring-day.svg) center / 44px 42px no-repeat;
+  pointer-events: none;
+}
+.cal-day[aria-disabled] {
+  color: rgb(20 36 61 / 0.28);
+  cursor: default;
+}
+.cal-day:focus-visible,
+.cal-prev:focus-visible,
+.cal-next:focus-visible,
+.cal-today:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+/* «Сегодня» on the ochre box of today in the grid */
+.cal-foot {
+  margin: 8px 0 2px;
+  text-align: center;
+}
+.cal-today {
+  padding: 5px 16px 6px;
+  border: 2px solid transparent;
+  border-image: url(img/pen-pick.svg) 16 fill / 16px stretch;
+  background: none;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+}
+.cal-today:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
 .hint {
   margin: 0;
   font-size: 18px;
@@ -1594,6 +1760,11 @@ mark.move {
   /* a new pouch: the fields closer, as in «Изменить», the button the whole width */
   .new-pouch {
     gap: 10px;
+  }
+  /* the days of the calendar the size of a finger */
+  .cal-day {
+    width: 44px;
+    height: 44px;
   }
   .new-pouch .btn {
     align-self: stretch;

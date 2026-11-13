@@ -633,13 +633,18 @@ describe('Säckel in the court', () => {
   });
 
   // §2: the only addresses of Core on a page of Säckel, given by main.ts with their versions; then
-  // the script of amounts of Säckel itself (M13.4), which is served.
+  // the scripts of Säckel itself (M13.4, M13.5), which are served.
   test('a page of Säckel names the scripts of the effects of Core with their versions', async () => {
     const { cookie } = await person('anna');
     const page = await (await get('/saeckel/', cookie)).text();
     assert.deepEqual(
       [...page.matchAll(/<script\b[^>]*src="([^"]*)"/g)].map((m) => m[1]),
-      [coreStatic.url('fx-head.js'), coreStatic.url('fx.js'), saeckelStatic.url('amount.js')],
+      [
+        coreStatic.url('fx-head.js'),
+        coreStatic.url('fx.js'),
+        saeckelStatic.url('amount.js'),
+        saeckelStatic.url('calendar.js'),
+      ],
     );
     const script = await get(saeckelStatic.url('amount.js'));
     assert.equal(script.status, 200);

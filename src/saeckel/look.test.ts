@@ -47,11 +47,12 @@ const asset = saeckelStatic.url;
 // The version in an address of a static file.
 const VERSION = String.raw`\?v=[0-9a-f]{12}`;
 // The scripts of the effects of Hof that every page names (§2, §6), as main.ts gives them, and
-// the one script of Säckel itself, the groups of an amount (M13.4).
+// the scripts of Säckel itself: the groups of an amount (M13.4) and the calendar (M13.5).
 const SCRIPTS = [
   `<script src="${CORE_SCRIPTS.head}"></script>`,
   `<script type="module" src="${CORE_SCRIPTS.effects}"></script>`,
   `<script type="module" src="${asset('amount.js')}"></script>`,
+  `<script type="module" src="${asset('calendar.js')}"></script>`,
 ];
 
 // Every file of the static folder, by its address.
@@ -293,10 +294,10 @@ describe('the pages of Säckel', () => {
       assert.equal((page.match(/<h1[\s>]/g) ?? []).length, 1, name);
       assert.doesNotMatch(page, /\sstyle=/, name);
       // The two scripts of the effects of Hof in <head>, the only addresses of Core (§2, §6), and
-      // the script of amounts of Säckel; no other script, no inline code, no handler attribute.
+      // the scripts of Säckel; no other script, no inline code, no handler attribute.
       const scripts = [...page.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/g)].map((m) => m[0]);
       assert.deepEqual(scripts, SCRIPTS, name);
-      assert.equal((page.match(/<script/g) ?? []).length, 3, name);
+      assert.equal((page.match(/<script/g) ?? []).length, SCRIPTS.length, name);
       assert.ok(page.indexOf('<script type="module"') < page.indexOf('</head>'), name);
       assert.doesNotMatch(page, /\son[a-z]+=/i, name);
       assert.doesNotMatch(page, /https?:\/\//, name);
