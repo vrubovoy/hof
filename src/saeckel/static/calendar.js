@@ -323,7 +323,9 @@ function attach(input) {
         const later = target.closest('.cal-next') !== null;
         active =
           moveByKey(active, later ? 'PageDown' : 'PageUp', false, earliest, latest) ?? active;
+        // A month of other weeks makes the card taller or lower: it is placed again.
         draw();
+        place();
         // The button pressed stays where it was, and so does the focus, unless the month shown is
         // now the last one that way: then the focus goes to the day.
         const again = card?.querySelector(later ? '.cal-next' : '.cal-prev');
@@ -354,8 +356,10 @@ function attach(input) {
       event.preventDefault();
       const redraw = to.slice(0, 7) !== active.slice(0, 7);
       active = to;
-      if (redraw) draw();
-      else {
+      if (redraw) {
+        draw();
+        place();
+      } else {
         card?.querySelectorAll('.cal-day').forEach((day) => day.setAttribute('tabindex', '-1'));
         card?.querySelector(`.cal-day[data-date="${active}"]`)?.setAttribute('tabindex', '0');
       }
