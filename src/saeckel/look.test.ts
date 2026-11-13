@@ -932,6 +932,33 @@ describe('the page of a pouch', () => {
     assert.equal((refused.match(/aria-invalid="true"/g) ?? []).length, 1);
     assert.match(refused, /value="lute"\s+checked/);
   });
+
+  test('M13.3: a new pouch offers the 17 signs of Изменить, native radios in a plain form', async () => {
+    const pick =
+      /<label class="icon-pick"> <input type="radio" name="icon" value="([^"]*)" ?(checked)? \/> <img src="([^"]*)"[^>]*alt="" draggable="false" \/> ([^<]*) <\/label>/g;
+    const picks = (page: string) =>
+      [...page.matchAll(pick)].map(([, key, checked, src]) => [key, checked !== undefined, src]);
+    const expected = SIGN_FILES.map(([key, file]) => [
+      key,
+      key === 'pouch',
+      asset(`img/${file}.webp`),
+    ]);
+    const empty = fold(await (await get('/saeckel/', 'anna')).text());
+    await addPouch(ANNA, 'Продукты');
+    const later = fold(await (await get('/saeckel/pouches/new', 'anna')).text());
+    for (const page of [empty, later]) {
+      assert.deepEqual(picks(page), expected);
+      // What the keyboard and a page without script need: the radios inside the form that posts
+      // them, none taken out of the order of Tab or switched off.
+      const form =
+        /<form class="new-pouch" method="post" action="\/saeckel\/pouches\/new">(.*?)<\/form>/.exec(
+          page,
+        )![1]!;
+      assert.equal((form.match(/<input type="radio" name="icon"/g) ?? []).length, 17);
+      assert.doesNotMatch(form, /tabindex|disabled|<script|onclick/);
+      assert.match(form, /<fieldset class="signs" ?> <legend>Знак мешка<\/legend>/);
+    }
+  });
 });
 
 // The fields of a refused form that are drawn as wrong: each such field is red, the field itself
