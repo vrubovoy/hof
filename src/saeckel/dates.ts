@@ -3,7 +3,8 @@
 // pass through a JS Date that would carry a time zone of its own: the database gives them as
 // text, and the page gets them rebuilt from that text.
 
-const EARLIEST = '2000-01-01';
+// The first and the last date a form takes (§4.7); also given to the calendar of a date field.
+export const EARLIEST = '2000-01-01';
 const DATE_ERROR = 'Дата — ДД.ММ.ГГГГ, не раньше 01.01.2000 и не дальше года вперёд.';
 
 export type DateResult = { date: string } | { error: string };
@@ -50,7 +51,7 @@ function isoDate(year: number, month: number, day: number): string | null {
 }
 
 // The same day a year later; 29 February becomes 28 February.
-function yearLater(date: string): string {
+export function yearLater(date: string): string {
   const [year, month, day] = date.split('-').map(Number) as [number, number, number];
   return isoDate(year + 1, month, day) ?? isoDate(year + 1, month, day - 1)!;
 }

@@ -15,7 +15,7 @@ import type { HtmlEscapedString } from 'hono/utils/html';
 import { join } from 'node:path';
 import { DatabaseError, type Pool, type PoolClient } from 'pg';
 import { staticFolder } from '../static.ts';
-import { dateForField, dateForList, parseDate, today } from './dates.ts';
+import { EARLIEST, dateForField, dateForList, parseDate, today, yearLater } from './dates.ts';
 import {
   AMOUNT_MAX_CENTS,
   amountForField,
@@ -57,6 +57,9 @@ const asset = saeckelStatic.url;
 
 // The scripts of Core on every page: set once, by createSaeckelApp.
 let coreScripts: CoreScripts = { head: '', effects: '' };
+// The time zone of the installation, for the calendar of a date field (M13.5): set once, by
+// createSaeckelApp.
+let installationTimeZone = 'UTC';
 
 // §4.7: the largest id of a PostgreSQL integer.
 const MAX_ID = 2_147_483_647;
@@ -330,7 +333,7 @@ interface PouchView {
 // Every page of Säckel: its own CSS and its own copy of the mark of Hof as the icon of the tab
 // (§4.1: Säckel names only files of its own static folder), the two scripts of the effects of
 // Hof — the only addresses of Core a page of Säckel names (§2), as main.ts gave them — and its own
-// script of the groups of an amount (M13.4).
+// scripts: the groups of an amount (M13.4) and the calendar of a date field (M13.5).
 function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString>) {
   return html`<!doctype html>
     <html lang="ru">
@@ -343,6 +346,7 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
         <script src="${coreScripts.head}"></script>
         <script type="module" src="${coreScripts.effects}"></script>
         <script type="module" src="${asset('amount.js')}"></script>
+        <script type="module" src="${asset('calendar.js')}"></script>
       </head>
       <body>
         ${body}
@@ -686,6 +690,15 @@ function newPouchPage(form: NewPouchForm, column: PouchColumn, money: MoneyForma
   );
 }
 
+// What the calendar of a date field needs from the server (M13.5): today in the time zone of the
+// installation, not of the browser, and the first and the last date a form takes. The server
+// checks any date sent all the same.
+function calendarDates() {
+  const todayDate = today(installationTimeZone, new Date());
+  return html`data-today="${todayDate}" data-earliest="${EARLIEST}"
+  data-latest="${yearLater(todayDate)}"`;
+}
+
 // «Сумма», «Дата», «Заметка» of a form (the prototypes Saeckel, SaeckelForms,
 // PouchMobile): fields drawn by pen, the amount larger. What was typed stays in the fields;
 // the error of a field is under it, and the field is drawn red.
@@ -722,6 +735,7 @@ function entryFields(form: EntryForm, money: MoneyFormat) {
         class="input"
         name="date"
         type="text"
+        ${calendarDates()}
         value="${form.date}"
         ${attributes('date')}
       />
@@ -1652,6 +1666,7 @@ export function createSaeckelApp(
 ): Hono<SaeckelEnv> {
   const saeckel = new Hono<SaeckelEnv>();
   coreScripts = scripts;
+  installationTimeZone = settings.timeZone;
   const money = moneyFormat(settings.currency);
 
   // A signed-in user or the way to /login. Put on each route, not on /saeckel/*: an address
