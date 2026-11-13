@@ -1034,11 +1034,49 @@ function signedAmount(operation: Operation, money: MoneyFormat): string {
   return `+${money.format(operation.cents)}`;
 }
 
-// An address of «Летопись», with the pouch it is filtered by.
-function historyHref(pouch: number | null, page: number): string {
+// The query of a page of «Летопись», with the pouch it is filtered by.
+function historyQuery(pouch: number | null, page: number): string {
   const query = new URLSearchParams(pouch === null ? {} : { pouch: String(pouch) });
   query.set('page', String(page));
-  return `/saeckel/history?${query.toString()}`;
+  return query.toString();
+}
+
+// An address of «Летопись», with the pouch it is filtered by.
+function historyHref(pouch: number | null, page: number): string {
+  return `/saeckel/history?${historyQuery(pouch, page)}`;
+}
+
+// The place in «Летопись» a record was opened from (M13.6): its page and the pouch of its filter,
+// two numbers «Летопись» checks itself. The way back is built from them, never taken from the
+// request; null, or the first page without a filter, is the start of «Летопись».
+interface HistoryPlace {
+  page: number;
+  pouch: number | null;
+}
+
+const atStart = (place: HistoryPlace | null) =>
+  place === null || (place.page === 1 && place.pouch === null);
+
+// The way back to «Летопись»: the page and the filter a record was opened from.
+function historyReturn(place: HistoryPlace | null): string {
+  return place === null || atStart(place)
+    ? '/saeckel/history'
+    : historyHref(place.pouch, place.page);
+}
+
+// A record as «Летопись» links it: with the place it is opened from, if not the start.
+function recordHref(id: number, place: HistoryPlace): string {
+  return atStart(place)
+    ? `/saeckel/operations/${id}`
+    : `/saeckel/operations/${id}?${historyQuery(place.pouch, place.page)}`;
+}
+
+// The place carried by the forms of a record, so that a refused form and the way back keep it.
+function placeFields(place: HistoryPlace | null) {
+  if (place === null || atStart(place)) return '';
+  return html`<input type="hidden" name="page" value="${place.page}" />${
+      place.pouch === null ? '' : html`<input type="hidden" name="pouch" value="${place.pouch}" />`
+    }`;
 }
 
 // One record of «Летопись» (the prototype SaeckelHistory): a row of the table — the date,
@@ -1048,7 +1086,7 @@ function historyHref(pouch: number | null, page: number): string {
 // own cell on a computer and after the pouches on the phone, where a transfer is «Переложено», as
 // HistoryMobile has it; CSS shows one of the two. An expense is red on the phone only, as the two
 // prototypes have it.
-function historyRow(operation: Operation, money: MoneyFormat) {
+function historyRow(operation: Operation, money: MoneyFormat, place: HistoryPlace) {
   const kind = KIND_LABELS[operation.kind];
   const phoneKind = operation.kind === 'transfer' ? 'Переложено' : kind;
   return html`<tr id="op-${operation.id}">
@@ -1064,7 +1102,7 @@ function historyRow(operation: Operation, money: MoneyFormat) {
     <td class="h-go">
       <a
         class="link-plain"
-        href="/saeckel/operations/${operation.id}"
+        href="${recordHref(operation.id, place)}"
         aria-label="Открыть запись"
         aria-describedby="op-${operation.id}"
         >›</a
@@ -1154,7 +1192,9 @@ function historyPage(view: HistoryView, money: MoneyFormat) {
                 </tr>
               </thead>
               <tbody>
-                ${view.operations.map((operation) => historyRow(operation, money))}
+                ${view.operations.map((operation) =>
+                  historyRow(operation, money, { page: view.page, pouch: view.pouch }),
+                )}
               </tbody>
             </table>`
           : html`<p class="muted history-none">${none}</p>`
@@ -1195,8 +1235,9 @@ const inStoreroom = (operation: Operation) => operation.fromArchived || operatio
 
 // A record of «Летопись», to read (no picture of its own): the frame of a record, for each of its
 // pouches in the storeroom a note with the red seal — why it is not changed, with the way to that
-// pouch — then its amount, date, pouches and note as lines ruled by pen.
-function operationPage(operation: Operation, money: MoneyFormat) {
+// pouch — then its amount, date, pouches and note as lines ruled by pen. «Летопись» on the band of
+// the phone leads back to the place the record was opened from (M13.6).
+function operationPage(operation: Operation, money: MoneyFormat, place: HistoryPlace | null) {
   const stored = [
     [operation.fromArchived, operation.fromPouchId, operation.fromName],
     [operation.toArchived, operation.toPouchId, operation.toName],
@@ -1212,7 +1253,7 @@ function operationPage(operation: Operation, money: MoneyFormat) {
     {
       title: 'Säckel — запись',
       tab: 'history',
-      back: { href: '/saeckel/history', text: 'Летопись' },
+      back: { href: historyReturn(place), text: 'Летопись' },
     },
     html`<div class="sk-form record">
       <h1 class="title t-2">${KIND_LABELS[operation.kind]} · ${dateForField(operation.date)}</h1>
@@ -1242,11 +1283,14 @@ function operationPage(operation: Operation, money: MoneyFormat) {
 // the fields only. The heading keeps the stored date; the kind does not change. «Сохранить» and
 // «Удалить» stand in a row: «Сохранить» belongs to the form by its `form`, «Удалить» is a
 // <details> (§4.1) whose opening is the confirmation — no script, and no form inside another.
+// Both forms carry the place in «Летопись» the record was opened from (M13.6), and «Летопись» on
+// the band of the phone leads back to it.
 function operationEditPage(
   operation: Operation,
   pouches: readonly { id: number; name: string }[],
   form: PouchesForm,
   money: MoneyFormat,
+  place: HistoryPlace | null,
 ) {
   const choices = pouches.map((pouch) => ({ id: pouch.id, text: pouch.name }));
   const fields = POUCH_FIELDS[operation.kind];
@@ -1265,12 +1309,12 @@ function operationEditPage(
     {
       title: 'Säckel — запись',
       tab: 'history',
-      back: { href: '/saeckel/history', text: 'Летопись' },
+      back: { href: historyReturn(place), text: 'Летопись' },
     },
     html`<div class="sk-form record">
       <h1 class="title t-2">${KIND_LABELS[operation.kind]} · ${dateForField(operation.date)}</h1>
       <form id="record" class="entry" method="post" action="/saeckel/operations/${operation.id}">
-        ${body}
+        ${placeFields(place)} ${body}
         <p class="hint">Вид записи не меняется. Удаление попросит подтверждения.</p>
       </form>
       <div class="record-actions">
@@ -1278,6 +1322,7 @@ function operationEditPage(
         <details class="delete">
           <summary class="btn btn-danger">Удалить</summary>
           <form method="post" action="/saeckel/operations/${operation.id}/delete">
+            ${placeFields(place)}
             <button type="submit" class="btn btn-danger">Удалить запись</button>
           </form>
         </details>
@@ -2151,13 +2196,36 @@ export function createSaeckelApp(
     return c.html(historyPage(view, money));
   });
 
+  // The place in «Летопись» a record was opened from (M13.6), as the address or a form of the
+  // record sends it: a page as «Летопись» takes it and a pouch of this user, active or in the
+  // storeroom. Anything else — a wrong page, a wrong id, somebody else's pouch, no text — is no
+  // place, and the way back is the start of «Летопись».
+  const historyPlace = async (
+    page: unknown,
+    pouch: unknown,
+    userId: number,
+  ): Promise<HistoryPlace | null> => {
+    if (page !== undefined && typeof page !== 'string') return null;
+    const number = parsePage(page);
+    if (number === null) return null;
+    if (pouch === undefined || pouch === '') return { page: number, pouch: null };
+    const id = typeof pouch === 'string' ? parseId(pouch) : null;
+    if (id === null) return null;
+    const { rowCount } = await pool.query('SELECT 1 FROM pouches WHERE id = $1 AND user_id = $2', [
+      id,
+      userId,
+    ]);
+    return rowCount === 0 ? null : { page: number, pouch: id };
+  };
+
   // A record of this user, to read. Somebody else's, a missing one and a wrong id are the same
   // 404; a record of a pouch in the storeroom is shown like any other.
   saeckel.get('/saeckel/operations/:id', signedIn, async (c) => {
     const userId = c.get('user').id;
     const operation = await findOperation(c.req.param('id'), userId);
     if (operation === null) return c.notFound();
-    if (inStoreroom(operation)) return c.html(operationPage(operation, money));
+    const place = await historyPlace(c.req.query('page'), c.req.query('pouch'), userId);
+    if (inStoreroom(operation)) return c.html(operationPage(operation, money, place));
     const form: PouchesForm = {
       amount: amountForField(operation.cents),
       date: dateForField(operation.date),
@@ -2166,7 +2234,7 @@ export function createSaeckelApp(
       to: operation.toPouchId === null ? '' : String(operation.toPouchId),
       errors: {},
     };
-    return c.html(operationEditPage(operation, await namedPouches(userId), form, money));
+    return c.html(operationEditPage(operation, await namedPouches(userId), form, money, place));
   });
 
   // A record changed (§4.1, §4.8): its amount, date, note and pouches; never its kind, user or
@@ -2183,9 +2251,10 @@ export function createSaeckelApp(
     const userId = c.get('user').id;
     const found = await findOperation(c.req.param('id'), userId);
     if (found === null) return c.notFound();
-    if (inStoreroom(found)) return c.html(operationPage(found, money), 400);
-
     const body = await c.req.parseBody();
+    const place = await historyPlace(body.page, body.pouch, userId);
+    if (inStoreroom(found)) return c.html(operationPage(found, money, place), 400);
+
     const parsed = parseEntry(body, today(settings.timeZone, new Date()));
     const fields = POUCH_FIELDS[found.kind];
     // Only the lists this kind has; any other field — `kind`, `user_id`, `currency` — is not read.
@@ -2202,7 +2271,7 @@ export function createSaeckelApp(
     const from = fields.includes('from') ? parsePouchField(form, 'from') : null;
     const to = fields.includes('to') ? parsePouchField(form, 'to') : null;
     const refuse = async () =>
-      c.html(operationEditPage(found, await namedPouches(userId), form, money), 400);
+      c.html(operationEditPage(found, await namedPouches(userId), form, money, place), 400);
     const entry = parsed.entry;
     if (entry === null || Object.keys(form.errors).length > 0) return refuse();
 
@@ -2270,13 +2339,13 @@ export function createSaeckelApp(
     if (refusal === 'missing') return c.notFound();
     if (refusal === 'stored') {
       const now = await findOperation(String(found.id), userId);
-      return now === null ? c.notFound() : c.html(operationPage(now, money), 400);
+      return now === null ? c.notFound() : c.html(operationPage(now, money, place), 400);
     }
     if (refusal !== null) {
       form.errors[refusal.field] = refusal.text;
       return refuse();
     }
-    return c.redirect('/saeckel/history', 303);
+    return c.redirect(historyReturn(place), 303);
   });
 
   // A record deleted (§4.1, §4.8): for real, no bin. The same order as a change: the record
@@ -2284,11 +2353,14 @@ export function createSaeckelApp(
   // saw them — by one statement in the order of their ids; then the storeroom; then DELETE. An
   // income has no pouch, so nothing but the record is locked. An archiving of a pouch of the
   // record takes the same lock: it either waits and then counts the balance without this
-  // record, or goes first and this is refused. A form sends nothing that is read.
+  // record, or goes first and this is refused. The form sends only the place in «Летопись» to go
+  // back to (M13.6).
   saeckel.post('/saeckel/operations/:id/delete', signedIn, async (c) => {
     const userId = c.get('user').id;
     const id = parseId(c.req.param('id'));
     if (id === null) return c.notFound();
+    const body = await c.req.parseBody();
+    const place = await historyPlace(body.page, body.pouch, userId);
 
     // Why the record is not deleted: gone, or of a pouch in the storeroom.
     let refusal: 'missing' | 'stored' | null = null;
@@ -2323,9 +2395,9 @@ export function createSaeckelApp(
     if (refusal === 'missing') return c.notFound();
     if (refusal === 'stored') {
       const now = await findOperation(String(id), userId);
-      return now === null ? c.notFound() : c.html(operationPage(now, money), 400);
+      return now === null ? c.notFound() : c.html(operationPage(now, money, place), 400);
     }
-    return c.redirect('/saeckel/history', 303);
+    return c.redirect(historyReturn(place), 303);
   });
 
   // «Изменить»: only an active pouch of this user. A pouch in the storeroom is the same 404 as

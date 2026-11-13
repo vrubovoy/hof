@@ -188,13 +188,14 @@ describe('Летопись: the filter by pouch', () => {
     const fromB = await addOperation(1, 'expense', 500, { from: b }, '2026-10-05');
     const ids = async (pouch: number) =>
       rows(await (await history(`?pouch=${pouch}`)).text()).map((row) => row[5]);
+    // A record opened from a filter carries it (M13.6).
     assert.deepEqual(
       await ids(a),
-      [moved, spent, laid].map((id) => `/saeckel/operations/${id}`),
+      [moved, spent, laid].map((id) => `/saeckel/operations/${id}?pouch=${a}&amp;page=1`),
     );
     assert.deepEqual(
       await ids(b),
-      [fromB, moved].map((id) => `/saeckel/operations/${id}`),
+      [fromB, moved].map((id) => `/saeckel/operations/${id}?pouch=${b}&amp;page=1`),
     );
   });
 
@@ -482,5 +483,167 @@ describe('who gets in, and what is no route', () => {
     }
     assert.equal((await post('/saeckel/history', {}, undefined, appWithoutDatabase)).status, 404);
     assert.equal((await post('/saeckel/history', {}, 'anna')).status, 404);
+  });
+});
+
+// M13.6: a record opened from a page of «Летопись» with a filter leads back there — on the band
+// of the phone, after «Сохранить» and after «Удалить». The place is two numbers the server checks;
+// all of it is links and forms, so it works the same without a script.
+describe('from a record back to the same page of Летопись', () => {
+  // 120 records into one pouch: page 3 of its filter has the last 20.
+  async function third() {
+    const food = await addPouch(1, 'Продукты');
+    await pool.query(
+      `INSERT INTO operations (user_id, kind, amount, currency, to_pouch_id, date)
+       SELECT 1, 'assign', n, 'RUB', $1, '2026-10-05' FROM generate_series(1, 120) n`,
+      [food],
+    );
+    const link = rows(await (await history(`?pouch=${food}&page=3`)).text())[0]![5]!;
+    const id = Number(/operations\/(\d+)/.exec(link)![1]);
+    return { food, id, link };
+  }
+  const hidden = (page: string) =>
+    [...page.matchAll(/<input type="hidden" name="(page|pouch)" value="([^"]*)" \/>/g)].map(
+      (m) => `${m[1]}=${m[2]}`,
+    );
+  const save = (id: number, place: Record<string, string>, fields = {}) =>
+    post(
+      `/saeckel/operations/${id}`,
+      { amount: '1,00', date: '', note: '', to: '1', ...place, ...fields },
+      'anna',
+    );
+  const remove = (id: number, place: Record<string, string>) =>
+    post(`/saeckel/operations/${id}/delete`, place, 'anna');
+
+  test('page 3 with a filter: the link carries both, the record and both of its forms keep them', async () => {
+    const { food, id, link } = await third();
+    assert.equal(link, `/saeckel/operations/${id}?pouch=${food}&amp;page=3`);
+    // Opened, and opened again: a reload or a new tab of the same address is the same page.
+    for (let time = 0; time < 2; time += 1) {
+      const page = await (
+        await get(`/saeckel/operations/${id}?pouch=${food}&page=3`, 'anna')
+      ).text();
+      assert.equal(wayBack(page), `/saeckel/history?pouch=${food}&amp;page=3 Летопись`);
+      // «Сохранить» and «Удалить» each carry the place.
+      assert.deepEqual(hidden(page), ['page=3', `pouch=${food}`, 'page=3', `pouch=${food}`]);
+    }
+  });
+
+  test('saved: back to page 3 with the filter', async () => {
+    const { food, id } = await third();
+    const res = await save(id, { page: '3', pouch: String(food) }, { to: String(food) });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), `/saeckel/history?pouch=${food}&page=3`);
+  });
+
+  test('deleted: back to page 3 with the filter', async () => {
+    const { food, id } = await third();
+    const res = await remove(id, { page: '3', pouch: String(food) });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), `/saeckel/history?pouch=${food}&page=3`);
+    const left = await pool.query('SELECT 1 FROM operations WHERE id = $1', [id]);
+    assert.equal(left.rowCount, 0);
+  });
+
+  test('a page without a filter, and a filter on its first page', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const id = await addOperation(1, 'assign', 100, { to: food });
+    assert.equal(
+      (await save(id, { page: '2' }, { to: String(food) })).headers.get('location'),
+      '/saeckel/history?page=2',
+    );
+    assert.equal(
+      (await remove(id, { page: '1', pouch: String(food) })).headers.get('location'),
+      `/saeckel/history?pouch=${food}&page=1`,
+    );
+  });
+
+  test('a refused form keeps the place, and so does the next try', async () => {
+    const { food, id } = await third();
+    const place = { page: '3', pouch: String(food) };
+    const refused = await save(id, place, { amount: 'x', to: String(food) });
+    assert.equal(refused.status, 400);
+    const page = await refused.text();
+    assert.equal(wayBack(page), `/saeckel/history?pouch=${food}&amp;page=3 Летопись`);
+    assert.deepEqual(hidden(page), ['page=3', `pouch=${food}`, 'page=3', `pouch=${food}`]);
+    const next = await save(id, place, { to: String(food) });
+    assert.equal(next.headers.get('location'), `/saeckel/history?pouch=${food}&page=3`);
+  });
+
+  test('a record of a pouch in the storeroom: «Летопись» leads back to the place too', async () => {
+    const old = await addPouch(1, 'Старое', true);
+    const id = await addOperation(1, 'assign', 100, { to: old });
+    const page = await (await get(`/saeckel/operations/${id}?pouch=${old}&page=2`, 'anna')).text();
+    assert.equal(wayBack(page), `/saeckel/history?pouch=${old}&amp;page=2 Летопись`);
+  });
+
+  test('a direct address, no place: the start of Летопись, as before', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const id = await addOperation(1, 'assign', 100, { to: food });
+    const page = await (await get(`/saeckel/operations/${id}`, 'anna')).text();
+    assert.equal(wayBack(page), '/saeckel/history Летопись');
+    assert.deepEqual(hidden(page), []);
+    assert.equal(
+      (await save(id, {}, { to: String(food) })).headers.get('location'),
+      '/saeckel/history',
+    );
+  });
+
+  // Wrong numbers, somebody else's pouch, a missing one, an address or a path in their place.
+  const wrong: [string, Record<string, string>][] = [
+    ['page=0', { page: '0' }],
+    ['page=abc', { page: 'abc' }],
+    ['page=1001', { page: '1001' }],
+    ['page=03', { page: '03' }],
+    ['an empty page', { page: '' }],
+    ['page=-1', { page: '-1' }],
+    ['pouch=abc', { page: '3', pouch: 'abc' }],
+    ['pouch=0', { page: '3', pouch: '0' }],
+    ['a missing pouch', { page: '3', pouch: '99999' }],
+    ['somebody else’s pouch', { page: '3', pouch: 'BORIS' }],
+    ['an address for a page', { page: 'https://example.com/' }],
+    ['a path for a page', { page: '/saeckel/pouches/1' }],
+    ['more of a query in a page', { page: '3&pouch=1' }],
+    ['a path for a pouch', { page: '3', pouch: '//example.com' }],
+  ];
+  for (const [what, place] of wrong) {
+    test(`${what}: the record as usual, every way back the start of Летопись`, async () => {
+      const food = await addPouch(1, 'Продукты');
+      const his = await addPouch(2, 'Бориса');
+      const fields = Object.fromEntries(
+        Object.entries(place).map(([key, value]) => [key, value === 'BORIS' ? String(his) : value]),
+      );
+      const id = await addOperation(1, 'assign', 100, { to: food });
+      const opened = await get(
+        `/saeckel/operations/${id}?${new URLSearchParams(fields).toString()}`,
+        'anna',
+      );
+      assert.equal(opened.status, 200);
+      const page = await opened.text();
+      assert.equal(wayBack(page), '/saeckel/history Летопись');
+      assert.deepEqual(hidden(page), []);
+      const saved = await save(id, fields, { to: String(food) });
+      assert.equal(saved.headers.get('location'), '/saeckel/history');
+      const deleted = await remove(id, fields);
+      assert.equal(deleted.headers.get('location'), '/saeckel/history');
+    });
+  }
+
+  test('from any fields of a form, only an address of Летопись', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const pages = ['1', '2', '1000', '0', 'x', '', '%2F%2Fexample.com', '3#x', '3?x=1', ' 3'];
+    const pouches = [undefined, '', String(food), '1e3', '-1', 'https://example.com', '2147483648'];
+    for (const page of pages) {
+      for (const pouch of pouches) {
+        const id = await addOperation(1, 'assign', 100, { to: food });
+        const place: Record<string, string> = pouch === undefined ? { page } : { page, pouch };
+        const res = await remove(id, place);
+        assert.match(
+          res.headers.get('location') ?? '',
+          /^\/saeckel\/history(\?(pouch=\d+&)?page=\d+)?$/,
+          JSON.stringify(place),
+        );
+      }
+    }
   });
 });
