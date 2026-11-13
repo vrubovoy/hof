@@ -31,6 +31,7 @@ import {
   canMove,
   createChain,
   createGuard,
+  createSolo,
   createSessionWatch,
   doorWay,
   firstPiece,
@@ -806,6 +807,54 @@ describe('fx: decor and the cats (M10.4)', () => {
         assert.match(entry ?? '', source, file);
       }
     }
+  });
+});
+
+describe('fx: one meow at a time (M13.7)', () => {
+  test('ten quick presses on one cat or on two: one sound, each press still a pose', () => {
+    const solo = createSolo();
+    let sounds = 0;
+    let poses = 0;
+    for (let press = 0; press < 10; press += 1) {
+      // Two cats of a page share the place: it is the page's, not a cat's.
+      if (solo.free()) {
+        solo.take({ cat: press % 2 });
+        sounds += 1;
+      }
+      poses += 1;
+    }
+    assert.equal(sounds, 1);
+    assert.equal(poses, 10);
+  });
+
+  test('a sound over — ended, failed, not allowed, stopped — frees the place for the next', () => {
+    const solo = createSolo();
+    for (const over of ['ended', 'error', 'play() refused', 'pause', 'abort']) {
+      const free = solo.take({ over });
+      assert.equal(solo.free(), false, over);
+      free();
+      assert.equal(solo.free(), true, over);
+    }
+  });
+
+  test('a late event of an old sound leaves the newer one alone', () => {
+    const solo = createSolo();
+    const old = solo.take({ n: 1 });
+    old();
+    const newer = solo.take({ n: 2 });
+    // The old sound's error after its end, or its refused play() coming late.
+    old();
+    old();
+    assert.equal(solo.free(), false);
+    newer();
+    assert.equal(solo.free(), true);
+  });
+
+  test('back from the back/forward cache the page starts free', () => {
+    const solo = createSolo();
+    solo.take({});
+    solo.reset();
+    assert.equal(solo.free(), true);
   });
 });
 

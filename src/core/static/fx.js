@@ -430,6 +430,35 @@ export function poseTime(sound) {
 }
 
 /**
+ * One sound of a kind at a time on a page (M13.7): the meows of all the cats of a page, so that
+ * quick presses make no choir. A sound takes the place and gets back what frees it; only that one
+ * frees it, so a late event of an old sound leaves a newer one alone. A page back from the
+ * back/forward cache starts free.
+ */
+export function createSolo() {
+  /** @type {object | null} */
+  let sounding = null;
+  return {
+    /** Whether a new sound may start. */
+    free: () => sounding === null,
+    /**
+     * The place taken by this sound; the function returned frees it, once and only for this one.
+     * @param {object} sound
+     */
+    take(sound) {
+      sounding = sound;
+      return () => {
+        if (sounding === sound) sounding = null;
+      };
+    },
+    /** Free whatever was sounding. */
+    reset() {
+      sounding = null;
+    },
+  };
+}
+
+/**
  * The guard against a form sent twice (§4.8): in this page a POST form goes once, until a new
  * page comes or this one comes back from the back/forward cache. Not idempotency: another tab, a
  * repeat of the network or a page without this script can still send twice.
@@ -601,9 +630,11 @@ function start() {
   const lastVariant = {};
   /**
    * @param {string} name
+   * @param {ReturnType<typeof createSolo>} [solo] the place this sound takes until it is over:
+   *   ended, failed, not allowed, stopped or dropped (M13.7)
    * @returns {HTMLAudioElement | null} the sound now played, for its length
    */
-  function playSound(name) {
+  function playSound(name, solo) {
     const count = SOUNDS[name];
     if (!settings.sound || count === undefined) return null;
     const variant = pickVariant(count, lastVariant[name]);
@@ -612,9 +643,18 @@ function start() {
     const { release } = output(audio, level(settings.soundVol));
     audio.addEventListener('ended', release, { once: true });
     audio.addEventListener('error', release, { once: true });
+    const free = solo?.take(audio);
+    if (free !== undefined) {
+      for (const type of ['ended', 'error', 'pause', 'abort']) {
+        audio.addEventListener(type, free, { once: true });
+      }
+    }
     void context?.resume();
     // Not allowed or not loaded: silence, and nothing tries again.
-    audio.play().catch(release);
+    audio.play().catch(() => {
+      release();
+      free?.();
+    });
     duck();
     return audio;
   }
@@ -1009,6 +1049,9 @@ function start() {
   // twice and, with «Анимации», sniffs at them in its frames; a press meanwhile starts it again.
   /** The second sniff of the cat now sniffing. @type {ReturnType<typeof setTimeout> | undefined} */
   let sniffing;
+  // One meow of all the cats at a time (M13.7); a press meanwhile still changes the pose, silently.
+  // The purr, the chest and the sniffs are not counted.
+  const meowing = createSolo();
   document.addEventListener('click', (event) => {
     if (event.defaultPrevented || !(event.target instanceof Element)) return;
     const thing = poked(event.target);
@@ -1027,7 +1070,8 @@ function start() {
       if (move) replay(thing, 'sniffing');
       return;
     }
-    const audio = playSound(POKES[poke]);
+    const audio =
+      poke === 'meow' ? (meowing.free() ? playSound('meow', meowing) : null) : playSound(poke);
     if (!move) return;
     /** @param {number | null} seconds */
     const hold = (seconds) => thing.style.setProperty('--pose', `${poseTime(seconds)}s`);
@@ -1101,6 +1145,7 @@ function start() {
       open.classList.remove('open');
     }
     for (const cat of document.querySelectorAll('.cat.meow')) cat.classList.remove('meow');
+    meowing.reset();
     clearTimeout(sniffing);
     for (const cat of document.querySelectorAll('.sniffing')) cat.classList.remove('sniffing');
     for (const inner of document.querySelectorAll('.court-inner')) {
