@@ -3918,6 +3918,9 @@ describe('the look of Hof: pages, CSS and static files', () => {
       /\.residents-main \{[^}]*margin-left: -24px;[^}]*padding: 34px 24px 30px 0;/,
     );
     assert.match(media, /\.blot-residents-splatter-b \{\s*right: 64px;\s*top: 250px;/);
+    // M13.10: the ribbon and the keys only after the fading 24 px.
+    assert.match(media, /\.residents-main \.ribbon \{\s*margin-left: 24px;\s*\}/);
+    assert.match(media, /\.keys \{\s*padding-left: 24px;\s*\}/);
     assert.doesNotMatch(media, /13\.33%|64\.29%|-60px/);
   });
 
