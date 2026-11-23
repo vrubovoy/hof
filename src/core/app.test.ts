@@ -4004,6 +4004,27 @@ describe('the look of Hof: pages, CSS and static files', () => {
     assert.match(/\n\.note::before \{([^}]*)\}/.exec(css)![1]!, /transform: rotate\(-9deg\);/);
   });
 
+  // M13.8: cat-on (fx.js, a device that has not chosen «Анимации» yet) shows the poses of the
+  // cats and nothing else; like fx-on, only where the system does not ask for less motion.
+  test('M13.8: cat-on moves the cats alone, never with less motion', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = await (await get(app, '/static/hof.css')).text();
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .map(([, selector]) => selector!.replace(/\/\*[\s\S]*?\*\//g, '').trim())
+      .filter((selector) => selector.includes('cat-on'));
+    assert.ok(rules.length >= 8);
+    for (const selector of rules) {
+      assert.match(selector, /^:is\(\.fx-on, \.cat-on\) \.cat(-[a-z0-9]+|\.meow)?::before$/);
+    }
+    for (const at of [...css.matchAll(/\.cat-on\b/g)].map((match) => match.index)) {
+      assert.ok(
+        css
+          .slice(css.lastIndexOf('@media', at), at)
+          .startsWith('@media (prefers-reduced-motion: no-preference)'),
+      );
+    }
+  });
+
   test('M10.6: the frame of the cats clips them, as the picture does', async (t) => {
     const { app } = await drawnPages(t);
     const css = await (await get(app, '/static/hof.css')).text();

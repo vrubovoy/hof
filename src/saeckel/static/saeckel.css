@@ -2206,16 +2206,17 @@ mark.move {
   }
   /* кот нюхает мешки, 3 с: нос в средний мешок — поднял голову — к лежащему мешку (.sniffing
      ставит fx.js); кадры сменяются мгновенно */
-  .fx-on .sniff .cat::before {
+  /* M13.8: also with cat-on, on a device that has not chosen «Анимации» yet (fx.js) */
+  :is(.fx-on, .cat-on) .sniff .cat::before {
     background: url(img/empty-saeckel-sniff-1.webp) 0 0 / 100% 100% no-repeat;
   }
-  .fx-on .sniff .cat::after {
+  :is(.fx-on, .cat-on) .sniff .cat::after {
     background: url(img/empty-saeckel-sniff-2.webp) 0 0 / 100% 100% no-repeat;
   }
-  .fx-on .sniffing::before {
+  :is(.fx-on, .cat-on) .sniffing::before {
     animation: sniff-a 3s linear both;
   }
-  .fx-on .sniffing::after {
+  :is(.fx-on, .cat-on) .sniffing::after {
     animation: sniff-b 3s linear both;
   }
 

@@ -1409,7 +1409,8 @@ describe('the decor of Säckel (M10.5)', () => {
     assert.ok(!(await (await get('/saeckel/', 'anna')).text()).includes('data-poke="sniff"'));
   });
 
-  test('the frames of the chest and of the cat: backgrounds under fx-on, in reduced motion none', () => {
+  // M13.8: the frames of the cat also under cat-on, a device that has not chosen «Анимации» yet.
+  test('the frames of the chest and of the cat: backgrounds under fx-on (the cat: or cat-on), in reduced motion none', () => {
     for (const file of [
       'emblem-chest.webp',
       'empty-saeckel-sniff-1.webp',
@@ -1420,7 +1421,11 @@ describe('the decor of Säckel (M10.5)', () => {
       );
       assert.equal(rules.length, 1, file);
       const selector = rules[0]![1]!.replace(/\/\*[\s\S]*?\*\//g, '').trim();
-      assert.match(selector, /^\.fx-on /, file);
+      assert.match(
+        selector,
+        file.includes('sniff') ? /^:is\(\.fx-on, \.cat-on\) \.sniff \.cat::/ : /^\.fx-on /,
+        file,
+      );
       const at = CSS.indexOf(`img/${file}`);
       const block = CSS.lastIndexOf('@media', at);
       assert.ok(
@@ -1428,6 +1433,24 @@ describe('the decor of Säckel (M10.5)', () => {
         file,
       );
     }
+  });
+
+  test('M13.8: cat-on moves only the cat at the empty pouches, never with less motion', () => {
+    const rules = [...CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .map(([, selector]) => selector!.replace(/\/\*[\s\S]*?\*\//g, '').trim())
+      .filter((selector) => selector.includes('cat-on'));
+    assert.deepEqual(rules, [
+      ':is(.fx-on, .cat-on) .sniff .cat::before',
+      ':is(.fx-on, .cat-on) .sniff .cat::after',
+      ':is(.fx-on, .cat-on) .sniffing::before',
+      ':is(.fx-on, .cat-on) .sniffing::after',
+    ]);
+    const at = CSS.indexOf('.cat-on');
+    assert.ok(
+      CSS.slice(CSS.lastIndexOf('@media', at), at).startsWith(
+        '@media (prefers-reduced-motion: no-preference)',
+      ),
+    );
   });
 
   // M10.6: the seal stamped on a note ends as the seal of the rule itself (fill backwards).
