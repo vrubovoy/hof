@@ -1167,11 +1167,18 @@ button.place {
   height: 100%;
   object-fit: cover;
 }
+/* M13.10: on a computer the picture goes with the page, as the banner does: the page scrolls as
+   one sheet, nothing stands still beside what moves. Its last 120 px pass into the paper below it
+   (the mask of the image; the scene keeps its own mask for the side). The scene stays the box of
+   the frame of its cat */
 @media (min-width: 1024px) {
   .room-scene {
-    position: sticky;
-    top: 0;
+    position: relative;
     height: 100vh;
+  }
+  .room-scene img {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 120px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 120px), transparent);
   }
 }
 @media (max-width: 1023.98px) {

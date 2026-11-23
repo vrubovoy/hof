@@ -3777,6 +3777,28 @@ describe('the look of Hof: pages, CSS and static files', () => {
     }
   });
 
+  // M13.10: the picture of a room (Приближённые, Мои покои) goes with the page, as the banner
+  // does: nothing stays still while the rest scrolls. Its last 120 px pass into the paper.
+  test('M13.10: the picture of a room goes with the page, its foot fading into the paper', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const rules = [...css.matchAll(/([^{}]*\.room-scene[^{}]*)\{([^}]*)\}/g)];
+    assert.ok(rules.length >= 4);
+    for (const [, , body] of rules) assert.doesNotMatch(body!, /sticky|fixed/);
+    const computer =
+      /@media \(min-width: 1024px\) \{\s*\.room-scene \{([^}]*)\}\s*\.room-scene img \{([^}]*)\}/.exec(
+        css,
+      );
+    assert.ok(computer, 'the picture of a room on a computer');
+    // Positioned: the frame of the cat of my chambers is laid over the picture.
+    assert.match(computer[1]!, /^\s*position: relative;\s*height: 100vh;\s*$/);
+    const fade = 'linear-gradient(to bottom, #000 calc(100% - 120px), transparent)';
+    assert.ok(
+      computer[2]!.includes(`-webkit-mask-image: ${fade};`) &&
+        computer[2]!.includes(`  mask-image: ${fade};`),
+    );
+  });
+
   // M12.7: the banner of a computer is one thing and goes with the page: as high as its items,
   // not lower than the window, the start of its row — never stretched by a long page beside it,
   // nothing scrolled inside it. Its small text is larger and more opaque, all of it with a soft
