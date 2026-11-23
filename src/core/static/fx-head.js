@@ -88,7 +88,8 @@
     },
     transfer: {
       action: /^\/saeckel\/transfer$/,
-      leads: (path) => path === '/saeckel/',
+      // M13.11: or the page of the pouch «Переложить» was opened from.
+      leads: (path) => path === '/saeckel/' || /^\/saeckel\/pouches\/[1-9]\d*$/.test(path),
       marker: () => null,
     },
   };

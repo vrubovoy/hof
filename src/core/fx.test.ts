@@ -1587,6 +1587,8 @@ describe('fx-head.js: money of Säckel (M10.5)', () => {
       ['income', EARNED],
       ['assign', LAID],
       ['transfer', MOVED],
+      // M13.11: «Переложить» opened from a pouch leads back to it.
+      ['transfer', { ...MOVED, path: '/saeckel/pouches/7' }],
     ] as const) {
       const page = visit(right);
       page.parsed();
@@ -1638,6 +1640,8 @@ describe('fx-head.js: money of Säckel (M10.5)', () => {
       ['Летопись', { ...LAID, path: '/saeckel/history' }],
       ['a pouch after laying out', { ...LAID, path: '/saeckel/pouches/7' }],
       ['a record changed', { ...MOVED, after: { ...TRANSFER, action: '/saeckel/operations/5' } }],
+      ['«Изменить» after a transfer', { ...MOVED, path: '/saeckel/pouches/7/edit' }],
+      ['«Летопись» after a transfer', { ...MOVED, path: '/saeckel/history' }],
       [
         'a record deleted',
         { ...LAID, after: { ...ASSIGN, action: '/saeckel/operations/5/delete' } },

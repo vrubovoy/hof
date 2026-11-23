@@ -1488,6 +1488,15 @@ button.place {
     margin-left: -24px;
     padding: 34px 24px 30px 0;
   }
+  /* M13.10: the ribbon and the keys start where the picture has passed into the paper — over its
+     last 24 px the end of the ribbon and the names of the left keys looked faded. The form keeps
+     those 24 px, so that it stays on one line */
+  .residents-main .ribbon {
+    margin-left: 24px;
+  }
+  .keys {
+    padding-left: 24px;
+  }
   /* кляксы в кадре 1440×900, от правого края */
   /* M12.7: 30 px to the right of before — the keys, 16 px wider, reached it at every width */
   .blot-residents-splatter-b {
