@@ -12,6 +12,7 @@ import {
   addPouch,
   appWithoutDatabase,
   assertNothingHeld,
+  balanceOn,
   deadPool,
   failingTrigger,
   fold,
@@ -395,7 +396,9 @@ describe('«Переложить» and «Покрыть из другого ме
     const food = await addPouch(1, 'Продукты');
     const page = await (await get(`/saeckel/pouches/${food}`, 'anna')).text();
     assert.ok(
-      page.includes(`<a class="link" href="/saeckel/transfer?from=${food}">Переложить</a>`),
+      page.includes(
+        `<a class="link" href="/saeckel/transfer?from=${food}&amp;back=${food}">Переложить</a>`,
+      ),
     );
     const old = await addPouch(1, 'Старый');
     await addOperation(1, 'expense', 100, { from: old });
@@ -413,12 +416,12 @@ describe('«Переложить» and «Покрыть из другого ме
     const above = await (await get(`/saeckel/pouches/${cart}`, 'anna')).text();
     assert.ok(!above.includes('Покрыть'));
     await addOperation(1, 'expense', 124_150, { from: cart });
-    const href = `/saeckel/transfer?to=${cart}&amp;amount=1%C2%A0240%2C50`;
+    const href = `/saeckel/transfer?to=${cart}&amp;amount=1%C2%A0240%2C50&amp;back=${cart}`;
     for (const path of [`/saeckel/pouches/${cart}`, `/saeckel/pouches/${cart}/edit`]) {
       const page = fold(await (await get(path, 'anna')).text());
       assert.ok(page.includes(`<a class="link" href="${href}">Покрыть из другого мешка</a>`), path);
     }
-    const form = await (await get(href.replace('&amp;', '&'), 'anna')).text();
+    const form = await (await get(href.replaceAll('&amp;', '&'), 'anna')).text();
     assert.deepEqual(chosen(form, 'to'), [String(cart)]);
     assert.deepEqual(chosen(form, 'from'), []);
     assert.ok(form.includes('value="1 240,50"'));
@@ -431,7 +434,7 @@ describe('«Переложить» and «Покрыть из другого ме
     const page = await (await get(`/saeckel/pouches/${cart}`, 'anna')).text();
     assert.ok(
       page.includes(
-        `<a class="link" href="/saeckel/transfer?to=${cart}">Покрыть из другого мешка</a>`,
+        `<a class="link" href="/saeckel/transfer?to=${cart}&amp;back=${cart}">Покрыть из другого мешка</a>`,
       ),
     );
   });
@@ -596,5 +599,160 @@ describe('Переложить and others at once', () => {
     assert.equal(second.status, 303);
     assert.deepEqual(await balances(), { A: '−3,00 ₽', B: '1,00 ₽', C: '2,00 ₽' });
     await assertNothingHeld(a);
+  });
+});
+
+// M13.11: «Переложить» and «Покрыть из другого мешка» opened from a pouch lead back to it — on the
+// band of the phone and after the record is written. Which pouch is `back`, apart from `from` and
+// `to`; the server takes it only as an active pouch of this user, and anything else leads to
+// Мешки, as before. Never an address that came: only /saeckel/pouches/<id> or /saeckel/.
+describe('M13.11: back to the pouch «Переложить» was opened from', () => {
+  // The hidden field of the way back in the form, if any.
+  const backField = (page: string) =>
+    /<input type="hidden" name="back" value="([^"]*)" \/>/.exec(page)?.[1];
+
+  test('the links of the page of a pouch and of «Изменить» name it; those of Мешки do not', async () => {
+    const cart = await addPouch(1, 'Транспорт');
+    await addOperation(1, 'expense', 124_050, { from: cart });
+    const cover = `/saeckel/transfer?to=${cart}&amp;amount=1%C2%A0240%2C50&amp;back=${cart}`;
+    const own = fold(await (await get(`/saeckel/pouches/${cart}`, 'anna')).text());
+    assert.ok(
+      own.includes(`href="/saeckel/transfer?from=${cart}&amp;back=${cart}">Переложить</a>`),
+    );
+    assert.ok(own.includes(`href="${cover}">Покрыть из другого мешка</a>`));
+    const edit = fold(await (await get(`/saeckel/pouches/${cart}/edit`, 'anna')).text());
+    assert.ok(edit.includes(`href="${cover}">Покрыть из другого мешка</a>`));
+    // On a computer Мешки shows the first pouch: its links lead back to Мешки, as before.
+    const all = fold(await (await get('/saeckel/', 'anna')).text());
+    assert.ok(all.includes(`href="/saeckel/transfer?from=${cart}">Переложить</a>`));
+    assert.ok(all.includes(`href="/saeckel/transfer?to=${cart}&amp;amount=1%C2%A0240%2C50">`));
+    assert.ok(!all.includes('back='));
+  });
+
+  test('the form opened from a pouch: its way back and its hidden field; without one, Мешки', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const page = await (await get(`/saeckel/transfer?from=${food}&back=${food}`, 'anna')).text();
+    assert.equal(wayBack(page), `/saeckel/pouches/${food} Продукты`);
+    assert.equal(backField(page), String(food));
+    assert.deepEqual(chosen(page, 'from'), [String(food)]);
+    const plain = await (await get('/saeckel/transfer', 'anna')).text();
+    assert.equal(wayBack(plain), '/saeckel/ Мешки');
+    assert.equal(backField(plain), undefined);
+  });
+
+  test('somebody else’s, a stored, a missing pouch or a wrong id: the way back is Мешки', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const theirs = await addPouch(2, 'Чужой');
+    const stored = await addPouch(1, 'Старый', true);
+    for (const back of [String(theirs), String(stored), '999', '0', '01', `${food}x`, '-1', '']) {
+      const page = await (
+        await get(`/saeckel/transfer?from=${food}&back=${encodeURIComponent(back)}`, 'anna')
+      ).text();
+      assert.equal(wayBack(page), '/saeckel/ Мешки', back);
+      assert.equal(backField(page), undefined, back);
+      assert.ok(!page.includes('Чужой'), back);
+    }
+  });
+
+  test('written: once, to the pouch it was opened from — whichever pouches were chosen', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const cart = await addPouch(1, 'Транспорт');
+    const trip = await addPouch(1, 'Отпуск');
+    await addOperation(1, 'assign', 50_000, { to: cart });
+    // Opened from Продукты, the choice changed to Транспорт → Отпуск.
+    const res = await transfer({
+      from: String(cart),
+      to: String(trip),
+      amount: '120,50',
+      back: String(food),
+    });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), `/saeckel/pouches/${food}`);
+    const written = await operations();
+    assert.equal(written.filter((row) => row.kind === 'transfer').length, 1);
+    assert.deepEqual(
+      [written.at(-1)!.from_pouch_id, written.at(-1)!.to_pouch_id, written.at(-1)!.amount],
+      [cart, trip, '12050'],
+    );
+    assert.deepEqual(await balances(), {
+      Продукты: '0,00 ₽',
+      Транспорт: '379,50 ₽',
+      Отпуск: '120,50 ₽',
+    });
+  });
+
+  test('a debt covered from «Изменить»: back on the pouch, its balance zero', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const cart = await addPouch(1, 'Транспорт');
+    await addOperation(1, 'assign', 200_000, { to: food });
+    await addOperation(1, 'expense', 124_050, { from: cart });
+    const form = await (
+      await get(`/saeckel/transfer?to=${cart}&amount=1%C2%A0240%2C50&back=${cart}`, 'anna')
+    ).text();
+    assert.equal(backField(form), String(cart));
+    const res = await transfer({
+      from: String(food),
+      to: String(cart),
+      amount: '1 240,50',
+      back: backField(form)!,
+    });
+    assert.equal(res.headers.get('location'), `/saeckel/pouches/${cart}`);
+    const page = await (await get(res.headers.get('location')!, 'anna')).text();
+    assert.equal(balanceOn(page), '0,00 ₽');
+    assert.ok(!page.includes('Покрыть'));
+    assert.deepEqual(await balances(), { Продукты: '759,50 ₽', Транспорт: '0,00 ₽' });
+  });
+
+  test('no pouch to go back to: Мешки, the record written all the same', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const cart = await addPouch(1, 'Транспорт');
+    const theirs = await addPouch(2, 'Чужой');
+    const stored = await addPouch(1, 'Старый', true);
+    const backs = [String(theirs), String(stored), '999', 'x', '0', `/saeckel/pouches/${food}`];
+    for (const back of backs) {
+      const res = await transfer({ from: String(food), to: String(cart), amount: '1', back });
+      assert.equal(res.status, 303, back);
+      assert.equal(res.headers.get('location'), '/saeckel/', back);
+    }
+    const res = await transfer({ from: String(food), to: String(cart), amount: '1' });
+    assert.equal(res.headers.get('location'), '/saeckel/');
+    assert.equal((await operations()).length, backs.length + 1);
+  });
+
+  test('a refusal keeps the way back; sent again, written once and back on the pouch', async () => {
+    const food = await addPouch(1, 'Продукты');
+    const cart = await addPouch(1, 'Транспорт');
+    const refused = await transfer({
+      from: String(food),
+      to: String(food),
+      amount: 'x',
+      back: String(cart),
+    });
+    assert.equal(refused.status, 400);
+    const page = await refused.text();
+    assert.equal(backField(page), String(cart));
+    assert.equal(wayBack(page), `/saeckel/pouches/${cart} Транспорт`);
+    assert.equal((await operations()).length, 0);
+    const again = await transfer({
+      from: String(food),
+      to: String(cart),
+      amount: '5',
+      back: backField(page)!,
+    });
+    assert.equal(again.headers.get('location'), `/saeckel/pouches/${cart}`);
+    assert.equal((await operations()).length, 1);
+    const shown = await (await get(`/saeckel/pouches/${cart}`, 'anna')).text();
+    assert.equal(balanceOn(shown), '5,00 ₽');
+    // Refused under the lock (the target put into the storeroom meanwhile): the way back as well.
+    await addOperation(1, 'transfer', 500, { from: cart, to: food });
+    await archive(cart);
+    const late = await transfer({
+      from: String(food),
+      to: String(cart),
+      amount: '5',
+      back: String(food),
+    });
+    assert.equal(late.status, 400);
+    assert.equal(backField(await late.text()), String(food));
   });
 });

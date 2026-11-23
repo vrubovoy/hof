@@ -908,15 +908,24 @@ function assignPage(
 // «Покрыть из другого мешка» (§6, the prototype PouchEditMobile), only under a balance
 // below zero: «Переложить» with this pouch as the target and its debt as the amount. A debt
 // larger than one record can hold is left out, and the form then asks for the amount. Only a
-// hint for the form: the debt may change before it is sent.
-function coverLink(pouchId: number, balance: number) {
+// hint for the form: the debt may change before it is sent. M13.11: from the page of the pouch
+// and from «Изменить» it also names this pouch as the way back (`back`).
+function coverLink(pouchId: number, balance: number, back: boolean) {
   if (balance >= 0) return '';
   const debt = -balance;
   const amount =
     debt <= AMOUNT_MAX_CENTS ? `&amount=${encodeURIComponent(amountForField(debt))}` : '';
+  const href = `/saeckel/transfer?to=${pouchId}${amount}${back ? `&back=${pouchId}` : ''}`;
   return html`<p class="cover">
-    <a class="link" href="/saeckel/transfer?to=${pouchId}${amount}">Покрыть из другого мешка</a>
+    <a class="link" href="${href}">Покрыть из другого мешка</a>
   </p>`;
+}
+
+// M13.11: the pouch «Переложить» was opened from, which the form leads back to — checked by the
+// server, apart from «Из мешка» and «В мешок», which may be chosen otherwise.
+interface BackPouch {
+  id: number;
+  name: string;
 }
 
 // One list of pouches of a form (the prototype SaeckelForms): the active pouches of the
@@ -956,8 +965,15 @@ function pouchSelect(
 
 // «Переложить из мешка в мешок», texts from the prototype SaeckelForms: the form on the
 // right in its frame; the two lists side by side while their longest line fits half of the
-// frame, else one under another; on the phone one column, as in IncomeMobile.
-function transferPage(column: PouchColumn, form: PouchesForm, money: MoneyFormat) {
+// frame, else one under another; on the phone one column, as in IncomeMobile. M13.11: opened
+// from a pouch (`back`), the way back of the phone leads to it, and the form keeps it in a hidden
+// field so that the page after the transfer is that pouch — also after a refusal.
+function transferPage(
+  column: PouchColumn,
+  form: PouchesForm,
+  money: MoneyFormat,
+  back: BackPouch | null,
+) {
   const choices = column.pouches.map((pouch) => ({
     id: pouch.id,
     text: `${pouch.name} — ${money.format(pouch.balance)}`,
@@ -966,12 +982,16 @@ function transferPage(column: PouchColumn, form: PouchesForm, money: MoneyFormat
     {
       title: 'Säckel — переложить',
       tab: 'pouches',
-      back: { href: '/saeckel/', text: 'Мешки' },
+      back:
+        back === null
+          ? { href: '/saeckel/', text: 'Мешки' }
+          : { href: `/saeckel/pouches/${back.id}`, text: back.name },
       column: pouchColumn(column, money, { buttons: true }),
     },
     html`<div class="sk-form">
       <h1 class="title t-2">Переложить из мешка в мешок</h1>
       <form class="entry" method="post" action="/saeckel/transfer" data-fx="transfer">
+        ${back === null ? '' : html`<input type="hidden" name="back" value="${back.id}" />`}
         <div class="pouch-pair">
           ${pouchSelect('from', 'Из мешка', choices, form, true)}
           ${pouchSelect('to', 'В мешок', choices, form, true)}
@@ -1336,8 +1356,10 @@ function operationEditPage(
 // «Покрыть из другого мешка» — the refusal, if any, the form of an expense and the last
 // movements. A pouch in the storeroom has neither the links nor the form, only «Вернуть»: it is
 // brought back first. `heading` is the level of its name: 1 on its own page, 2 on Мешки, where
-// the ribbon is the h1.
+// the ribbon is the h1. M13.11: on its own page «Переложить» and «Покрыть» lead back to it; on
+// Мешки they lead back to Мешки, as before.
 function pouchPane(pouch: Pouch, view: PouchView, money: MoneyFormat, heading: 1 | 2) {
+  const transfer = `/saeckel/transfer?from=${pouch.id}${heading === 1 ? `&back=${pouch.id}` : ''}`;
   const name =
     heading === 1
       ? html`<h1 class="title t-1">${pouch.name}</h1>`
@@ -1349,7 +1371,7 @@ function pouchPane(pouch: Pouch, view: PouchView, money: MoneyFormat, heading: 1
         pouch.is_archived
           ? ''
           : html`<p class="pouch-links">
-              <a class="link" href="/saeckel/transfer?from=${pouch.id}">Переложить</a>
+              <a class="link" href="${transfer}">Переложить</a>
               <a class="link" href="/saeckel/pouches/${pouch.id}/edit" data-fx="flip-fwd-phone"
                 >Изменить</a
               >
@@ -1360,7 +1382,7 @@ function pouchPane(pouch: Pouch, view: PouchView, money: MoneyFormat, heading: 1
       <span class="caps">Остаток</span>
       <span class="${view.balance < 0 ? 'money neg' : 'money'}">${money.format(view.balance)}</span>
     </p>
-    ${pouch.is_archived ? '' : coverLink(pouch.id, view.balance)}
+    ${pouch.is_archived ? '' : coverLink(pouch.id, view.balance, heading === 1)}
     ${
       view.refusal === undefined
         ? ''
@@ -1442,7 +1464,7 @@ function editPouchPage(
               В кладовую
             </button>
           </form>
-          ${coverLink(pouch.id, balance)}
+          ${coverLink(pouch.id, balance, true)}
         </div>
       </section>
     </div>`,
@@ -2069,6 +2091,19 @@ export function createSaeckelApp(
   // «Переложить». `from`, `to` and `amount` only fill the form in (§4.1, §4.7): a pouch is
   // chosen only if it is an active pouch of this user, an amount only if it parses, and then
   // as Hof writes it, never as it came. Anything else leaves the field empty.
+  // M13.11: the way back of «Переложить» — `back` from the address or the form — only to an
+  // active pouch of this user. Somebody else's, one in the storeroom, a missing one, a wrong id
+  // or none: no pouch, and the way back is Мешки, as before. Never an address that came.
+  const backPouch = async (input: unknown, userId: number): Promise<BackPouch | null> => {
+    const id = typeof input === 'string' ? parseId(input) : null;
+    if (id === null) return null;
+    const { rows } = await pool.query<BackPouch>(
+      'SELECT id, name FROM pouches WHERE id = $1 AND user_id = $2 AND NOT is_archived',
+      [id, userId],
+    );
+    return rows[0] ?? null;
+  };
+
   saeckel.get('/saeckel/transfer', signedIn, async (c) => {
     const userId = c.get('user').id;
     const pouches = await activePouches(userId);
@@ -2083,7 +2118,8 @@ export function createSaeckelApp(
       from: own('from'),
       to: own('to'),
     };
-    return c.html(transferPage(await columnOf(userId, { pouches }), form, money));
+    const back = await backPouch(c.req.query('back'), userId);
+    return c.html(transferPage(await columnOf(userId, { pouches }), form, money, back));
   });
 
   // A transfer (§4.1, §4.8): every field first, then one transaction that locks both pouches by
@@ -2111,7 +2147,8 @@ export function createSaeckelApp(
     const to = parsePouchField(form, 'to');
     const refuse = async () => {
       const column = await columnOf(userId, { pouches: await activePouches(userId) });
-      return c.html(transferPage(column, form, money), 400);
+      const back = await backPouch(body.back, userId);
+      return c.html(transferPage(column, form, money, back), 400);
     };
     const entry = parsed.entry;
     if (entry === null || from === null || to === null || Object.keys(form.errors).length > 0) {
@@ -2161,7 +2198,10 @@ export function createSaeckelApp(
       form.errors[refusal.field] = refusal.text;
       return refuse();
     }
-    return c.redirect('/saeckel/', 303);
+    // After the commit: the pouch the form was opened from, if it is still an active pouch of
+    // this user, else Мешки.
+    const back = await backPouch(body.back, userId);
+    return c.redirect(back === null ? '/saeckel/' : `/saeckel/pouches/${back.id}`, 303);
   });
 
   // «Летопись» (§4.1): the records of this user, newest first, 50 a page. `pouch` is a pouch of
