@@ -354,6 +354,7 @@ img {
 
 /* ключница: у приближённого ключ с биркой, «ключ взят» — пустой крючок на том же месте. Логин
    до 32 символов переносится внутри ключа */
+/* M13.10: first after «_», «.», «-» (the <wbr> of the page), anywhere only where it has none */
 .keys {
   display: flex;
   flex-wrap: wrap;

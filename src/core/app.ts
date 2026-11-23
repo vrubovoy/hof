@@ -1017,6 +1017,15 @@ function accountPage(user: CurrentUser, services: readonly Service[], form: Acco
   });
 }
 
+// M13.10: the login on a key may wrap after «_», «.» or «-» (after the last of several in a row),
+// not just anywhere before its last letters. <wbr> is a place to break, not a character: the text
+// of the element and a copy of it are the login itself. Each part is escaped as any text.
+export function keyName(username: string) {
+  return username
+    .split(/(?<=[_.-])(?![_.-])/)
+    .map((part, index) => (index === 0 ? html`${part}` : html`<wbr />${part}`));
+}
+
 // Texts and the picture from the prototypes Users, UsersMobile and UsersEmpty:
 // the key board of the court — everybody, the administrator first, a key with its tag or an
 // empty hook, and the way to the card of everybody else — or, while nobody else is in the court,
@@ -1107,7 +1116,7 @@ function usersPage(
                         alt=""
                         draggable="false"
                       />
-                      <b>${person.username}</b>
+                      <b>${keyName(person.username)}</b>
                       <span class="small muted">${personStatus(person)}</span>
                       ${
                         person.is_admin

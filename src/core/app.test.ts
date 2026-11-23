@@ -10,10 +10,11 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, test, type TestContext } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { html } from 'hono/html';
 import { Pool } from 'pg';
 import { createApp, newDummyPasswordHash } from '../main.ts';
 import { migrate } from '../migrate.ts';
-import { coreStatic } from './app.ts';
+import { coreStatic, keyName } from './app.ts';
 import { startFirstRun } from './gate-key.ts';
 import { hashPassword, verifyPassword } from './password.ts';
 import { createSession, hashSessionToken, newSessionToken, sessionCookie } from './sessions.ts';
@@ -1595,6 +1596,42 @@ describe('Приближённые', () => {
     );
     assert.ok(!page.includes('href="/admin/users/1"'));
     assert.ok(!page.includes('Пока у двора только хозяин'));
+  });
+
+  // M13.10: a login on its key wraps after «_», «.», «-», not before its last letter; the text of
+  // the element is the login, character for character.
+  test('M13.10: a login may wrap after its separators, its text the login itself', async (t) => {
+    const { app, cookie } = await found(t);
+    const logins = {
+      tomato_executor: 'tomato_<wbr />executor',
+      aleksandrkonstantinovichvolkonsk: 'aleksandrkonstantinovichvolkonsk',
+      ab: 'ab',
+      'anna-maria.van_der_berg': 'anna-<wbr />maria.<wbr />van_<wbr />der_<wbr />berg',
+      x__y: 'x__<wbr />y',
+      'a.-_b': 'a.-_<wbr />b',
+      z_: 'z_',
+    };
+    for (const login of Object.keys(logins)) await addUser(login);
+    const page = await (await get(app, '/admin/users', { cookie })).text();
+    const names = [...page.matchAll(/<li class="key">[\s\S]*?<b>([\s\S]*?)<\/b>/g)].map(
+      ([, name]) => name!,
+    );
+    for (const [login, drawn] of Object.entries(logins)) {
+      assert.ok(names.includes(drawn), login);
+      assert.equal(drawn.replaceAll('<wbr />', ''), login, 'nothing added, nothing lost');
+    }
+    assert.ok(
+      names.every((name) => !/[\u00AD\u200B\s]/.test(name.replaceAll('<wbr />', ''))),
+      'no soft hyphen, no zero-width space, no space',
+    );
+    // Only the key board: the card of the person keeps the login whole.
+    const card = await (await get(app, '/admin/users/2', { cookie })).text();
+    assert.ok(card.includes('tomato_executor') && !card.includes('<wbr'));
+  });
+
+  test('M13.10: each part of a login on a key is escaped as text', async () => {
+    const drawn = String(await html`${keyName('<i>&"x\'_y.<b>')}`);
+    assert.equal(drawn, '&lt;i&gt;&amp;&quot;x&#39;_<wbr />y.<wbr />&lt;b&gt;');
   });
 });
 
