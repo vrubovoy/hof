@@ -430,6 +430,88 @@ export function poseTime(sound) {
 }
 
 /**
+ * One sound of a kind at a time on a page (M13.7): the meows of all the cats of a page, so that
+ * quick presses make no choir. A sound takes the place and gets back what frees it; only that one
+ * frees it, so a late event of an old sound leaves a newer one alone. A page back from the
+ * back/forward cache starts free.
+ */
+export function createSolo() {
+  /** @type {object | null} */
+  let sounding = null;
+  return {
+    /** Whether a new sound may start. */
+    free: () => sounding === null,
+    /**
+     * The place taken by this sound; the function returned frees it, once and only for this one.
+     * @param {object} sound
+     */
+    take(sound) {
+      sounding = sound;
+      return () => {
+        if (sounding === sound) sounding = null;
+      };
+    },
+    /** Free whatever was sounding. */
+    reset() {
+      sounding = null;
+    },
+  };
+}
+
+/** The sniffing of the cat at the empty pouches, its frames and its two sniffs: 3 s. */
+export const SNIFF_MS = 3000;
+/** The longest pose a cat may be left in, should its animation never say it ended. */
+export const POSE_MAX_MS = 5000;
+
+/**
+ * Decor busy with a press (M13.7): a cat in its pose or with its sound, the cat at the pouches
+ * sniffing. A press on a busy thing does nothing — no sound, the animation not started again —
+ * until each part of the effect it started is over. Parts are counted only after the press set
+ * them all up (close). A page back from the back/forward cache starts free, and a part of an
+ * effect from before that frees nothing new.
+ */
+export function createBusy() {
+  let busy = new WeakSet();
+  return {
+    /** @param {object} thing */
+    has: (thing) => busy.has(thing),
+    /**
+     * The thing busy from now; `part()` gives the end of one part, `close()` says all are given.
+     * @param {object} thing
+     */
+    take(thing) {
+      const own = busy;
+      own.add(thing);
+      let parts = 0;
+      let closed = false;
+      const check = () => {
+        if (closed && parts === 0) own.delete(thing);
+      };
+      return {
+        part() {
+          parts += 1;
+          let over = false;
+          return () => {
+            if (over) return;
+            over = true;
+            parts -= 1;
+            check();
+          };
+        },
+        close() {
+          closed = true;
+          check();
+        },
+      };
+    },
+    /** Nothing busy any more. */
+    reset() {
+      busy = new WeakSet();
+    },
+  };
+}
+
+/**
  * The guard against a form sent twice (§4.8): in this page a POST form goes once, until a new
  * page comes or this one comes back from the back/forward cache. Not idempotency: another tab, a
  * repeat of the network or a page without this script can still send twice.
@@ -601,9 +683,11 @@ function start() {
   const lastVariant = {};
   /**
    * @param {string} name
+   * @param {() => void} [over] called once when the sound is over: ended, failed, not allowed,
+   *   stopped or dropped (M13.7); not at all when no sound is made — null comes back then
    * @returns {HTMLAudioElement | null} the sound now played, for its length
    */
-  function playSound(name) {
+  function playSound(name, over) {
     const count = SOUNDS[name];
     if (!settings.sound || count === undefined) return null;
     const variant = pickVariant(count, lastVariant[name]);
@@ -612,9 +696,21 @@ function start() {
     const { release } = output(audio, level(settings.soundVol));
     audio.addEventListener('ended', release, { once: true });
     audio.addEventListener('error', release, { once: true });
+    let done = false;
+    const end = () => {
+      if (done) return;
+      done = true;
+      over?.();
+    };
+    for (const type of ['ended', 'error', 'pause', 'abort']) {
+      audio.addEventListener(type, end, { once: true });
+    }
     void context?.resume();
     // Not allowed or not loaded: silence, and nothing tries again.
-    audio.play().catch(release);
+    audio.play().catch(() => {
+      release();
+      end();
+    });
     duck();
     return audio;
   }
@@ -1009,6 +1105,11 @@ function start() {
   // twice and, with «Анимации», sniffs at them in its frames; a press meanwhile starts it again.
   /** The second sniff of the cat now sniffing. @type {ReturnType<typeof setTimeout> | undefined} */
   let sniffing;
+  // M13.7: a cat in its pose or with its sound, and the cat sniffing, take no press until that is
+  // over; and of all the cats of a page one meows at a time — another cat meanwhile takes its pose
+  // silently. The chest opens and closes as before.
+  const meowing = createSolo();
+  const busy = createBusy();
   document.addEventListener('click', (event) => {
     if (event.defaultPrevented || !(event.target instanceof Element)) return;
     const thing = poked(event.target);
@@ -1020,22 +1121,56 @@ function start() {
       if (move) thing.classList.toggle('open');
       return;
     }
+    if (busy.has(thing)) return;
+    const job = busy.take(thing);
     if (poke === 'sniff') {
       clearTimeout(sniffing);
       playSound('sniff');
       sniffing = setTimeout(() => playSound('sniff'), SNIFFS[1]);
       if (move) replay(thing, 'sniffing');
+      setTimeout(job.part(), SNIFF_MS);
+      job.close();
       return;
     }
-    const audio = playSound(POKES[poke]);
-    if (!move) return;
-    /** @param {number | null} seconds */
-    const hold = (seconds) => thing.style.setProperty('--pose', `${poseTime(seconds)}s`);
-    hold(
-      audio !== null && audio.readyState >= HTMLMediaElement.HAVE_METADATA ? audio.duration : null,
-    );
-    audio?.addEventListener('loadedmetadata', () => hold(audio.duration), { once: true });
-    replay(thing, 'meow');
+    /** @type {HTMLAudioElement | null} */
+    let audio = null;
+    if (poke === 'purr' || meowing.free()) {
+      const soundOver = job.part();
+      const free = poke === 'meow' ? meowing.take({}) : () => {};
+      const over = () => {
+        free();
+        soundOver();
+      };
+      audio = playSound(poke, over);
+      if (audio === null) over();
+    }
+    if (move) {
+      const poseOver = job.part();
+      /** @param {{ animationName?: string }} [event] the end of an animation, or none: too long */
+      const end = (event) => {
+        if (event !== undefined && event.animationName !== 'pose') return;
+        thing.removeEventListener('animationend', end);
+        thing.removeEventListener('animationcancel', end);
+        clearTimeout(stuck);
+        poseOver();
+      };
+      // Should the animation never say it ended — the cat hidden meanwhile — the cat is free anyway.
+      const stuck = setTimeout(() => end(), POSE_MAX_MS);
+      thing.addEventListener('animationend', end);
+      thing.addEventListener('animationcancel', end);
+      /** @param {number | null} seconds */
+      const hold = (seconds) => thing.style.setProperty('--pose', `${poseTime(seconds)}s`);
+      hold(
+        audio !== null && audio.readyState >= HTMLMediaElement.HAVE_METADATA
+          ? audio.duration
+          : null,
+      );
+      audio?.addEventListener('loadedmetadata', () => hold(audio?.duration ?? null), {
+        once: true,
+      });
+      replay(thing, 'meow');
+    }
+    job.close();
   });
   /** Starts the animation of a class again. @param {HTMLElement} thing @param {string} name */
   function replay(thing, name) {
@@ -1101,6 +1236,8 @@ function start() {
       open.classList.remove('open');
     }
     for (const cat of document.querySelectorAll('.cat.meow')) cat.classList.remove('meow');
+    meowing.reset();
+    busy.reset();
     clearTimeout(sniffing);
     for (const cat of document.querySelectorAll('.sniffing')) cat.classList.remove('sniffing');
     for (const inner of document.querySelectorAll('.court-inner')) {

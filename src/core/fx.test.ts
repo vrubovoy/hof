@@ -30,7 +30,9 @@ import {
   between,
   canMove,
   createChain,
+  createBusy,
   createGuard,
+  createSolo,
   createSessionWatch,
   doorWay,
   firstPiece,
@@ -806,6 +808,132 @@ describe('fx: decor and the cats (M10.4)', () => {
         assert.match(entry ?? '', source, file);
       }
     }
+  });
+});
+
+describe('fx: one meow at a time, no effect started again before it ends (M13.7)', () => {
+  // A press as fx.js takes it: a busy cat does nothing; a free one sounds, if no other cat of the
+  // page meows, and takes its pose. `over` ends the parts of the last press: its sound, its pose.
+  function page() {
+    const solo = createSolo();
+    const busy = createBusy();
+    const counted = { sounds: 0, poses: 0 };
+    let parts: (() => void)[] = [];
+    const press = (cat: object) => {
+      if (busy.has(cat)) return;
+      const job = busy.take(cat);
+      parts = [];
+      if (solo.free()) {
+        const free = solo.take({});
+        const soundOver = job.part();
+        counted.sounds += 1;
+        parts.push(() => {
+          free();
+          soundOver();
+        });
+      }
+      counted.poses += 1;
+      parts.push(job.part());
+      job.close();
+    };
+    return { press, counted, over: () => parts.forEach((part) => part()), solo, busy };
+  }
+
+  test('ten quick presses on one cat: one sound, one pose', () => {
+    const { press, counted } = page();
+    const cat = {};
+    for (let time = 0; time < 10; time += 1) press(cat);
+    assert.deepEqual(counted, { sounds: 1, poses: 1 });
+  });
+
+  test('two cats: one sound of the page; the other cat takes its pose silently', () => {
+    const { press, counted } = page();
+    const [first, second] = [{}, {}];
+    for (let time = 0; time < 10; time += 1) press(time % 2 === 0 ? first : second);
+    assert.deepEqual(counted, { sounds: 1, poses: 2 });
+  });
+
+  test('once the sound and the pose are over, the next press sounds and poses again', () => {
+    const { press, counted, over } = page();
+    const cat = {};
+    press(cat);
+    over();
+    press(cat);
+    assert.deepEqual(counted, { sounds: 2, poses: 2 });
+  });
+
+  test('a cat is free only when every part of its effect is over', () => {
+    const busy = createBusy();
+    const cat = {};
+    const job = busy.take(cat);
+    const sound = job.part();
+    const pose = job.part();
+    job.close();
+    sound();
+    assert.equal(busy.has(cat), true, 'the pose goes on');
+    sound();
+    assert.equal(busy.has(cat), true, 'an end told twice counts once');
+    pose();
+    assert.equal(busy.has(cat), false);
+  });
+
+  test('no part at all — no sound, no animation: the cat is free at once', () => {
+    const busy = createBusy();
+    const cat = {};
+    busy.take(cat).close();
+    assert.equal(busy.has(cat), false);
+  });
+
+  test('a part over before close does not free the cat early', () => {
+    const busy = createBusy();
+    const cat = {};
+    const job = busy.take(cat);
+    job.part()();
+    assert.equal(busy.has(cat), true);
+    job.close();
+    assert.equal(busy.has(cat), false);
+  });
+
+  test('a sound over — ended, failed, not allowed, stopped — frees the meow of the page', () => {
+    const solo = createSolo();
+    for (const over of ['ended', 'error', 'play() refused', 'pause', 'abort']) {
+      const free = solo.take({ over });
+      assert.equal(solo.free(), false, over);
+      free();
+      assert.equal(solo.free(), true, over);
+    }
+  });
+
+  test('a late event of an old sound leaves the newer one alone', () => {
+    const solo = createSolo();
+    const old = solo.take({ n: 1 });
+    old();
+    const newer = solo.take({ n: 2 });
+    // The old sound's error after its end, or its refused play() coming late.
+    old();
+    old();
+    assert.equal(solo.free(), false);
+    newer();
+    assert.equal(solo.free(), true);
+  });
+
+  test('back from the back/forward cache all starts free; an old end frees nothing new', () => {
+    const solo = createSolo();
+    const busy = createBusy();
+    const cat = {};
+    solo.take({});
+    const old = busy.take(cat);
+    const oldPose = old.part();
+    old.close();
+    solo.reset();
+    busy.reset();
+    assert.equal(solo.free(), true);
+    assert.equal(busy.has(cat), false);
+    const now = busy.take(cat);
+    now.part();
+    now.close();
+    oldPose();
+    assert.equal(busy.has(cat), true);
   });
 });
 
