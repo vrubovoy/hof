@@ -131,6 +131,32 @@ export function canMove(settings, reducedMotion) {
   return settings.anim && !reducedMotion;
 }
 
+/**
+ * M13.8: a device that has never kept its settings: its storage answers and has no `hof.fx`. Not
+ * a storage that is missing or throws, nor a value that cannot be read: settings may have been
+ * chosen there, and «Анимации» turned off stay off.
+ * @param {Pick<Storage, 'getItem'> | null} storage
+ */
+export function firstVisit(storage) {
+  try {
+    return storage !== null && storage.getItem(SETTINGS_KEY) === null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * M13.8: a cat takes its other pose with «Анимации» on, and also on a device that has not chosen
+ * them yet — the cats alone, the rest of the court stays still; never when the system asks for
+ * less motion.
+ * @param {Settings} settings
+ * @param {boolean} fresh the device has never kept its settings (firstVisit)
+ * @param {boolean} reducedMotion
+ */
+export function catsMove(settings, fresh, reducedMotion) {
+  return (settings.anim || fresh) && !reducedMotion;
+}
+
 /** A volume in per cent as a gain from 0 to 1. @param {number} percent */
 export function level(percent) {
   return Math.min(1, Math.max(0, percent / 100));
@@ -609,8 +635,15 @@ function start() {
   const local = storage('localStorage');
   const session = storage('sessionStorage');
   let settings = readSettings(local);
+  // M13.8: until settings are kept on this device its cats take their poses, and nothing else
+  // moves: `cat-on` instead of `fx-on`, which the CSS of the cats alone also follows.
+  let fresh = firstVisit(local);
 
-  const showMotion = () => root.classList.toggle('fx-on', canMove(settings, reduced.matches));
+  const showMotion = () => {
+    const move = canMove(settings, reduced.matches);
+    root.classList.toggle('fx-on', move);
+    root.classList.toggle('cat-on', !move && catsMove(settings, fresh, reduced.matches));
+  };
   showMotion();
   reduced.addEventListener('change', showMotion);
 
@@ -867,8 +900,10 @@ function start() {
       [key]: input.type === 'checkbox' ? input.checked : Number(input.value),
     };
     writeSettings(local, settings);
+    // Any setting changed is a choice of this device, also of «Анимации» left off (M13.8).
+    fresh = false;
     showSettings();
-    if (key === 'anim') showMotion();
+    showMotion();
     if (key === 'music') {
       if (settings.music) {
         if (!comeBack()) startMusic();
@@ -1103,6 +1138,7 @@ function start() {
   // «Анимации», takes its other pose for as long as the sound. The chest of Säckel (M10.5) creaks
   // and, with «Анимации», opens; the next press closes it. The cat at the empty pouches sniffs
   // twice and, with «Анимации», sniffs at them in its frames; a press meanwhile starts it again.
+  // M13.8: the cats take their poses also on a device that has not chosen «Анимации» yet.
   /** The second sniff of the cat now sniffing. @type {ReturnType<typeof setTimeout> | undefined} */
   let sniffing;
   // M13.7: a cat in its pose or with its sound, and the cat sniffing, take no press until that is
@@ -1116,6 +1152,7 @@ function start() {
     if (thing === null) return;
     const poke = /** @type {keyof typeof POKES} */ (thing.dataset.poke);
     const move = canMove(settings, reduced.matches);
+    const cats = catsMove(settings, fresh, reduced.matches);
     if (poke === 'chest') {
       playSound('chest');
       if (move) thing.classList.toggle('open');
@@ -1127,7 +1164,7 @@ function start() {
       clearTimeout(sniffing);
       playSound('sniff');
       sniffing = setTimeout(() => playSound('sniff'), SNIFFS[1]);
-      if (move) replay(thing, 'sniffing');
+      if (cats) replay(thing, 'sniffing');
       setTimeout(job.part(), SNIFF_MS);
       job.close();
       return;
@@ -1144,7 +1181,7 @@ function start() {
       audio = playSound(poke, over);
       if (audio === null) over();
     }
-    if (move) {
+    if (cats) {
       const poseOver = job.part();
       /** @param {{ animationName?: string }} [event] the end of an animation, or none: too long */
       const end = (event) => {
@@ -1244,6 +1281,7 @@ function start() {
       if (inner instanceof HTMLElement) inner.style.removeProperty('transform-origin');
     }
     settings = readSettings(local);
+    fresh = firstVisit(local);
     showMotion();
     showSettings();
     courtBack();

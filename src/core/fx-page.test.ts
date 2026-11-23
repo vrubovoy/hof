@@ -318,7 +318,9 @@ type Settings = Partial<Record<'anim' | 'sound' | 'music', boolean>>;
 // what fx-head.js left on <html>; `court` — the page is the courtyard; `reduced` — the system asks
 // for less motion; `active` — whether the person has acted on the page yet (unknown if left out);
 // `local` — the storage of this device, kept from an earlier page; `fetching` — the browser has
-// fetch (M12.15: an old one has not).
+// fetch (M12.15: an old one has not). M13.8: `settings: null` keeps nothing before the page opens
+// (a new device, or `local` as an earlier page left it); `blocked` — the page cannot reach
+// localStorage at all.
 let pages = 0;
 async function openChambers({
   settings = {},
@@ -330,8 +332,9 @@ async function openChambers({
   local = memory(),
   elements = {},
   fetching = true,
+  blocked = false,
 }: {
-  settings?: Settings;
+  settings?: Settings | null;
   phone?: boolean;
   arrived?: string;
   court?: Court;
@@ -341,6 +344,7 @@ async function openChambers({
   // Elements of the page by selector: the gate of the founding, the banner, the cats.
   elements?: Record<string, FakeElement>;
   fetching?: boolean;
+  blocked?: boolean;
 } = {}) {
   FakeAudio.made = [];
   FakeAudio.refuse = false;
@@ -361,7 +365,7 @@ async function openChambers({
     },
   };
   const session = memory();
-  local.setItem('hof.fx', JSON.stringify(settings));
+  if (settings !== null) local.setItem('hof.fx', JSON.stringify(settings));
   const root = new FakeElement();
   if (arrived !== undefined) root.dataset.arrived = arrived;
   const forms: FakeForm[] = [];
@@ -433,7 +437,13 @@ async function openChambers({
     writable: true,
   });
   Object.assign(globalThis, {
-    window: { localStorage: local, sessionStorage: session },
+    window: {
+      get localStorage() {
+        if (blocked) throw new Error('SecurityError');
+        return local;
+      },
+      sessionStorage: session,
+    },
     document: doc,
     innerWidth: 1440,
     innerHeight: 900,
@@ -1716,5 +1726,174 @@ describe('fx.js in a page: Säckel (M10.5)', () => {
     assert.deepEqual([...page.root.classList.names], ['fx-on']);
     t.mock.timers.tick(2000);
     assert.equal(sounds('sniff').length, 1);
+  });
+});
+
+// M13.8: on a device that has never kept its settings the cats take their poses at a press — only
+// the cats: no sound, no other animation, nothing held, nothing kept. Settings once kept, also
+// «Анимации» left off, decide as before; less motion and a storage that cannot be read keep the
+// cats still.
+describe('fx.js in a page: the cats on a new device (M13.8)', () => {
+  test('a new device: `cat-on`, not `fx-on`; a cat takes its pose silently, nothing is kept', async () => {
+    const cat = new FakeThing('meow');
+    const page = await openChambers({ settings: null, elements: { cat } });
+    assert.deepEqual([...page.root.classList.names], ['cat-on']);
+    page.poke(cat);
+    assert.ok(cat.classList.contains('meow'));
+    assert.equal(cat.style.values.get('--pose'), '1.2s');
+    assert.equal(FakeAudio.made.length, 0, 'no sound: «Звуки» are off');
+    assert.equal(page.local.getItem('hof.fx'), null, 'no settings written for the person');
+  });
+
+  test('a new device: ten presses — one pose; again once it is over (M13.7)', async () => {
+    const cat = new FakeThing('meow');
+    const page = await openChambers({ settings: null, elements: { cat } });
+    for (let press = 0; press < 10; press += 1) page.poke(cat);
+    assert.equal(cat.style.values.size, 1);
+    cat.style.values.clear();
+    page.poke(cat);
+    assert.equal(cat.style.values.size, 0, 'busy: no pose started again');
+    cat.fire('animationend', 'pose');
+    page.poke(cat);
+    assert.equal(cat.style.values.size, 1, 'free once the pose is over');
+    assert.equal(FakeAudio.made.length, 0);
+  });
+
+  test('a new device: the purring cat and the cat at the empty pouches too; the chest stays shut', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const purring = new FakeThing('purr');
+    const sniffing = new FakeThing('sniff');
+    const chest = new FakeThing('chest');
+    const page = await openChambers({ settings: null, elements: { purring, sniffing, chest } });
+    page.poke(purring);
+    page.poke(sniffing);
+    page.poke(chest);
+    assert.ok(purring.classList.contains('meow'));
+    assert.ok(sniffing.classList.contains('sniffing'));
+    assert.ok(!chest.classList.contains('open'), 'the chest is not a cat: «Анимации» only');
+    assert.equal(FakeAudio.made.length, 0);
+    t.mock.timers.tick(3000);
+  });
+
+  test('a new device: the courtyard stays still, links and forms are not held', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    t.mock.method(Math, 'random', () => 0);
+    const court = courtyard();
+    const page = await openChambers({ settings: null, court });
+    page.loaded();
+    await settle();
+    t.mock.timers.tick(14_000);
+    assert.deepEqual([...page.root.classList.names], ['cat-on']);
+    assert.ok(
+      court.leaves.every((leaf) => leaf.classList.names.size === 3),
+      'not woken',
+    );
+    assert.ok(!court.flock.classList.contains('fly'));
+    assert.equal(page.press(new FakeLink('/admin/users', 'left', true)).defaultPrevented, false);
+    const door = new FakeLink('/saeckel/', 'door');
+    door.dataset.door = 'treasury';
+    assert.equal(page.press(door).defaultPrevented, false);
+    assert.equal(page.flag('hof.arrive'), null);
+    const logout = new FakeForm('/logout', 'logout');
+    assert.equal(page.send(logout).defaultPrevented, false, 'the way out goes at once');
+    t.mock.timers.tick(0);
+    assert.ok(!logout.frames.classList.contains('open'));
+    assert.equal(page.net.length, 0, 'nothing fetched');
+    assert.equal(page.flag('hof.after'), null);
+    page.hide();
+  });
+
+  test('«Анимации» kept off: the cat stays still; kept on: it takes its pose with `fx-on`', async () => {
+    const still = new FakeThing('meow');
+    const off = await openChambers({ settings: { anim: false }, elements: { still } });
+    off.poke(still);
+    assert.ok(!still.classList.contains('meow'));
+    assert.deepEqual([...off.root.classList.names], []);
+
+    const cat = new FakeThing('meow');
+    const on = await openChambers({ settings: { anim: true }, elements: { cat } });
+    on.poke(cat);
+    assert.ok(cat.classList.contains('meow'));
+    assert.deepEqual([...on.root.classList.names], ['fx-on']);
+  });
+
+  test('less motion: still on a new device, also when it is asked for later; free again after', async () => {
+    const cat = new FakeThing('meow');
+    const page = await openChambers({ settings: null, reduced: true, elements: { cat } });
+    assert.deepEqual([...page.root.classList.names], []);
+    page.poke(cat);
+    assert.ok(!cat.classList.contains('meow'));
+
+    const later = new FakeThing('meow');
+    const asked = await openChambers({ settings: null, elements: { later } });
+    asked.reduce(true);
+    assert.deepEqual([...asked.root.classList.names], []);
+    asked.poke(later);
+    assert.ok(!later.classList.contains('meow'));
+    asked.reduce(false);
+    assert.deepEqual([...asked.root.classList.names], ['cat-on']);
+  });
+
+  test('settings that cannot be read are not a new device: the cat stays still', async () => {
+    for (const stored of ['{', 'null', '{"anim":"yes"}', '[]']) {
+      const local = memory();
+      local.setItem('hof.fx', stored);
+      const cat = new FakeThing('meow');
+      const page = await openChambers({ settings: null, local, elements: { cat } });
+      page.poke(cat);
+      assert.ok(!cat.classList.contains('meow'), stored);
+      assert.deepEqual([...page.root.classList.names], [], stored);
+    }
+    const cat = new FakeThing('meow');
+    const blocked = await openChambers({ settings: null, blocked: true, elements: { cat } });
+    blocked.poke(cat);
+    assert.ok(!cat.classList.contains('meow'), 'localStorage out of reach');
+    assert.deepEqual([...blocked.root.classList.names], []);
+  });
+
+  test('any setting changed is a choice: «Звуки» on with «Анимации» left off — the cat meows, still', async () => {
+    const cat = new FakeThing('meow');
+    const page = await openChambers({ settings: null, elements: { cat } });
+    await page.change(page.inputs.sound, true);
+    assert.deepEqual([...page.root.classList.names], []);
+    const kept = JSON.parse(page.local.getItem('hof.fx') ?? 'null') as Settings | null;
+    assert.equal(kept?.anim, false);
+    page.poke(cat);
+    assert.equal(sounds('meow').length, 1);
+    assert.ok(!cat.classList.contains('meow'));
+  });
+
+  test('«Анимации» on, out through the gate, in again: the cats of the sign-in and of the court take their poses', async () => {
+    const local = memory();
+    const chambers = await openChambers({ settings: null, local });
+    await chambers.change(chambers.inputs.anim, true);
+    assert.deepEqual([...chambers.root.classList.names], ['fx-on']);
+    // The sign-in, and the courtyard after it: the same storage, nothing written meanwhile.
+    for (const name of ['the sign-in', 'the courtyard']) {
+      const cat = new FakeThing('meow');
+      const page = await openChambers({ settings: null, local, elements: { cat } });
+      page.poke(cat);
+      assert.ok(cat.classList.contains('meow'), name);
+      assert.deepEqual([...page.root.classList.names], ['fx-on'], name);
+    }
+    // A new device signed out (the ordinary form, nothing fetched): still a new device.
+    const fresh = memory();
+    const before = await openChambers({ settings: null, local: fresh });
+    assert.equal(before.send(new FakeForm('/logout', 'logout')).defaultPrevented, false);
+    const cat = new FakeThing('meow');
+    const signIn = await openChambers({ settings: null, local: fresh, elements: { cat } });
+    signIn.poke(cat);
+    assert.ok(cat.classList.contains('meow'));
+    assert.deepEqual([...signIn.root.classList.names], ['cat-on']);
+  });
+
+  test('back from the back/forward cache: settings kept meanwhile on another page decide', async () => {
+    const cat = new FakeThing('meow');
+    const page = await openChambers({ settings: null, elements: { cat } });
+    page.local.setItem('hof.fx', JSON.stringify({ anim: false }));
+    page.backFromCache();
+    assert.deepEqual([...page.root.classList.names], []);
+    page.poke(cat);
+    assert.ok(!cat.classList.contains('meow'));
   });
 });

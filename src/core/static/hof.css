@@ -2531,25 +2531,27 @@ button.place {
   }
   /* кот: кадр позы над котом, пока он звучит (.meow и длину --pose ставит fx.js); смена кадра
      мгновенная — при плавной видны два кота сразу. Створки основания — кадр той же сцены */
-  .fx-on .cat::before {
+  /* M13.8: cat-on (fx.js) — a device that has not chosen «Анимации» yet: the cats alone take
+     their poses, nothing else moves */
+  :is(.fx-on, .cat-on) .cat::before {
     background: 0 0 / 100% 100% no-repeat;
   }
-  .fx-on .cat-login::before {
+  :is(.fx-on, .cat-on) .cat-login::before {
     background-image: image-set(url(img/pose-login.webp) 1x, url(img/pose-login@2x.webp) 2x);
   }
-  .fx-on .cat-setup::before {
+  :is(.fx-on, .cat-on) .cat-setup::before {
     background-image: image-set(url(img/pose-setup.webp) 1x, url(img/pose-setup@2x.webp) 2x);
   }
-  .fx-on .cat-500::before {
+  :is(.fx-on, .cat-on) .cat-500::before {
     background-image: image-set(url(img/pose-500.webp) 1x, url(img/pose-500@2x.webp) 2x);
   }
-  .fx-on .cat-map::before {
+  :is(.fx-on, .cat-on) .cat-map::before {
     background-image: url(img/map-cat.webp);
   }
-  .fx-on .cat-chambers::before {
+  :is(.fx-on, .cat-on) .cat-chambers::before {
     background-image: url(img/chambers-cat.webp);
   }
-  .fx-on .cat.meow::before {
+  :is(.fx-on, .cat-on) .cat.meow::before {
     animation: pose var(--pose, 1.2s) ease-out;
   }
   .fx-on .gate-open {
@@ -2660,7 +2662,7 @@ button.place {
 }
 /* у кота на входе телефона свой кадр — картина телефона своя */
 @media (prefers-reduced-motion: no-preference) and (max-width: 1023.98px) {
-  .fx-on .cat-login::before {
+  :is(.fx-on, .cat-on) .cat-login::before {
     background-image: url(img/pose-login-m.webp);
   }
 }

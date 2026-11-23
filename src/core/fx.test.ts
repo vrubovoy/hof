@@ -29,6 +29,7 @@ import {
   SOUNDS,
   between,
   canMove,
+  catsMove,
   createChain,
   createBusy,
   createGuard,
@@ -36,6 +37,7 @@ import {
   createSessionWatch,
   doorWay,
   firstPiece,
+  firstVisit,
   leaving,
   level,
   nextFountain,
@@ -131,6 +133,25 @@ describe('fx: settings of the device', () => {
     assert.equal(canMove({ ...DEFAULTS, anim: true }, true), false);
     assert.equal(canMove(DEFAULTS, false), false);
     assert.equal(canMove(DEFAULTS, true), false);
+  });
+
+  // M13.8: the cats take their poses on a device that has never kept its settings.
+  test('a first visit: a storage that answers and has no settings; never one that throws', () => {
+    assert.equal(firstVisit(memory()), true);
+    assert.equal(firstVisit(memory({ 'hof.music': '{}' })), true, 'other keys are not settings');
+    for (const stored of ['{}', '{"anim":false}', '{"sound":true}', '{', 'null', '']) {
+      assert.equal(firstVisit(memory({ [SETTINGS_KEY]: stored })), false, stored);
+    }
+    assert.equal(firstVisit(null), false, 'no storage');
+    assert.equal(firstVisit(refusing), false, 'a storage that throws');
+  });
+
+  test('the cats: with «Анимации» on or on a first visit; never with less motion', () => {
+    assert.equal(catsMove(DEFAULTS, true, false), true);
+    assert.equal(catsMove({ ...DEFAULTS, anim: true }, false, false), true);
+    assert.equal(catsMove(DEFAULTS, false, false), false);
+    assert.equal(catsMove(DEFAULTS, true, true), false);
+    assert.equal(catsMove({ ...DEFAULTS, anim: true }, false, true), false);
   });
 
   test('a volume is a gain from 0 to 1', () => {
