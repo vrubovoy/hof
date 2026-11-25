@@ -355,6 +355,15 @@ img {
 /* ключница: у приближённого ключ с биркой, «ключ взят» — пустой крючок на том же месте. Логин
    до 32 символов переносится внутри ключа */
 /* M13.10: first after «_», «.», «-» (the <wbr> of the page), anywhere only where it has none */
+/* M13.9: a page drawn for a refused form opens at the field refused first (autofocus); the
+   browser scrolls it into sight with its error under it and a little air above */
+[aria-invalid='true'] {
+  scroll-margin: 24px 0 80px;
+}
+/* M13.9: the way back of a card brings its key a quarter of the window down */
+.key {
+  scroll-margin-top: 25vh;
+}
 .keys {
   display: flex;
   flex-wrap: wrap;

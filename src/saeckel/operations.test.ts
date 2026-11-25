@@ -152,7 +152,7 @@ describe('the page of a record', () => {
       assert.equal(res.status, 200, heading);
       const page = await res.text();
       const folded = fold(page);
-      assert.equal(wayBack(page), '/saeckel/history Летопись', heading);
+      assert.equal(wayBack(page), `/saeckel/history#op-${id} Летопись`, heading);
       for (const text of [
         `<h1 class="title t-2">${heading}</h1>`,
         `<form id="record" class="entry" method="post" action="/saeckel/operations/${id}">`,
@@ -229,7 +229,7 @@ describe('Исправить', () => {
     const change = async (id: number, fields: Record<string, string>) => {
       const res = await edit(id, fields);
       assert.equal(res.status, 303, String(id));
-      assert.equal(res.headers.get('location'), '/saeckel/history');
+      assert.equal(res.headers.get('location'), `/saeckel/history#op-${id}`);
     };
     await change(income, { amount: '75 000', date: '01.10.2026', note: 'аванс' });
     assert.equal(await treasury(), '67 000,00 ₽');

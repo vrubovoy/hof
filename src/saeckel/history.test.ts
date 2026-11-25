@@ -348,7 +348,7 @@ describe('a record', () => {
       const res = await get(`/saeckel/operations/${id}`, 'anna');
       assert.equal(res.status, 200, String(id));
       const page = fold(await res.text());
-      assert.equal(wayBack(page), '/saeckel/history Летопись');
+      assert.equal(wayBack(page), `/saeckel/history#op-${id} Летопись`);
       assert.equal(currentTab(page), 'Летопись');
       assert.ok(page.includes(`<h1 class="title t-2">${present[0]}</h1>`), present[0]);
       for (const text of present.slice(1)) assert.ok(page.includes(text), `${id}: ${text}`);
@@ -523,17 +523,18 @@ describe('from a record back to the same page of Летопись', () => {
       const page = await (
         await get(`/saeckel/operations/${id}?pouch=${food}&page=3`, 'anna')
       ).text();
-      assert.equal(wayBack(page), `/saeckel/history?pouch=${food}&amp;page=3 Летопись`);
+      // M13.9: back to the row of the record on that page.
+      assert.equal(wayBack(page), `/saeckel/history?pouch=${food}&amp;page=3#op-${id} Летопись`);
       // «Сохранить» and «Удалить» each carry the place.
       assert.deepEqual(hidden(page), ['page=3', `pouch=${food}`, 'page=3', `pouch=${food}`]);
     }
   });
 
-  test('saved: back to page 3 with the filter', async () => {
+  test('saved: back to page 3 with the filter, at the record (M13.9)', async () => {
     const { food, id } = await third();
     const res = await save(id, { page: '3', pouch: String(food) }, { to: String(food) });
     assert.equal(res.status, 303);
-    assert.equal(res.headers.get('location'), `/saeckel/history?pouch=${food}&page=3`);
+    assert.equal(res.headers.get('location'), `/saeckel/history?pouch=${food}&page=3#op-${id}`);
   });
 
   test('deleted: back to page 3 with the filter', async () => {
@@ -550,7 +551,7 @@ describe('from a record back to the same page of Летопись', () => {
     const id = await addOperation(1, 'assign', 100, { to: food });
     assert.equal(
       (await save(id, { page: '2' }, { to: String(food) })).headers.get('location'),
-      '/saeckel/history?page=2',
+      `/saeckel/history?page=2#op-${id}`,
     );
     assert.equal(
       (await remove(id, { page: '1', pouch: String(food) })).headers.get('location'),
@@ -564,28 +565,28 @@ describe('from a record back to the same page of Летопись', () => {
     const refused = await save(id, place, { amount: 'x', to: String(food) });
     assert.equal(refused.status, 400);
     const page = await refused.text();
-    assert.equal(wayBack(page), `/saeckel/history?pouch=${food}&amp;page=3 Летопись`);
+    assert.equal(wayBack(page), `/saeckel/history?pouch=${food}&amp;page=3#op-${id} Летопись`);
     assert.deepEqual(hidden(page), ['page=3', `pouch=${food}`, 'page=3', `pouch=${food}`]);
     const next = await save(id, place, { to: String(food) });
-    assert.equal(next.headers.get('location'), `/saeckel/history?pouch=${food}&page=3`);
+    assert.equal(next.headers.get('location'), `/saeckel/history?pouch=${food}&page=3#op-${id}`);
   });
 
   test('a record of a pouch in the storeroom: «Летопись» leads back to the place too', async () => {
     const old = await addPouch(1, 'Старое', true);
     const id = await addOperation(1, 'assign', 100, { to: old });
     const page = await (await get(`/saeckel/operations/${id}?pouch=${old}&page=2`, 'anna')).text();
-    assert.equal(wayBack(page), `/saeckel/history?pouch=${old}&amp;page=2 Летопись`);
+    assert.equal(wayBack(page), `/saeckel/history?pouch=${old}&amp;page=2#op-${id} Летопись`);
   });
 
   test('a direct address, no place: the start of Летопись, as before', async () => {
     const food = await addPouch(1, 'Продукты');
     const id = await addOperation(1, 'assign', 100, { to: food });
     const page = await (await get(`/saeckel/operations/${id}`, 'anna')).text();
-    assert.equal(wayBack(page), '/saeckel/history Летопись');
+    assert.equal(wayBack(page), `/saeckel/history#op-${id} Летопись`);
     assert.deepEqual(hidden(page), []);
     assert.equal(
       (await save(id, {}, { to: String(food) })).headers.get('location'),
-      '/saeckel/history',
+      `/saeckel/history#op-${id}`,
     );
   });
 
@@ -620,10 +621,10 @@ describe('from a record back to the same page of Летопись', () => {
       );
       assert.equal(opened.status, 200);
       const page = await opened.text();
-      assert.equal(wayBack(page), '/saeckel/history Летопись');
+      assert.equal(wayBack(page), `/saeckel/history#op-${id} Летопись`);
       assert.deepEqual(hidden(page), []);
       const saved = await save(id, fields, { to: String(food) });
-      assert.equal(saved.headers.get('location'), '/saeckel/history');
+      assert.equal(saved.headers.get('location'), `/saeckel/history#op-${id}`);
       const deleted = await remove(id, fields);
       assert.equal(deleted.headers.get('location'), '/saeckel/history');
     });

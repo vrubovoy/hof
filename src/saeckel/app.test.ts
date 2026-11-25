@@ -334,7 +334,8 @@ describe('the page of a pouch', () => {
     ]) {
       assert.ok(page.includes(text), text);
     }
-    assert.equal(wayBack(page), '/saeckel/ Мешки');
+    // M13.9: back to this pouch in the list.
+    assert.equal(wayBack(page), `/saeckel/#pouch-${id} Мешки`);
     assert.equal(currentTab(page), 'Мешки');
     // The pouch is the current one in the column beside the page.
     assert.match(
