@@ -477,7 +477,7 @@ function nameField(name: string, error: FormError | undefined) {
       type="text"
       required
       value="${name}"
-      ${invalid ? html`aria-invalid="true" aria-describedby="name-error"` : ''}
+      ${invalid ? html`aria-invalid="true" aria-describedby="name-error" autofocus` : ''}
     />
     ${formError(error, 'name')}
   </div>`;
@@ -556,7 +556,7 @@ function treasuryFrame(treasury: number, money: MoneyFormat, buttons: boolean) {
 // pouch open on the right of Мешки only looks so.
 function pouchRow(pouch: ListedPouch, money: MoneyFormat, place: ColumnPlace) {
   const debt = pouch.balance < 0;
-  return html`<li>
+  return html`<li id="pouch-${pouch.id}">
     <a
       class="${pouch.id === place.open ? 'pouch open' : 'pouch'}"
       href="/saeckel/pouches/${pouch.id}"
@@ -699,14 +699,27 @@ function calendarDates() {
   data-latest="${yearLater(todayDate)}"`;
 }
 
+// M13.9: the field a form refused first, in the order its fields are drawn — the two pouches,
+// then the amount, the date and the note. A page drawn for a refusal gives it `autofocus`: the
+// browser focuses it and scrolls to it, also without a script, and a screen reader reads the
+// field with its error. Only one field of a page has it.
+const FIELD_ORDER = ['from', 'to', 'amount', 'date', 'note'] as const;
+function firstError(
+  errors: Partial<Record<EntryField | PouchField, string>>,
+): EntryField | PouchField | undefined {
+  return FIELD_ORDER.find((field) => errors[field] !== undefined);
+}
+
 // «Сумма», «Дата», «Заметка» of a form (the prototypes Saeckel, SaeckelForms,
 // PouchMobile): fields drawn by pen, the amount larger. What was typed stays in the fields;
-// the error of a field is under it, and the field is drawn red.
+// the error of a field is under it, and the field is drawn red; the first one has the focus.
 function entryFields(form: EntryForm, money: MoneyFormat) {
+  const first = firstError(form.errors);
   const attributes = (field: EntryField) =>
     form.errors[field] === undefined
       ? ''
-      : html`aria-invalid="true" aria-describedby="${field}-error"`;
+      : html`aria-invalid="true" aria-describedby="${field}-error"
+        ${field === first ? html`autofocus` : ''}`;
   const fieldClass = (field: EntryField) =>
     form.errors[field] === undefined ? `field field-${field}` : `field field-${field} err`;
   const error = (field: EntryField) =>
@@ -817,11 +830,16 @@ function assignPage(
   money: MoneyFormat,
 ) {
   const { pouches, treasury } = column;
+  // M13.9: the first row refused has the focus (autofocus), as the first field of other forms.
+  const first = pouches.find((pouch) => form.errors.has(pouch.id))?.id;
   const row = (pouch: ListedPouch) => {
     const field = `amount_${pouch.id}`;
     const error = form.errors.get(pouch.id);
     const describedBy =
-      error === undefined ? '' : html`aria-invalid="true" aria-describedby="${field}-error"`;
+      error === undefined
+        ? ''
+        : html`aria-invalid="true" aria-describedby="${field}-error"
+          ${pouch.id === first ? html`autofocus` : ''}`;
     return html`<tr>
       <td class="assign-pouch">
         <span class="assign-sign"
@@ -941,7 +959,10 @@ function pouchSelect(
 ) {
   const error = form.errors[field];
   const describedBy =
-    error === undefined ? '' : html`aria-invalid="true" aria-describedby="${field}-error"`;
+    error === undefined
+      ? ''
+      : html`aria-invalid="true" aria-describedby="${field}-error"
+        ${field === firstError(form.errors) ? html`autofocus` : ''}`;
   const classes = error === undefined ? `field field-${field}` : `field field-${field} err`;
   return html`<div class="${classes}">
     <label for="${field}">${label}</label>
@@ -1273,7 +1294,7 @@ function operationPage(operation: Operation, money: MoneyFormat, place: HistoryP
     {
       title: 'Säckel — запись',
       tab: 'history',
-      back: { href: historyReturn(place), text: 'Летопись' },
+      back: { href: `${historyReturn(place)}#op-${operation.id}`, text: 'Летопись' },
     },
     html`<div class="sk-form record">
       <h1 class="title t-2">${KIND_LABELS[operation.kind]} · ${dateForField(operation.date)}</h1>
@@ -1329,7 +1350,7 @@ function operationEditPage(
     {
       title: 'Säckel — запись',
       tab: 'history',
-      back: { href: historyReturn(place), text: 'Летопись' },
+      back: { href: `${historyReturn(place)}#op-${operation.id}`, text: 'Летопись' },
     },
     html`<div class="sk-form record">
       <h1 class="title t-2">${KIND_LABELS[operation.kind]} · ${dateForField(operation.date)}</h1>
@@ -1406,13 +1427,18 @@ function pouchPane(pouch: Pouch, view: PouchView, money: MoneyFormat, heading: 1
 }
 
 // The page of a pouch: the open pouch beside the column, where it is the current one; the blots
-// of Saeckel on a computer and of PouchMobile on the phone.
+// of Saeckel on a computer and of PouchMobile on the phone. M13.9: the way back of the phone leads
+// to this pouch in the list (its anchor), not to the top of a long list; a pouch in the storeroom
+// is not in the list.
 function pouchPage(pouch: Pouch, view: PouchView, money: MoneyFormat, column: PouchColumn) {
   return saeckelPage(
     {
       title: `Säckel — ${pouch.name}`,
       tab: 'pouches',
-      back: { href: '/saeckel/', text: 'Мешки' },
+      back: {
+        href: pouch.is_archived ? '/saeckel/' : `/saeckel/#pouch-${pouch.id}`,
+        text: 'Мешки',
+      },
       column: pouchColumn(column, money, { current: pouch.id, buttons: true }),
     },
     html`${pouchPane(pouch, view, money, 1)} ${blot('ink-blot-medium', 'blot-pouches-medium')}
@@ -2385,7 +2411,8 @@ export function createSaeckelApp(
       form.errors[refusal.field] = refusal.text;
       return refuse();
     }
-    return c.redirect(historyReturn(place), 303);
+    // M13.9: to the record just saved on its page of «Летопись».
+    return c.redirect(`${historyReturn(place)}#op-${found.id}`, 303);
   });
 
   // A record deleted (§4.1, §4.8): for real, no bin. The same order as a change: the record

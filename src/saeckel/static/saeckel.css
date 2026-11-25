@@ -763,6 +763,17 @@ img {
   margin: 10px 0 0;
 }
 
+/* M13.9: a page drawn for a refused form opens at the field refused first (autofocus); the
+   browser scrolls it into sight with its error under it and a little air above */
+[aria-invalid='true'] {
+  scroll-margin: 24px 0 80px;
+}
+/* M13.9: a way back with an anchor — a pouch of the list, a record of «Летопись» — brings it a
+   quarter of the window down, with what was above it still in sight */
+.pouches > li,
+.history tr[id] {
+  scroll-margin-top: 25vh;
+}
 .pouches {
   margin: 0;
   padding: 0;
@@ -1390,11 +1401,19 @@ mark.move {
 @media (min-width: 1024px) {
   /* сцена в пропорции кадра 1440×330 на любой ширине: картинка не обрезается сильнее, чем в
      прототипе; при нехватке высоты страница прокручивается */
+  /* M13.9: in a low window the scene is lower — not below 200 px — so that 560 px of the page
+     fit under it: the form of a pouch is seen without scrolling. The picture then shows its
+     middle (the scales, the book, the pouches and the chest): the shift, in the units of the
+     scene, is nothing while the scene has its full height, where the top is shown as before. The
+     width is given: else Firefox narrows the scene with its height */
   .sk-head {
+    width: 100%;
     aspect-ratio: 1440 / 330;
+    max-height: max(200px, 100vh - 560px);
+    container-type: size;
   }
   .sk-scene {
-    object-position: 50% 0;
+    object-position: 50% calc(min(0px, 100cqh - 100cqw * 330 / 1440 + 0.5px) * 0.7);
   }
   .sk-gate {
     left: 24px;

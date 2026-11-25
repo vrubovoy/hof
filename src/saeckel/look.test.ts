@@ -500,7 +500,9 @@ describe('the shell', () => {
     const food = ids['Продукты']!;
     for (const [path, tab, back, column] of [
       ['/saeckel/', 'Мешки', undefined, true],
-      [`/saeckel/pouches/${food}`, 'Мешки', '/saeckel/ Мешки', true],
+      // M13.9: a pouch and a record lead back to themselves in their list; a pouch in the
+      // storeroom is not in the list.
+      [`/saeckel/pouches/${food}`, 'Мешки', `/saeckel/#pouch-${food} Мешки`, true],
       ['/saeckel/pouches/5', 'Мешки', '/saeckel/ Мешки', true],
       ['/saeckel/pouches/new', 'Мешки', '/saeckel/ Мешки', true],
       [`/saeckel/pouches/${food}/edit`, 'Мешки', `/saeckel/pouches/${food} Продукты`, true],
@@ -508,7 +510,7 @@ describe('the shell', () => {
       ['/saeckel/assign', 'Мешки', '/saeckel/ Мешки', true],
       ['/saeckel/transfer', 'Мешки', '/saeckel/ Мешки', true],
       ['/saeckel/history', 'Летопись', undefined, false],
-      ['/saeckel/operations/2', 'Летопись', '/saeckel/history Летопись', false],
+      ['/saeckel/operations/2', 'Летопись', '/saeckel/history#op-2 Летопись', false],
     ] as const) {
       const page = await (await get(path, 'anna')).text();
       assert.equal(currentTab(page), tab, path);
@@ -607,7 +609,7 @@ describe('the ways between pages', () => {
     ]);
 
     const pouch = of(`/saeckel/pouches/${food}`);
-    assert.deepEqual(head(pouch), ['/ door', '/saeckel/ flip-back']);
+    assert.deepEqual(head(pouch), ['/ door', `/saeckel/#pouch-${food} flip-back`]);
     assert.deepEqual(tabs(pouch), ['/saeckel/history flip-fwd']);
     // The pouch itself is the current one in the column: an ordinary link.
     assert.ok(!ways(pouch).includes(`/saeckel/pouches/${food} flip-fwd-phone`));
@@ -632,7 +634,10 @@ describe('the ways between pages', () => {
     }
     assert.deepEqual(below(of('/saeckel/history')), ['/saeckel/history?page=2 page']);
     assert.deepEqual(below(of('/saeckel/history?page=2')), ['/saeckel/history?page=1 page']);
-    assert.deepEqual(head(of('/saeckel/operations/2')), ['/ door', '/saeckel/history flip-back']);
+    assert.deepEqual(head(of('/saeckel/operations/2')), [
+      '/ door',
+      '/saeckel/history#op-2 flip-back',
+    ]);
     assert.deepEqual(tabs(of('/saeckel/operations/2')), ['/saeckel/ flip-back']);
   });
 });
@@ -1053,12 +1058,13 @@ describe('Доход, Разложить, Переложить', () => {
       [sign('icon-cart'), 'Транспорт', 'Положить в мешок Транспорт', 'put err', 1],
       [sign('icon-bag'), 'Отпуск', 'Положить в мешок Отпуск', 'put', 0],
     ]);
-    // The error of «Транспорт» is in its cell, right under its field, and describes it.
+    // The error of «Транспорт» is in its cell, right under its field, and describes it; the field
+    // is the first refused, so it has the focus (M13.9).
     assert.match(
       fold(page),
       new RegExp(
         `<td class="put err"> <input class="input slim" name="amount_${cart}"[^>]*` +
-          `aria-invalid="true" aria-describedby="amount_${cart}-error" /> ` +
+          `aria-invalid="true" aria-describedby="amount_${cart}-error" autofocus /> ` +
           `<p id="amount_${cart}-error" class="err-text">[^<]+</p> </td>`,
       ),
     );

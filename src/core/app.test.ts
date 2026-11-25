@@ -82,7 +82,8 @@ function setupFields(key: string, username = 'owner') {
 }
 
 // A form error under its field: the field drawn as an error, the message right in it, the input
-// pointing at its hint (if the field has one) and the message, and no other field marked.
+// pointing at its hint (if the field has one) and the message, and no other field marked. M13.9:
+// the field refused has the focus (autofocus), and no other one.
 function assertFieldError(page: string, field: string, hint: string, message: string) {
   assert.ok(page.includes(`<p id="${field}-error" class="err-text">${message}</p>`), message);
   assert.match(page, new RegExp(`<div class="field err">\\s*<label for="${field}">`), field);
@@ -93,6 +94,8 @@ function assertFieldError(page: string, field: string, hint: string, message: st
   );
   assert.equal((page.match(/aria-invalid/g) ?? []).length, 1);
   assert.equal((page.match(/class="field err"/g) ?? []).length, 1);
+  assert.match(page, new RegExp(`name="${field}"[^>]*\\sautofocus[\\s/>]`), `${field} focused`);
+  assert.equal((page.match(/\sautofocus[\s/>]/g) ?? []).length, 1);
 }
 
 // The first element of a page that starts with `open`, up to its closing tag `close`; the
@@ -132,7 +135,7 @@ function squeeze(piece: string): string {
 
 // The key board of «Приближённые», one entry a person: "picture | text | address of the card".
 function keysIn(page: string): string[] {
-  return [...page.matchAll(/<li class="key">([\s\S]*?)<\/li>/g)].map(([, key]) =>
+  return [...page.matchAll(/<li class="key" id="user-\d+">([\s\S]*?)<\/li>/g)].map(([, key]) =>
     [
       new RegExp(`src="/static/img/(key-tag|hook-empty)\\.webp${VERSION}"\\s+alt=""`).exec(
         key!,
@@ -1613,7 +1616,7 @@ describe('Приближённые', () => {
     };
     for (const login of Object.keys(logins)) await addUser(login);
     const page = await (await get(app, '/admin/users', { cookie })).text();
-    const names = [...page.matchAll(/<li class="key">[\s\S]*?<b>([\s\S]*?)<\/b>/g)].map(
+    const names = [...page.matchAll(/<li class="key"[^>]*>[\s\S]*?<b>([\s\S]*?)<\/b>/g)].map(
       ([, name]) => name!,
     );
     for (const [login, drawn] of Object.entries(logins)) {
@@ -1950,7 +1953,7 @@ describe('the card of a person', () => {
     );
     assert.ok(
       squeeze(page).includes(
-        '<a class="back" href="/admin/users" data-fx="flip-back" data-keep><span>Приближённые</span></a>',
+        '<a class="back" href="/admin/users#user-2" data-fx="flip-back" data-keep><span>Приближённые</span></a>',
       ),
     );
     assert.ok(
@@ -2566,7 +2569,7 @@ describe('the card: the key of the court', () => {
     assert.match(res.headers.get('content-security-policy') ?? '', /^default-src 'none'/);
     const page = squeeze(await res.text());
     for (const text of [
-      '<a class="back" href="/admin/users" data-fx="flip-back" data-keep><span>Приближённые</span></a>',
+      '<a class="back" href="/admin/users#user-2" data-fx="flip-back" data-keep><span>Приближённые</span></a>',
       '<span class="badge">С ключом</span>',
       'action="/admin/users/2/password"',
       // The frame is the form: its heading, its text and one button, nothing else to send.
@@ -3376,7 +3379,8 @@ describe('the look of Hof: pages, CSS and static files', () => {
   test('M10.2: every data-fx is one fx.js knows; none on the current page; data-keep only between pages with the banner', async (t) => {
     const { pages } = await drawnPages(t);
     // The pages of the shell: the courtyard, Приближённые and a card, Мои покои.
-    const withBanner = /^\/(admin\/users(\/\d+)?|account)?$/;
+    // M13.9: the way back of a card leads to the key of its person on the board.
+    const withBanner = /^\/(admin\/users(\/\d+|#user-\d+)?|account)?$/;
     let links = 0;
     for (const [name, page] of pages) {
       for (const [tag, attributes] of [...page.matchAll(/<(a|form)\s([^>]*)>/g)].map((m) => [
@@ -3478,9 +3482,9 @@ describe('the look of Hof: pages, CSS and static files', () => {
     // «Забрать ключ» there is the act of a form (M10.4).
     assert.deepEqual(
       main(of('the card of anna')).filter((way) => !way.startsWith('form ')),
-      ['a /admin/users flip-back keep'],
+      ['a /admin/users#user-2 flip-back keep'],
     );
-    assert.ok(linksIn(of('the card of anna')).includes('/admin/users Приближённые'));
+    assert.ok(linksIn(of('the card of anna')).includes('/admin/users#user-2 Приближённые'));
     // The way to the courtyard from an error page goes into the dark (M12.11).
     const errorWays = (page: string) => ways(part(page, '<div class="error-paper">', '</main>'));
     for (const name of ['403', '404', '500 after POST']) {
@@ -3971,8 +3975,10 @@ describe('the look of Hof: pages, CSS and static files', () => {
       css,
       /\n {2}\.at-gatehouse \{[^}]*top: calc\(100% \* 476 \/ 1024 - 2px - 1\.7em\);[^}]*font-size: var\(--plate\);/,
     );
+    // M13.9: by the width of the map (1263 px, the map of a window of 1551 px), not of the window:
+    // the map is smaller in a low window too.
     const moved =
-      /\n {2}@media \(max-width: 1550\.98px\) \{\s*\.place\[data-door='gatehouse'\] ~ \.place \.at-treasury \{/.exec(
+      /\n {2}@container \(max-width: 1262\.98px\) \{\s*\.place\[data-door='gatehouse'\] ~ \.place \.at-treasury \{/.exec(
         css,
       );
     assert.ok(moved, 'the sign of the treasury moves only after the place of the gatehouse');
@@ -4085,6 +4091,73 @@ describe('the look of Hof: pages, CSS and static files', () => {
           .startsWith('@media (prefers-reduced-motion: no-preference)'),
       );
     }
+  });
+
+  // M13.9: a page opens where it is needed — a refused field in sight with its error under it, the
+  // key of a card a quarter of the window down when its way back leads to it.
+  test('M13.9: a refused field and a key of the way back are scrolled to with some air', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = await (await get(app, '/static/hof.css')).text();
+    assert.match(css, /\n\[aria-invalid='true'\] \{\s*scroll-margin: 24px 0 80px;\s*\}/);
+    assert.match(css, /\n\.key \{\s*scroll-margin-top: 25vh;\s*\}/);
+  });
+
+  // M13.9 B: the short pages fit the window. Home: the frame of the map no higher than the window
+  // over the note, its signs sized by the map; the note one line without the plate of the Master.
+  // On a low phone the scenes of the sign-in, the founding and the errors are lower (the cat of the
+  // sign-in with its scene), the mark of the sign-in in a line. «Мои покои» in a low window of a
+  // computer: «Покинуть двор» in the line of the ribbon, the frames closer, the texts short.
+  test('M13.9: Home, the sign-in, the founding, the errors and «Мои покои» fit a low window', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const block = (start: string) => {
+      const at = css.indexOf(start);
+      assert.ok(at >= 0, start);
+      let depth = 0;
+      for (let i = css.indexOf('{', at); i < css.length; i += 1) {
+        if (css[i] === '{') depth += 1;
+        if (css[i] === '}' && --depth === 0) return css.slice(at, i + 1);
+      }
+      return '';
+    };
+    // Home on a computer.
+    assert.ok(!css.includes('100vw - 288px'), 'the signs sized by the map, not the window');
+    assert.match(css, /\.court \{\s*min-height: 100vh;\s*container-type: inline-size;\s*\}/);
+    assert.match(
+      css,
+      /\.court-map \{\s*container-type: inline-size;\s*width: min\(100cqw, max\(600px, \(100vh - 180px\) \* 1152 \/ 610\)\);\s*aspect-ratio: 1152 \/ 610;/,
+    );
+    assert.match(css, /#000 calc\(100% - min\(48px, 100cqw - 100%\)\),/);
+    assert.match(css, /font-size: clamp\(16px, 100cqw \* 21 \/ 1152, 21px\);/);
+    assert.match(css, /--plate: clamp\(15px, 100cqw \* 17 \/ 1152, 17px\);/);
+    assert.match(
+      css,
+      /\.court-below:not\(:has\(\.court-alone\)\) \{\s*grid-template-columns: minmax\(0, 1fr\);\s*\}/,
+    );
+    assert.match(
+      css,
+      /\.court:has\(\.court-alone\) \.court-map \{\s*width: min\(100cqw, max\(600px, \(100vh - 240px\) \* 1152 \/ 610\)\);\s*\}/,
+    );
+    // A low phone.
+    const lowPhone = [...css.matchAll(/@media \(max-height: 780px\) \{/g)].map((m) =>
+      block(css.slice(m.index)),
+    );
+    const low = lowPhone.join('\n');
+    assert.match(low, /\.court \{\s*padding-bottom: 36px;\s*\}/);
+    assert.match(low, /\.gate-login \.logo \{\s*flex-direction: row;/);
+    assert.match(low, /\.gate-login \.gate-scene img \{\s*height: min\(100vw, 36svh\);/);
+    assert.match(low, /\.gate-login \.cat-frame \{\s*height: min\(100vw, 36svh\);\s*\}/);
+    assert.match(low, /\.gate-setup \.gate-scene \{\s*height: min\(70\.26vw, 36svh\);\s*\}/);
+    assert.match(low, /\.error-scene \{\s*height: min\(100vw, 36svh\);\s*\}/);
+    for (const m of css.matchAll(/@media \(max-height: 780px\)/g)) {
+      const outer = css.lastIndexOf('@media', m.index - 1);
+      assert.ok(css.slice(outer).startsWith('@media (max-width: 1023.98px)'), 'only on the phone');
+    }
+    // «Мои покои» in a low window of a computer.
+    const chambers = block('@media (min-width: 1024px) and (max-height: 939.98px)');
+    assert.match(chambers, /\.chambers-out \{\s*grid-column: 2;\s*grid-row: 1;/);
+    assert.match(chambers, /\.chambers-out p,\s*\.chambers-out \.frames \{\s*display: none;\s*\}/);
+    assert.match(chambers, /\.fx-settings \.text-full \{\s*display: none;\s*\}/);
   });
 
   test('M10.6: the frame of the cats clips them, as the picture does', async (t) => {

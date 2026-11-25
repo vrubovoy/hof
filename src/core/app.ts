@@ -410,7 +410,7 @@ const LOGO = html`<div class="logo">
 function setupPage(form: SetupForm) {
   const describedBy = (field: SetupField, hint: string) =>
     form.error?.field === field
-      ? html`aria-invalid="true" aria-describedby="${hint} ${field}-error"`
+      ? html`aria-invalid="true" aria-describedby="${hint} ${field}-error" autofocus`
       : html`aria-describedby="${hint}"`;
   const fieldClass = (field: SetupField) => (form.error?.field === field ? 'field err' : 'field');
   const error = (field: SetupField) =>
@@ -892,7 +892,11 @@ function accountPage(user: CurrentUser, services: readonly Service[], form: Acco
   const describedBy = (field: PasswordField, hint?: string) => {
     const ids = [hint, form.error?.field === field ? `${field}-error` : undefined].filter(Boolean);
     const invalid = form.error?.field === field ? html`aria-invalid="true"` : '';
-    return ids.length > 0 ? html`${invalid} aria-describedby="${ids.join(' ')}"` : invalid;
+    // M13.9: the field refused has the focus: the page drawn for the refusal opens at it.
+    const focus = form.error?.field === field ? html` autofocus` : '';
+    return ids.length > 0
+      ? html`${invalid} aria-describedby="${ids.join(' ')}"${focus}`
+      : html`${invalid}${focus}`;
   };
   const fieldClass = (field: PasswordField) =>
     form.error?.field === field ? 'field err' : 'field';
@@ -1031,7 +1035,7 @@ export function keyName(username: string) {
 // empty hook, and the way to the card of everybody else — or, while nobody else is in the court,
 // the empty board; then the form for a new user. The keys say nothing the text under them does
 // not. The initial password is shown while it is typed, so it can be passed on, but never written
-// back into the page.
+// back into the page. M13.9: each key has an anchor, the way back of a card leads to it.
 function usersPage(
   user: CurrentUser,
   services: readonly Service[],
@@ -1041,7 +1045,11 @@ function usersPage(
   const describedBy = (field: NewUserField, hint?: string) => {
     const ids = [hint, form.error?.field === field ? `${field}-error` : undefined].filter(Boolean);
     const invalid = form.error?.field === field ? html`aria-invalid="true"` : '';
-    return ids.length > 0 ? html`${invalid} aria-describedby="${ids.join(' ')}"` : invalid;
+    // M13.9: the field refused has the focus: the page drawn for the refusal opens at it.
+    const focus = form.error?.field === field ? html` autofocus` : '';
+    return ids.length > 0
+      ? html`${invalid} aria-describedby="${ids.join(' ')}"${focus}`
+      : html`${invalid}${focus}`;
   };
   const fieldClass = (field: NewUserField) => (form.error?.field === field ? 'field err' : 'field');
   const error = (field: NewUserField) =>
@@ -1110,7 +1118,7 @@ function usersPage(
             : html`<ul class="keys" aria-label="Ключница">
                 ${people.map(
                   (person) =>
-                    html`<li class="key">
+                    html`<li class="key" id="user-${person.id}">
                       <img
                         src="${asset(`img/${person.is_disabled ? 'hook-empty' : 'key-tag'}.webp`)}"
                         alt=""
@@ -1212,7 +1220,8 @@ function usersPage(
 // the court. A person without the key is not drawn there: the empty hook, «Ключ взят» and the blue
 // «Вернуть ключ» take the place of the key and the red «Забрать ключ». The phone gets the shorter
 // texts of UserMobile (text-full). The new password is shown while it is typed, so it can be
-// passed on, but never written back into the page.
+// passed on, but never written back into the page. M13.9: the way back leads to this person's key
+// on the board (its anchor), not to the top of a long board.
 function memberPage(
   user: CurrentUser,
   services: readonly Service[],
@@ -1222,11 +1231,11 @@ function memberPage(
   const describedBy =
     form.error === undefined
       ? html`aria-describedby="password-hint"`
-      : html`aria-invalid="true" aria-describedby="password-hint password-error"`;
+      : html`aria-invalid="true" aria-describedby="password-hint password-error" autofocus`;
 
   return shell(user, services, 'users', `Hof — ${member.username}`, {
     class: 'card',
-    body: html`<a class="back" href="/admin/users" data-fx="flip-back" data-keep
+    body: html`<a class="back" href="/admin/users#user-${member.id}" data-fx="flip-back" data-keep
         ><span>Приближённые</span></a
       >
       ${
