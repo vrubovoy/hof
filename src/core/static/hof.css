@@ -1034,11 +1034,13 @@ button.place {
   .place > :is(.sign, .plate) {
     z-index: 1;
   }
-  /* M12.15: where the plate reaches down past the bottom of the sign of the treasury (a window
-     narrower than 1551 px), that sign moves right just enough to clear it by 2 px, no further:
+  /* M12.15: where the plate reaches down past the bottom of the sign of the treasury (a map
+     narrower than 1263 px), that sign moves right just enough to clear it by 2 px, no further:
      the right edge of the plate as above, 3.52em is half of the sign «Säckel». Only where the
-     plate is: the place of the gatehouse comes before that of the treasury */
-  @media (max-width: 1550.98px) {
+     plate is: the place of the gatehouse comes before that of the treasury. M13.9: the width of
+     the map itself decides (the frame is a container), as the map is smaller in a low window too;
+     a window narrower than 1551 px has such a map, as before */
+  @container (max-width: 1262.98px) {
     .place[data-door='gatehouse'] ~ .place .at-treasury {
       left: max(
         39.84%,

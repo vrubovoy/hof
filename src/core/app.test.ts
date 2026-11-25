@@ -3975,8 +3975,10 @@ describe('the look of Hof: pages, CSS and static files', () => {
       css,
       /\n {2}\.at-gatehouse \{[^}]*top: calc\(100% \* 476 \/ 1024 - 2px - 1\.7em\);[^}]*font-size: var\(--plate\);/,
     );
+    // M13.9: by the width of the map (1263 px, the map of a window of 1551 px), not of the window:
+    // the map is smaller in a low window too.
     const moved =
-      /\n {2}@media \(max-width: 1550\.98px\) \{\s*\.place\[data-door='gatehouse'\] ~ \.place \.at-treasury \{/.exec(
+      /\n {2}@container \(max-width: 1262\.98px\) \{\s*\.place\[data-door='gatehouse'\] ~ \.place \.at-treasury \{/.exec(
         css,
       );
     assert.ok(moved, 'the sign of the treasury moves only after the place of the gatehouse');
