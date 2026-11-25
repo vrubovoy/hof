@@ -944,19 +944,37 @@ button.place {
 @media (min-width: 1024px) {
   .court {
     min-height: 100vh;
+    container-type: inline-size;
   }
   /* the frame of Home at any height of the window: 610 px at the width 1152, the top of the map
-     cut by 34 px, on the left and at the bottom the map dissolves into the paper. Where the window
-     is lower than the frame with the line under it, the page scrolls, and (M12.7) the banner goes
-     with it */
+     cut by 34 px, on the left and at the bottom the map dissolves into the paper. M13.9: the frame
+     is no higher than the window over the note under it (180 px): in a lower window it is smaller
+     — not narrower than 600 px — and the paper to its right takes it with a soft edge, as on the
+     left. Its signs and doors are placed in parts of the map and grow smaller with it; the size
+     of a sign is taken from the width of the map (a container), not of the window. Where the
+     window is lower still, the page scrolls, and (M12.7) the banner goes with it */
   .court-map {
+    container-type: inline-size;
+    width: min(100cqw, max(600px, (100vh - 180px) * 1152 / 610));
     aspect-ratio: 1152 / 610;
     -webkit-mask-image:
-      linear-gradient(to right, transparent, #000 48px),
+      linear-gradient(
+        to right,
+        transparent,
+        #000 48px,
+        #000 calc(100% - min(48px, 100cqw - 100%)),
+        transparent
+      ),
       linear-gradient(to bottom, #000 calc(100% - 70px), transparent);
     -webkit-mask-composite: source-in;
     mask-image:
-      linear-gradient(to right, transparent, #000 48px),
+      linear-gradient(
+        to right,
+        transparent,
+        #000 48px,
+        #000 calc(100% - min(48px, 100cqw - 100%)),
+        transparent
+      ),
       linear-gradient(to bottom, #000 calc(100% - 70px), transparent);
     mask-composite: intersect;
   }
@@ -969,7 +987,7 @@ button.place {
     top: 22px;
   }
   /* the signs: «Выход» over the arch of the gate, the door of the treasury, the tower. Where the
-     map is narrower than 1152 px (the window narrower than 1440), the signs get smaller with it,
+     map is narrower than 1152 px (a narrower or, M13.9, a lower window), the signs get smaller with it,
      but the text not smaller than 16 px; the sizes of a sign are in parts of its text. The left
      one on a narrow map comes no nearer the edge than in the prototype (44 px; 3.59em is half of
      «Выход») */
@@ -981,7 +999,7 @@ button.place {
     padding: calc(43em / 21) calc(6em / 21) 0;
     border-width: 0 calc(41em / 21) 0 calc(42em / 21);
     border-image-width: 0 calc(41em / 21) 0 calc(42em / 21);
-    font-size: clamp(16px, (100vw - 288px) * 21 / 1152, 21px);
+    font-size: clamp(16px, 100cqw * 21 / 1152, 21px);
     line-height: calc(22em / 21);
     transform: translateX(-50%);
   }
@@ -994,7 +1012,7 @@ button.place {
      to the door of the treasury (579), so it covers less of the blue banner of the gate. The text
      15–17 px; 3.73em is half of the plate. --plate is read by the sign of the treasury as well */
   .court-inner {
-    --plate: clamp(15px, (100vw - 288px) * 17 / 1152, 17px);
+    --plate: clamp(15px, 100cqw * 17 / 1152, 17px);
   }
   .at-gatehouse {
     position: absolute;
@@ -1039,6 +1057,14 @@ button.place {
     column-gap: 40px;
     align-items: start;
     padding: 4px 40px 0;
+  }
+  /* M13.9: without the plate of the Master the note has the whole width: one line, a lower band;
+     with it the band is higher, and so is the room left for it under the map */
+  .court-below:not(:has(.court-alone)) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .court:has(.court-alone) .court-map {
+    width: min(100cqw, max(600px, (100vh - 240px) * 1152 / 610));
   }
   .court-note {
     display: flex;
@@ -1100,6 +1126,12 @@ button.place {
     min-height: calc(100vh - 60px);
     min-height: calc(100svh - 60px);
     padding-bottom: 54px;
+  }
+  /* M13.9: on a low phone less paper under the last sign, and Home fits the screen */
+  @media (max-height: 780px) {
+    .court {
+      padding-bottom: 36px;
+    }
   }
   .court-map {
     order: -1;
@@ -1369,6 +1401,50 @@ button.place {
     width: 70px;
     opacity: 0.5;
     transform: rotate(15deg);
+  }
+}
+/* M13.9: on a computer whose window is lower than the page (928 px), «Мои покои» fit it: the
+   frames closer, the descriptions of the settings short, and «Покинуть двор» — the same as in the
+   banner — in the line of the ribbon, without its door; its hint stays for a screen reader
+   (aria-describedby reads a hidden element too). A higher window shows the page as before */
+@media (min-width: 1024px) and (max-height: 939.98px) {
+  .chambers-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-content: start;
+    gap: 8px;
+    padding-top: 16px;
+    padding-bottom: 12px;
+  }
+  .chambers-main > * {
+    grid-column: 1 / -1;
+  }
+  .chambers-head {
+    grid-column: 1;
+    grid-row: 1;
+    row-gap: 0;
+  }
+  .chambers-out {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+    margin-top: 10px;
+    padding-left: 0;
+  }
+  .chambers-out p,
+  .chambers-out .frames {
+    display: none;
+  }
+  .chambers-password {
+    gap: 6px;
+    padding: 12px 30px 10px;
+  }
+  .fx-settings:not([hidden]) {
+    gap: 4px;
+    padding: 10px 30px 8px;
+  }
+  .fx-settings .text-full {
+    display: none;
   }
 }
 
@@ -2164,6 +2240,27 @@ button.place {
     -webkit-mask-image: linear-gradient(to bottom, transparent, #000 25%);
     mask-image: linear-gradient(to bottom, transparent, #000 25%);
   }
+  /* M13.9: on a low phone (iPhone with the bars of the browser shown) the sign-in fits the screen:
+     the mark of Hof in a line with its name, the scene lower — 36 % of the smallest height of the
+     screen instead of 55 %. The frame of the cat follows the scene (below) */
+  @media (max-height: 780px) {
+    .gate-login .logo {
+      flex-direction: row;
+      justify-content: center;
+      gap: 10px;
+    }
+    .gate-login .logo img {
+      width: 48px;
+      height: 48px;
+    }
+    .gate-login .logo b {
+      font-size: 40px;
+    }
+    .gate-login .gate-scene img {
+      height: min(100vw, 36svh);
+      margin-top: calc(-33px + clamp(0px, 100vw - 36svh, 33px));
+    }
+  }
 
   /* основание: знак в строку, сцена полосой — кадр SetupMobile (картинка 760 px при ширине 390,
      ворота и кот у нижнего края), верх растворяется в бумаге */
@@ -2401,6 +2498,20 @@ button.place {
     --s: max(100cqw / 1024, 100cqh / 1024);
     --x0: calc((100cqw - 1024 * var(--s)) / 2 - 48 * var(--s));
     --y0: calc(100cqh - 1024 * var(--s));
+  }
+  /* M13.9: on a low phone the scenes of the sign-in, the founding and the errors are lower — 36 %
+     of the smallest height of the screen instead of 55 % — and the page fits the screen. The
+     frames of the cats are computed from their scene, so the cats keep their places */
+  @media (max-height: 780px) {
+    .gate-login .cat-frame {
+      height: min(100vw, 36svh);
+    }
+    .gate-setup .gate-scene {
+      height: min(70.26vw, 36svh);
+    }
+    .error-scene {
+      height: min(100vw, 36svh);
+    }
   }
   /* покои: полоса 170 px, cover, 50 % 72,33 %; кот ловит нажатие на всём кадре позы */
   .chambers .cat-frame {

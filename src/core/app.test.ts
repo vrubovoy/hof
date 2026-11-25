@@ -4100,6 +4100,64 @@ describe('the look of Hof: pages, CSS and static files', () => {
     assert.match(css, /\n\.key \{\s*scroll-margin-top: 25vh;\s*\}/);
   });
 
+  // M13.9 B: the short pages fit the window. Home: the frame of the map no higher than the window
+  // over the note, its signs sized by the map; the note one line without the plate of the Master.
+  // On a low phone the scenes of the sign-in, the founding and the errors are lower (the cat of the
+  // sign-in with its scene), the mark of the sign-in in a line. «Мои покои» in a low window of a
+  // computer: «Покинуть двор» in the line of the ribbon, the frames closer, the texts short.
+  test('M13.9: Home, the sign-in, the founding, the errors and «Мои покои» fit a low window', async (t) => {
+    const { app } = await drawnPages(t);
+    const css = (await (await get(app, '/static/hof.css')).text()).replace(/\/\*[\s\S]*?\*\//g, '');
+    const block = (start: string) => {
+      const at = css.indexOf(start);
+      assert.ok(at >= 0, start);
+      let depth = 0;
+      for (let i = css.indexOf('{', at); i < css.length; i += 1) {
+        if (css[i] === '{') depth += 1;
+        if (css[i] === '}' && --depth === 0) return css.slice(at, i + 1);
+      }
+      return '';
+    };
+    // Home on a computer.
+    assert.ok(!css.includes('100vw - 288px'), 'the signs sized by the map, not the window');
+    assert.match(css, /\.court \{\s*min-height: 100vh;\s*container-type: inline-size;\s*\}/);
+    assert.match(
+      css,
+      /\.court-map \{\s*container-type: inline-size;\s*width: min\(100cqw, max\(600px, \(100vh - 180px\) \* 1152 \/ 610\)\);\s*aspect-ratio: 1152 \/ 610;/,
+    );
+    assert.match(css, /#000 calc\(100% - min\(48px, 100cqw - 100%\)\),/);
+    assert.match(css, /font-size: clamp\(16px, 100cqw \* 21 \/ 1152, 21px\);/);
+    assert.match(css, /--plate: clamp\(15px, 100cqw \* 17 \/ 1152, 17px\);/);
+    assert.match(
+      css,
+      /\.court-below:not\(:has\(\.court-alone\)\) \{\s*grid-template-columns: minmax\(0, 1fr\);\s*\}/,
+    );
+    assert.match(
+      css,
+      /\.court:has\(\.court-alone\) \.court-map \{\s*width: min\(100cqw, max\(600px, \(100vh - 240px\) \* 1152 \/ 610\)\);\s*\}/,
+    );
+    // A low phone.
+    const lowPhone = [...css.matchAll(/@media \(max-height: 780px\) \{/g)].map((m) =>
+      block(css.slice(m.index)),
+    );
+    const low = lowPhone.join('\n');
+    assert.match(low, /\.court \{\s*padding-bottom: 36px;\s*\}/);
+    assert.match(low, /\.gate-login \.logo \{\s*flex-direction: row;/);
+    assert.match(low, /\.gate-login \.gate-scene img \{\s*height: min\(100vw, 36svh\);/);
+    assert.match(low, /\.gate-login \.cat-frame \{\s*height: min\(100vw, 36svh\);\s*\}/);
+    assert.match(low, /\.gate-setup \.gate-scene \{\s*height: min\(70\.26vw, 36svh\);\s*\}/);
+    assert.match(low, /\.error-scene \{\s*height: min\(100vw, 36svh\);\s*\}/);
+    for (const m of css.matchAll(/@media \(max-height: 780px\)/g)) {
+      const outer = css.lastIndexOf('@media', m.index - 1);
+      assert.ok(css.slice(outer).startsWith('@media (max-width: 1023.98px)'), 'only on the phone');
+    }
+    // «Мои покои» in a low window of a computer.
+    const chambers = block('@media (min-width: 1024px) and (max-height: 939.98px)');
+    assert.match(chambers, /\.chambers-out \{\s*grid-column: 2;\s*grid-row: 1;/);
+    assert.match(chambers, /\.chambers-out p,\s*\.chambers-out \.frames \{\s*display: none;\s*\}/);
+    assert.match(chambers, /\.fx-settings \.text-full \{\s*display: none;\s*\}/);
+  });
+
   test('M10.6: the frame of the cats clips them, as the picture does', async (t) => {
     const { app } = await drawnPages(t);
     const css = await (await get(app, '/static/hof.css')).text();
