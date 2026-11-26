@@ -1,0 +1,5136 @@
+{
+ "label": "M13 613d70b, проверка full",
+ "scenario": "full",
+ "date": "2026-11-26T11:38:15.204Z",
+ "product": "Chrome/158.0.8127.88",
+ "flags": [
+  "--headless",
+  "--no-first-run",
+  "--no-default-browser-check",
+  "--mute-audio",
+  "--hide-scrollbars",
+  "--autoplay-policy=no-user-gesture-required"
+ ],
+ "node": "v24.22.1",
+ "power": {
+  "start": "сеть 100 %",
+  "end": "сеть 100 %"
+ },
+ "build": [
+  "/static/fx-head.js?v=ea5858ea91e1",
+  "/static/fx.js?v=d7be1cc14664",
+  "/static/hof.css?v=ba39726e8b2c",
+  "/static/img/hof-mark.svg?v=7c4d56e9aed5",
+  "/static/img/ink-blot-small.webp?v=401b2ef1e3d2",
+  "/static/img/ink-drip.webp?v=1549d14679d7",
+  "/static/img/ink-splatter-b.webp?v=2a0cb85ec275",
+  "/static/img/login-desktop-v2.webp?v=aaa908aebda6",
+  "2x.webp?v=578c38be99cf",
+  "2x.webp?v=a08dae9a59f1",
+  "3x.webp?v=1d595be56c1e"
+ ],
+ "fingerprint": "Казна 0,00 ₽ Разложить + Доход Еда последняя трата −474,76 ₽ 20 226,68 ₽ Дом последняя трата −511,89 ₽ 20 106,86 ₽ Дети последняя трата −548,02 ₽ 19 988,04 ₽ Отпуск последняя трата −185,15 ₽ 20 271,22 ₽ + Новый мешок",
+ "runs": 2,
+ "loads": [],
+ "chain": [
+  {
+   "profile": "Телефон",
+   "anim": false,
+   "run": 1,
+   "steps": [
+    {
+     "name": "Вход → Двор (документ)",
+     "toRequest": 17.8720703125,
+     "toView": 368.2001953125,
+     "toSettled": 4243.60009765625,
+     "toLcp": 4260.2001953125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 17,
+     "shift": 0,
+     "requests": {
+      "total": 26,
+      "kb": 729.181640625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Двор → Мешки",
+     "toRequest": 2.53515625,
+     "toView": 224.800048828125,
+     "toSettled": 224.800048828125,
+     "toLcp": 224.800048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 1.900146484375,
+     "shift": 0,
+     "requests": {
+      "total": 27,
+      "kb": 9.849609375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → мешок",
+     "toRequest": 2.8818359375,
+     "toView": 244.800048828125,
+     "toSettled": 264.5,
+     "toLcp": 244.800048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 1.699951171875,
+     "shift": 0,
+     "requests": {
+      "total": 27,
+      "kb": 9.98828125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Трата с ошибкой (400)",
+     "toRequest": 17.3349609375,
+     "toView": 247.89990234375,
+     "toSettled": 460.927978515625,
+     "toLcp": 247.89990234375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 14.099853515625,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 19.67578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 0
+     }
+    },
+    {
+     "name": "Трата (303)",
+     "toRequest": 6.125244140625,
+     "toView": 388.2001953125,
+     "toSettled": 395.2001953125,
+     "toLcp": 388.2001953125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 3.2001953125,
+     "shift": 0,
+     "requests": {
+      "total": 29,
+      "kb": 9.9833984375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Мешок → Мешки",
+     "toRequest": 3.3310546875,
+     "toView": 233.2001953125,
+     "toSettled": 233.2001953125,
+     "toLcp": 233.2001953125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 14.7998046875,
+     "shift": 0,
+     "requests": {
+      "total": 27,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Летопись",
+     "toRequest": 1.9951171875,
+     "toView": 228.5,
+     "toSettled": 324.199951171875,
+     "toLcp": 228.5,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 0.900146484375,
+     "shift": 0,
+     "requests": {
+      "total": 25,
+      "kb": 29.8642578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": []
+    },
+    {
+     "name": "Летопись: следующие 50",
+     "toRequest": 2.311767578125,
+     "toView": 208.39990234375,
+     "toSettled": 219.599853515625,
+     "toLcp": 208.39990234375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 4.5,
+     "shift": 0,
+     "requests": {
+      "total": 25,
+      "kb": 10.9140625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Назад браузера",
+     "toRequest": 7.948974609375,
+     "toView": 10.699951171875,
+     "toSettled": 10.699951171875,
+     "toLcp": null,
+     "document": "restored",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": null,
+     "shift": 0,
+     "requests": {
+      "total": 1,
+      "kb": 0.4033203125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 0
+     },
+     "blots": []
+    },
+    {
+     "name": "Летопись → Мешки",
+     "toRequest": 1.640869140625,
+     "toView": 204.199951171875,
+     "toSettled": 216.699951171875,
+     "toLcp": 204.199951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 1.39990234375,
+     "shift": 0,
+     "requests": {
+      "total": 27,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Двор",
+     "toRequest": 2.409912109375,
+     "toView": 192.7998046875,
+     "toSettled": 225.099853515625,
+     "toLcp": 228.7998046875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 13.400146484375,
+     "shift": 0,
+     "requests": {
+      "total": 25,
+      "kb": 8.85546875,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Выход → Вход (документ)",
+     "toRequest": 4.06298828125,
+     "toView": 534.199951171875,
+     "toSettled": 2182,
+     "toLcp": 2202.199951171875,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 196.5,
+      "total": 196.5
+     },
+     "input": 2.39990234375,
+     "shift": 0,
+     "requests": {
+      "total": 17,
+      "kb": 330.0166015625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    }
+   ]
+  },
+  {
+   "profile": "Телефон",
+   "anim": true,
+   "run": 1,
+   "steps": [
+    {
+     "name": "Вход → Двор (документ)",
+     "toRequest": 6.06103515625,
+     "toView": 352.60009765625,
+     "toSettled": 4332.5,
+     "toLcp": 4372.60009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 3.5,
+     "shift": 0,
+     "requests": {
+      "total": 35,
+      "kb": 780.5537109375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Двор → Мешки",
+     "toRequest": 1702.56787109375,
+     "toView": 1900.69970703125,
+     "toSettled": 2597.999755859375,
+     "toLcp": 1900.69970703125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 2.5,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 9.849609375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → мешок",
+     "toRequest": 502.43798828125,
+     "toView": 708.60009765625,
+     "toSettled": 1300.7001953125,
+     "toLcp": 708.60009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 3,
+     "shift": 0,
+     "requests": {
+      "total": 27,
+      "kb": 9.98828125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Трата с ошибкой (400)",
+     "toRequest": 14.40185546875,
+     "toView": 244.199951171875,
+     "toSettled": 452.800048828125,
+     "toLcp": 244.199951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 11.39990234375,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 19.67578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 0
+     }
+    },
+    {
+     "name": "Трата (303)",
+     "toRequest": 12.246826171875,
+     "toView": 410.699951171875,
+     "toSettled": 1691.599853515625,
+     "toLcp": 410.699951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 9.5,
+     "shift": 0,
+     "requests": {
+      "total": 29,
+      "kb": 9.9833984375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Мешок → Мешки",
+     "toRequest": 503.197998046875,
+     "toView": 713.60009765625,
+     "toSettled": 1310.400146484375,
+     "toLcp": 713.60009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 14.099853515625,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Летопись",
+     "toRequest": 503.31103515625,
+     "toView": 713.60009765625,
+     "toSettled": 1310,
+     "toLcp": 713.60009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 11.800048828125,
+     "shift": 0,
+     "requests": {
+      "total": 25,
+      "kb": 29.8642578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": []
+    },
+    {
+     "name": "Летопись: следующие 50",
+     "toRequest": 3.001953125,
+     "toView": 209.39990234375,
+     "toSettled": 222.599853515625,
+     "toLcp": 209.39990234375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 16,
+     "shift": 0,
+     "requests": {
+      "total": 25,
+      "kb": 10.9140625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Назад браузера",
+     "toRequest": 8.006103515625,
+     "toView": 11.60009765625,
+     "toSettled": 11.60009765625,
+     "toLcp": null,
+     "document": "restored",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": null,
+     "shift": 0,
+     "requests": {
+      "total": 1,
+      "kb": 0.4033203125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 0
+     },
+     "blots": []
+    },
+    {
+     "name": "Летопись → Мешки",
+     "toRequest": 502.620849609375,
+     "toView": 708.89990234375,
+     "toSettled": 1304.099853515625,
+     "toLcp": 708.89990234375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 6.39990234375,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Двор",
+     "toRequest": 503.90478515625,
+     "toView": 697.999755859375,
+     "toSettled": 1377.399658203125,
+     "toLcp": 729.999755859375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 12.599853515625,
+     "shift": 0,
+     "requests": {
+      "total": 38,
+      "kb": 8.85546875,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Выход → Вход (документ)",
+     "toRequest": 3.56982421875,
+     "toView": 2116.89990234375,
+     "toSettled": 3761.599853515625,
+     "toLcp": 3780.89990234375,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 216.59999999403954,
+      "total": 216.59999999403954
+     },
+     "input": 13.5,
+     "shift": 0,
+     "requests": {
+      "total": 20,
+      "kb": 336.9755859375,
+      "repeated": 0,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    }
+   ]
+  },
+  {
+   "profile": "Компьютер",
+   "anim": false,
+   "run": 1,
+   "steps": [
+    {
+     "name": "Вход → Двор (документ)",
+     "toRequest": 14.649169921875,
+     "toView": 146.400146484375,
+     "toSettled": 1409.60009765625,
+     "toLcp": 1502.400146484375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 9.800048828125,
+     "shift": 0.00132173353909465,
+     "requests": {
+      "total": 29,
+      "kb": 1527.58984375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Двор → Мешки",
+     "toRequest": 6.092041015625,
+     "toView": 108.800048828125,
+     "toSettled": 108.800048828125,
+     "toLcp": 108.800048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 6.89990234375,
+     "shift": 0,
+     "requests": {
+      "total": 34,
+      "kb": 9.849609375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → мешок",
+     "toRequest": 2.146728515625,
+     "toView": 104.099853515625,
+     "toSettled": 104.099853515625,
+     "toLcp": 104.099853515625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 1.10009765625,
+     "shift": 0,
+     "requests": {
+      "total": 35,
+      "kb": 9.98828125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Трата с ошибкой (400)",
+     "toRequest": 10.9560546875,
+     "toView": 119.7001953125,
+     "toSettled": 119.7001953125,
+     "toLcp": 119.7001953125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 2.5,
+     "shift": 0,
+     "requests": {
+      "total": 36,
+      "kb": 19.67578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 0
+     }
+    },
+    {
+     "name": "Трата (303)",
+     "toRequest": 13.119873046875,
+     "toView": 162.699951171875,
+     "toSettled": 162.699951171875,
+     "toLcp": 162.699951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 10.10009765625,
+     "shift": 0,
+     "requests": {
+      "total": 36,
+      "kb": 9.9833984375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Мешок → Мешки",
+     "toRequest": 3.81103515625,
+     "toView": 120.5,
+     "toSettled": 120.5,
+     "toLcp": 120.5,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 2.400146484375,
+     "shift": 0,
+     "requests": {
+      "total": 34,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Летопись",
+     "toRequest": 3.1220703125,
+     "toView": 96.199951171875,
+     "toSettled": 96.199951171875,
+     "toLcp": 96.199951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 6.39990234375,
+     "shift": 0,
+     "requests": {
+      "total": 27,
+      "kb": 29.8642578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-history-medium",
+       "box": [
+        1289,
+        459,
+        85,
+        85
+       ]
+      },
+      {
+       "file": "ink-splatter-b.webp",
+       "place": "blot-history-splatter",
+       "box": [
+        1243,
+        783,
+        103,
+        97
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Летопись: следующие 50",
+     "toRequest": 5.4189453125,
+     "toView": 108.89990234375,
+     "toSettled": 108.89990234375,
+     "toLcp": 108.89990234375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 8.300048828125,
+     "shift": 0.0015892876519097224,
+     "requests": {
+      "total": 27,
+      "kb": 10.9140625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Назад браузера",
+     "toRequest": 3.974853515625,
+     "toView": 4.800048828125,
+     "toSettled": 4.800048828125,
+     "toLcp": null,
+     "document": "restored",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": null,
+     "shift": 0,
+     "requests": {
+      "total": 1,
+      "kb": 0.4033203125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 0
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-history-medium",
+       "box": [
+        1289,
+        459,
+        85,
+        85
+       ]
+      },
+      {
+       "file": "ink-splatter-b.webp",
+       "place": "blot-history-splatter",
+       "box": [
+        1243,
+        783,
+        103,
+        97
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Летопись → Мешки",
+     "toRequest": 4.35498046875,
+     "toView": 100.60009765625,
+     "toSettled": 100.60009765625,
+     "toLcp": 100.60009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 11.7998046875,
+     "shift": 0,
+     "requests": {
+      "total": 34,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Двор",
+     "toRequest": 3.678955078125,
+     "toView": 144.39990234375,
+     "toSettled": 144.39990234375,
+     "toLcp": 144.39990234375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 10.5,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 8.85546875,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Выход → Вход (документ)",
+     "toRequest": 18.978271484375,
+     "toView": 214.900146484375,
+     "toSettled": 796.400146484375,
+     "toLcp": 214.900146484375,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 80,
+      "total": 80
+     },
+     "input": 14.199951171875,
+     "shift": 0,
+     "requests": {
+      "total": 20,
+      "kb": 774.275390625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    }
+   ]
+  },
+  {
+   "profile": "Компьютер",
+   "anim": true,
+   "run": 1,
+   "steps": [
+    {
+     "name": "Вход → Двор (документ)",
+     "toRequest": 10.2900390625,
+     "toView": 128.39990234375,
+     "toSettled": 2723.099853515625,
+     "toLcp": 1548.39990234375,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 61.099999994039536,
+      "total": 61.099999994039536
+     },
+     "input": 8.199951171875,
+     "shift": 0.006560722428519376,
+     "requests": {
+      "total": 43,
+      "kb": 3378.1337890625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Двор → Мешки",
+     "toRequest": 1710.5419921875,
+     "toView": 1827.39990234375,
+     "toSettled": 2522.2998046875,
+     "toLcp": 1827.39990234375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 7.5,
+     "shift": 0,
+     "requests": {
+      "total": 35,
+      "kb": 9.849609375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → мешок",
+     "toRequest": 6.22412109375,
+     "toView": 120.60009765625,
+     "toSettled": 120.60009765625,
+     "toLcp": 120.60009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 1.300048828125,
+     "shift": 0,
+     "requests": {
+      "total": 36,
+      "kb": 9.98828125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Трата с ошибкой (400)",
+     "toRequest": 7.830078125,
+     "toView": 109.699951171875,
+     "toSettled": 121.599853515625,
+     "toLcp": 109.699951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 5.300048828125,
+     "shift": 0,
+     "requests": {
+      "total": 37,
+      "kb": 19.67578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 0
+     }
+    },
+    {
+     "name": "Трата (303)",
+     "toRequest": 4.505859375,
+     "toView": 154.60009765625,
+     "toSettled": 1400.900146484375,
+     "toLcp": 154.60009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 2.10009765625,
+     "shift": 0,
+     "requests": {
+      "total": 37,
+      "kb": 9.9833984375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Мешок → Мешки",
+     "toRequest": 4.413818359375,
+     "toView": 108.7998046875,
+     "toSettled": 108.7998046875,
+     "toLcp": 108.7998046875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 7.10009765625,
+     "shift": 0,
+     "requests": {
+      "total": 35,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Летопись",
+     "toRequest": 508.927978515625,
+     "toView": 633.800048828125,
+     "toSettled": 1212.800048828125,
+     "toLcp": 633.800048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 2.199951171875,
+     "shift": 0,
+     "requests": {
+      "total": 27,
+      "kb": 29.8642578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-history-medium",
+       "box": [
+        1289,
+        459,
+        85,
+        85
+       ]
+      },
+      {
+       "file": "ink-splatter-b.webp",
+       "place": "blot-history-splatter",
+       "box": [
+        1243,
+        783,
+        103,
+        97
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Летопись: следующие 50",
+     "toRequest": 2.512939453125,
+     "toView": 108.300048828125,
+     "toSettled": 108.300048828125,
+     "toLcp": 108.300048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 7.60009765625,
+     "shift": 0.0015892876519097224,
+     "requests": {
+      "total": 27,
+      "kb": 10.9140625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Назад браузера",
+     "toRequest": 9.282958984375,
+     "toView": 11.19970703125,
+     "toSettled": 11.19970703125,
+     "toLcp": null,
+     "document": "restored",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": null,
+     "shift": 0,
+     "requests": {
+      "total": 1,
+      "kb": 0.4033203125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 0
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-history-medium",
+       "box": [
+        1289,
+        459,
+        85,
+        85
+       ]
+      },
+      {
+       "file": "ink-splatter-b.webp",
+       "place": "blot-history-splatter",
+       "box": [
+        1243,
+        783,
+        103,
+        97
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Летопись → Мешки",
+     "toRequest": 509.41796875,
+     "toView": 625.900146484375,
+     "toSettled": 1222.2001953125,
+     "toLcp": 625.900146484375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 7,
+     "shift": 0,
+     "requests": {
+      "total": 35,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Двор",
+     "toRequest": 508.666015625,
+     "toView": 665.699951171875,
+     "toSettled": 1360.099853515625,
+     "toLcp": 665.699951171875,
+     "document": "new",
+     "loaf": {
+      "count": 2,
+      "max": 68.20000000298023,
+      "total": 121.5
+     },
+     "input": 12.199951171875,
+     "shift": 0,
+     "requests": {
+      "total": 41,
+      "kb": 8.85546875,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Выход → Вход (документ)",
+     "toRequest": 3.157958984375,
+     "toView": 1881,
+     "toSettled": 2563,
+     "toLcp": 1881,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 91.79999999701977,
+      "total": 91.79999999701977
+     },
+     "input": 14.199951171875,
+     "shift": 0,
+     "requests": {
+      "total": 23,
+      "kb": 806.2666015625,
+      "repeated": 0,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    }
+   ]
+  },
+  {
+   "profile": "Телефон",
+   "anim": false,
+   "run": 2,
+   "steps": [
+    {
+     "name": "Вход → Двор (документ)",
+     "toRequest": 5.64599609375,
+     "toView": 367.900146484375,
+     "toSettled": 4265.800048828125,
+     "toLcp": 4259.900146484375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 3.39990234375,
+     "shift": 0,
+     "requests": {
+      "total": 26,
+      "kb": 729.181640625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Двор → Мешки",
+     "toRequest": 2.499755859375,
+     "toView": 201,
+     "toSettled": 214.199951171875,
+     "toLcp": 201,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 16.199951171875,
+     "shift": 0,
+     "requests": {
+      "total": 27,
+      "kb": 9.849609375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → мешок",
+     "toRequest": 2.781982421875,
+     "toView": 208.89990234375,
+     "toSettled": 259.2998046875,
+     "toLcp": 208.89990234375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 9.800048828125,
+     "shift": 0,
+     "requests": {
+      "total": 27,
+      "kb": 9.98828125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Трата с ошибкой (400)",
+     "toRequest": 7.207275390625,
+     "toView": 237.400146484375,
+     "toSettled": 445.60009765625,
+     "toLcp": 237.400146484375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 3.800048828125,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 19.67578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 0
+     }
+    },
+    {
+     "name": "Трата (303)",
+     "toRequest": 11.239013671875,
+     "toView": 393.699951171875,
+     "toSettled": 423.39990234375,
+     "toLcp": 393.699951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 8.300048828125,
+     "shift": 0,
+     "requests": {
+      "total": 29,
+      "kb": 9.9833984375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Мешок → Мешки",
+     "toRequest": 2.6279296875,
+     "toView": 200.300048828125,
+     "toSettled": 213.900146484375,
+     "toLcp": 200.300048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 15.89990234375,
+     "shift": 0,
+     "requests": {
+      "total": 27,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Летопись",
+     "toRequest": 2.58203125,
+     "toView": 208.300048828125,
+     "toSettled": 320.699951171875,
+     "toLcp": 208.300048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 5.10009765625,
+     "shift": 0,
+     "requests": {
+      "total": 25,
+      "kb": 29.8642578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": []
+    },
+    {
+     "name": "Летопись: следующие 50",
+     "toRequest": 2.638916015625,
+     "toView": 208.900146484375,
+     "toSettled": 221.800048828125,
+     "toLcp": 208.900146484375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 5.699951171875,
+     "shift": 0,
+     "requests": {
+      "total": 25,
+      "kb": 10.9140625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Назад браузера",
+     "toRequest": 6.06689453125,
+     "toView": 9.599853515625,
+     "toSettled": 9.599853515625,
+     "toLcp": null,
+     "document": "restored",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": null,
+     "shift": 0,
+     "requests": {
+      "total": 1,
+      "kb": 0.4033203125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 0
+     },
+     "blots": []
+    },
+    {
+     "name": "Летопись → Мешки",
+     "toRequest": 2.468994140625,
+     "toView": 220.199951171875,
+     "toSettled": 220.199951171875,
+     "toLcp": 220.199951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 2.7998046875,
+     "shift": 0,
+     "requests": {
+      "total": 27,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Двор",
+     "toRequest": 2.743896484375,
+     "toView": 196.800048828125,
+     "toSettled": 209.900146484375,
+     "toLcp": 228.800048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 11.7998046875,
+     "shift": 0,
+     "requests": {
+      "total": 25,
+      "kb": 8.85546875,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Выход → Вход (документ)",
+     "toRequest": 5.6708984375,
+     "toView": 523.900146484375,
+     "toSettled": 2168.10009765625,
+     "toLcp": 2187.900146484375,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 186.79999999701977,
+      "total": 186.79999999701977
+     },
+     "input": 3.400146484375,
+     "shift": 0,
+     "requests": {
+      "total": 17,
+      "kb": 330.0166015625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    }
+   ]
+  },
+  {
+   "profile": "Телефон",
+   "anim": true,
+   "run": 2,
+   "steps": [
+    {
+     "name": "Вход → Двор (документ)",
+     "toRequest": 6.02685546875,
+     "toView": 368.300048828125,
+     "toSettled": 4332.699951171875,
+     "toLcp": 4352.300048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 3.199951171875,
+     "shift": 0,
+     "requests": {
+      "total": 35,
+      "kb": 780.5537109375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Двор → Мешки",
+     "toRequest": 1703.116943359375,
+     "toView": 1893.300048828125,
+     "toSettled": 2592.300048828125,
+     "toLcp": 1893.300048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 11,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 9.849609375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → мешок",
+     "toRequest": 502.166015625,
+     "toView": 704.39990234375,
+     "toSettled": 1286.5,
+     "toLcp": 704.39990234375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 5.599853515625,
+     "shift": 0,
+     "requests": {
+      "total": 27,
+      "kb": 9.98828125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Трата с ошибкой (400)",
+     "toRequest": 17.990234375,
+     "toView": 248.5,
+     "toSettled": 456.699951171875,
+     "toLcp": 248.5,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 16.5,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 19.67578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 0
+     }
+    },
+    {
+     "name": "Трата (303)",
+     "toRequest": 17.498046875,
+     "toView": 383.900146484375,
+     "toSettled": 1679.7001953125,
+     "toLcp": 383.900146484375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 16,
+     "shift": 0,
+     "requests": {
+      "total": 29,
+      "kb": 9.9833984375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Мешок → Мешки",
+     "toRequest": 503.247802734375,
+     "toView": 697.099853515625,
+     "toSettled": 1276.999755859375,
+     "toLcp": 697.099853515625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 12.39990234375,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Летопись",
+     "toRequest": 502.325927734375,
+     "toView": 692.699951171875,
+     "toSettled": 1271.599853515625,
+     "toLcp": 692.699951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 6.89990234375,
+     "shift": 0,
+     "requests": {
+      "total": 25,
+      "kb": 29.8642578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": []
+    },
+    {
+     "name": "Летопись: следующие 50",
+     "toRequest": 2.39013671875,
+     "toView": 204.60009765625,
+     "toSettled": 219.800048828125,
+     "toLcp": 204.60009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 5.10009765625,
+     "shift": 0,
+     "requests": {
+      "total": 25,
+      "kb": 10.9140625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Назад браузера",
+     "toRequest": 7.053955078125,
+     "toView": 10.5,
+     "toSettled": 10.5,
+     "toLcp": null,
+     "document": "restored",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": null,
+     "shift": 0,
+     "requests": {
+      "total": 1,
+      "kb": 0.4033203125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 0
+     },
+     "blots": []
+    },
+    {
+     "name": "Летопись → Мешки",
+     "toRequest": 502.5,
+     "toView": 700.800048828125,
+     "toSettled": 1296,
+     "toLcp": 700.800048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 4.89990234375,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Двор",
+     "toRequest": 503.274169921875,
+     "toView": 693.60009765625,
+     "toSettled": 1392.60009765625,
+     "toLcp": 729.60009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 12.2001953125,
+     "shift": 0,
+     "requests": {
+      "total": 38,
+      "kb": 8.85546875,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Выход → Вход (документ)",
+     "toRequest": 1.534912109375,
+     "toView": 2071.099853515625,
+     "toSettled": 3755.2998046875,
+     "toLcp": 3775.099853515625,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 187.90000000596046,
+      "total": 187.90000000596046
+     },
+     "input": 8.10009765625,
+     "shift": 0,
+     "requests": {
+      "total": 20,
+      "kb": 336.9755859375,
+      "repeated": 0,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    }
+   ]
+  },
+  {
+   "profile": "Компьютер",
+   "anim": false,
+   "run": 2,
+   "steps": [
+    {
+     "name": "Вход → Двор (документ)",
+     "toRequest": 16.2451171875,
+     "toView": 150.10009765625,
+     "toSettled": 1412.60009765625,
+     "toLcp": 1502.10009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 13.800048828125,
+     "shift": 0.00132173353909465,
+     "requests": {
+      "total": 29,
+      "kb": 1527.58984375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Двор → Мешки",
+     "toRequest": 6.580078125,
+     "toView": 116.89990234375,
+     "toSettled": 116.89990234375,
+     "toLcp": 116.89990234375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 1.39990234375,
+     "shift": 0,
+     "requests": {
+      "total": 34,
+      "kb": 9.849609375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → мешок",
+     "toRequest": 6.698974609375,
+     "toView": 100.7001953125,
+     "toSettled": 100.7001953125,
+     "toLcp": 100.7001953125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 16,
+     "shift": 0,
+     "requests": {
+      "total": 35,
+      "kb": 9.98828125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Трата с ошибкой (400)",
+     "toRequest": 9.41796875,
+     "toView": 110.10009765625,
+     "toSettled": 121.300048828125,
+     "toLcp": 110.10009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 5.300048828125,
+     "shift": 0,
+     "requests": {
+      "total": 36,
+      "kb": 19.67578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 0
+     }
+    },
+    {
+     "name": "Трата (303)",
+     "toRequest": 10.19482421875,
+     "toView": 174.699951171875,
+     "toSettled": 174.699951171875,
+     "toLcp": 174.699951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 5.800048828125,
+     "shift": 0,
+     "requests": {
+      "total": 36,
+      "kb": 9.9833984375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Мешок → Мешки",
+     "toRequest": 4.10302734375,
+     "toView": 112.5,
+     "toSettled": 112.5,
+     "toLcp": 112.5,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 4.5,
+     "shift": 0,
+     "requests": {
+      "total": 34,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Летопись",
+     "toRequest": 4.866943359375,
+     "toView": 112.39990234375,
+     "toSettled": 112.39990234375,
+     "toLcp": 112.39990234375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 9.699951171875,
+     "shift": 0,
+     "requests": {
+      "total": 27,
+      "kb": 29.8642578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-history-medium",
+       "box": [
+        1289,
+        459,
+        85,
+        85
+       ]
+      },
+      {
+       "file": "ink-splatter-b.webp",
+       "place": "blot-history-splatter",
+       "box": [
+        1243,
+        783,
+        103,
+        97
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Летопись: следующие 50",
+     "toRequest": 2.21484375,
+     "toView": 108.199951171875,
+     "toSettled": 108.199951171875,
+     "toLcp": 108.199951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 6.2001953125,
+     "shift": 0.0015892876519097224,
+     "requests": {
+      "total": 27,
+      "kb": 10.9140625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Назад браузера",
+     "toRequest": 10.237060546875,
+     "toView": 12.300048828125,
+     "toSettled": 12.300048828125,
+     "toLcp": null,
+     "document": "restored",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": null,
+     "shift": 0,
+     "requests": {
+      "total": 1,
+      "kb": 0.4033203125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 0
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-history-medium",
+       "box": [
+        1289,
+        459,
+        85,
+        85
+       ]
+      },
+      {
+       "file": "ink-splatter-b.webp",
+       "place": "blot-history-splatter",
+       "box": [
+        1243,
+        783,
+        103,
+        97
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Летопись → Мешки",
+     "toRequest": 3.56591796875,
+     "toView": 104.5,
+     "toSettled": 104.5,
+     "toLcp": 104.5,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 1.5,
+     "shift": 0,
+     "requests": {
+      "total": 34,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Двор",
+     "toRequest": 6.357666015625,
+     "toView": 156.599853515625,
+     "toSettled": 156.599853515625,
+     "toLcp": 156.599853515625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 11.599853515625,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 8.85546875,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Выход → Вход (документ)",
+     "toRequest": 20.114990234375,
+     "toView": 200.800048828125,
+     "toSettled": 798.300048828125,
+     "toLcp": 200.800048828125,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 59.79999999701977,
+      "total": 59.79999999701977
+     },
+     "input": 16.400146484375,
+     "shift": 0,
+     "requests": {
+      "total": 20,
+      "kb": 774.275390625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    }
+   ]
+  },
+  {
+   "profile": "Компьютер",
+   "anim": true,
+   "run": 2,
+   "steps": [
+    {
+     "name": "Вход → Двор (документ)",
+     "toRequest": 9.446044921875,
+     "toView": 127.5,
+     "toSettled": 2723.10009765625,
+     "toLcp": 1547.5,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 66.5,
+      "total": 66.5
+     },
+     "input": 7.10009765625,
+     "shift": 0.006583453025870198,
+     "requests": {
+      "total": 43,
+      "kb": 3378.1337890625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Двор → Мешки",
+     "toRequest": 1709.274169921875,
+     "toView": 1814.5,
+     "toSettled": 2512.89990234375,
+     "toLcp": 1814.5,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 15.39990234375,
+     "shift": 0,
+     "requests": {
+      "total": 35,
+      "kb": 9.849609375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → мешок",
+     "toRequest": 3.990966796875,
+     "toView": 108.300048828125,
+     "toSettled": 108.300048828125,
+     "toLcp": 108.300048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 5.300048828125,
+     "shift": 0,
+     "requests": {
+      "total": 36,
+      "kb": 9.98828125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Трата с ошибкой (400)",
+     "toRequest": 9.56787109375,
+     "toView": 107.699951171875,
+     "toSettled": 122.599853515625,
+     "toLcp": 107.699951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 7.39990234375,
+     "shift": 0,
+     "requests": {
+      "total": 37,
+      "kb": 19.67578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 0
+     }
+    },
+    {
+     "name": "Трата (303)",
+     "toRequest": 19.288818359375,
+     "toView": 184.099853515625,
+     "toSettled": 1429.999755859375,
+     "toLcp": 184.099853515625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 14.900146484375,
+     "shift": 0,
+     "requests": {
+      "total": 37,
+      "kb": 9.9833984375,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Мешок → Мешки",
+     "toRequest": 5.028076171875,
+     "toView": 108.500244140625,
+     "toSettled": 108.500244140625,
+     "toLcp": 108.500244140625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 6.89990234375,
+     "shift": 0,
+     "requests": {
+      "total": 35,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Летопись",
+     "toRequest": 508.828857421875,
+     "toView": 629.599853515625,
+     "toSettled": 1202.999755859375,
+     "toLcp": 629.599853515625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 4.400146484375,
+     "shift": 0,
+     "requests": {
+      "total": 27,
+      "kb": 29.8642578125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-history-medium",
+       "box": [
+        1289,
+        459,
+        85,
+        85
+       ]
+      },
+      {
+       "file": "ink-splatter-b.webp",
+       "place": "blot-history-splatter",
+       "box": [
+        1243,
+        783,
+        103,
+        97
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Летопись: следующие 50",
+     "toRequest": 4.574951171875,
+     "toView": 112.5,
+     "toSettled": 112.5,
+     "toLcp": 112.5,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 11.39990234375,
+     "shift": 0.0015892876519097224,
+     "requests": {
+      "total": 27,
+      "kb": 10.9140625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Назад браузера",
+     "toRequest": 9.3759765625,
+     "toView": 10.800048828125,
+     "toSettled": 10.800048828125,
+     "toLcp": null,
+     "document": "restored",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": null,
+     "shift": 0,
+     "requests": {
+      "total": 1,
+      "kb": 0.4033203125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 0
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-history-medium",
+       "box": [
+        1289,
+        459,
+        85,
+        85
+       ]
+      },
+      {
+       "file": "ink-splatter-b.webp",
+       "place": "blot-history-splatter",
+       "box": [
+        1243,
+        783,
+        103,
+        97
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Летопись → Мешки",
+     "toRequest": 508.77685546875,
+     "toView": 625.699951171875,
+     "toSettled": 1204.199951171875,
+     "toLcp": 625.699951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 5.5,
+     "shift": 0,
+     "requests": {
+      "total": 35,
+      "kb": 9.8447265625,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Двор",
+     "toRequest": 506.1611328125,
+     "toView": 637,
+     "toSettled": 1329.89990234375,
+     "toLcp": 637,
+     "document": "new",
+     "loaf": {
+      "count": 2,
+      "max": 80.30000001192093,
+      "total": 142.40000000596046
+     },
+     "input": 14.099853515625,
+     "shift": 0,
+     "requests": {
+      "total": 41,
+      "kb": 8.85546875,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Выход → Вход (документ)",
+     "toRequest": 1.47900390625,
+     "toView": 1844.10009765625,
+     "toSettled": 2522.5,
+     "toLcp": 1844.10009765625,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 65.29999999701977,
+      "total": 65.29999999701977
+     },
+     "input": 7,
+     "shift": 0,
+     "requests": {
+      "total": 24,
+      "kb": 808.1435546875,
+      "repeated": 0,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    }
+   ]
+  }
+ ],
+ "music": [
+  {
+   "profile": "Телефон",
+   "anim": true,
+   "run": 1,
+   "steps": [
+    {
+     "name": "Вход → Двор (документ)",
+     "toRequest": 7.52294921875,
+     "toView": 390,
+     "toSettled": 10052.5,
+     "toLcp": 10094,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 4.800048828125,
+     "shift": 0,
+     "requests": {
+      "total": 38,
+      "kb": 748.2744140625,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Двор → Мешки",
+     "toRequest": 1703.6572265625,
+     "toView": 1957.2001953125,
+     "toSettled": 3767.80029296875,
+     "toLcp": 1957.2001953125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 7.900146484375,
+     "shift": 0,
+     "requests": {
+      "total": 30,
+      "kb": 9.849609375,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 1873.800048828125,
+      "toLevel": 2273.900146484375,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → мешок",
+     "toRequest": 502.8779296875,
+     "toView": 729.199951171875,
+     "toSettled": 1969.39990234375,
+     "toLcp": 729.199951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 9.5,
+     "shift": 0,
+     "requests": {
+      "total": 29,
+      "kb": 9.98828125,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 2406.2998046875,
+      "toLevel": null,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Трата с ошибкой (400)",
+     "toRequest": 13.909912109375,
+     "toView": 260.300048828125,
+     "toSettled": 3359.900146484375,
+     "toLcp": 260.300048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 11,
+     "shift": 0,
+     "requests": {
+      "total": 30,
+      "kb": 19.67578125,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 0
+     },
+     "silence": {
+      "longest": 3132.900146484375,
+      "toLevel": 3532.900146484375,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Трата (303)",
+     "toRequest": 13.35791015625,
+     "toView": 411.800048828125,
+     "toSettled": 4083.400146484375,
+     "toLcp": 411.800048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 10.7998046875,
+     "shift": 0,
+     "requests": {
+      "total": 32,
+      "kb": 9.9833984375,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 3705.39990234375,
+      "toLevel": 4106,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Мешок → Мешки",
+     "toRequest": 501.615966796875,
+     "toView": 732.099853515625,
+     "toSettled": 1582.89990234375,
+     "toLcp": 732.099853515625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 17.699951171875,
+     "shift": 0,
+     "requests": {
+      "total": 31,
+      "kb": 9.8447265625,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 3119,
+      "toLevel": null,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Летопись",
+     "toRequest": 503.08203125,
+     "toView": 745.5,
+     "toSettled": 2290.199951171875,
+     "toLcp": 745.5,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 9.39990234375,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 29.8642578125,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 3740.199951171875,
+      "toLevel": null,
+      "starts": 1
+     },
+     "blots": []
+    },
+    {
+     "name": "Летопись: следующие 50",
+     "toRequest": 2.655029296875,
+     "toView": 237,
+     "toSettled": 1498.10009765625,
+     "toLcp": 237,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 4.599853515625,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 10.9140625,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 5016,
+      "toLevel": null,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Назад браузера",
+     "toRequest": 1.510009765625,
+     "toView": 233.300048828125,
+     "toSettled": 5079.800048828125,
+     "toLcp": 233.300048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": null,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 29.8642578125,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 4909.699951171875,
+      "toLevel": 5309.699951171875,
+      "starts": 1
+     },
+     "blots": []
+    },
+    {
+     "name": "Летопись → Мешки",
+     "toRequest": 502.52490234375,
+     "toView": 748.900146484375,
+     "toSettled": 1961.400146484375,
+     "toLcp": 748.900146484375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 13.10009765625,
+     "shift": 0,
+     "requests": {
+      "total": 31,
+      "kb": 9.8447265625,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 4109.199951171875,
+      "toLevel": null,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Двор",
+     "toRequest": 503.68896484375,
+     "toView": 745.5,
+     "toSettled": 5493.10009765625,
+     "toLcp": 777.5,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 11.7998046875,
+     "shift": 0,
+     "requests": {
+      "total": 41,
+      "kb": 142.9912109375,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 7060.699951171875,
+      "toLevel": 7460.800048828125,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Выход → Вход (документ)",
+     "toRequest": 2.1318359375,
+     "toView": 2103.699951171875,
+     "toSettled": 5000.300048828125,
+     "toLcp": 5019.699951171875,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 192.70000000298023,
+      "total": 192.70000000298023
+     },
+     "input": 40,
+     "shift": 0,
+     "requests": {
+      "total": 24,
+      "kb": 338.8740234375,
+      "repeated": 1,
+      "replaced": 2,
+      "canceled": 2,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    }
+   ]
+  },
+  {
+   "profile": "Компьютер",
+   "anim": true,
+   "run": 1,
+   "steps": [
+    {
+     "name": "Вход → Двор (документ)",
+     "toRequest": 15.63623046875,
+     "toView": 149.400146484375,
+     "toSettled": 2728.400146484375,
+     "toLcp": 1529.400146484375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 13.5,
+     "shift": 0.006549299929269548,
+     "requests": {
+      "total": 45,
+      "kb": 3378.560546875,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Двор → Мешки",
+     "toRequest": 1711.97705078125,
+     "toView": 1820.300048828125,
+     "toSettled": 2517.5,
+     "toLcp": 1820.300048828125,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 56.599999994039536,
+      "total": 56.599999994039536
+     },
+     "input": 2.900146484375,
+     "shift": 0,
+     "requests": {
+      "total": 37,
+      "kb": 10.2763671875,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 60.400146484375,
+      "toLevel": 460.400146484375,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → мешок",
+     "toRequest": 6.05908203125,
+     "toView": 120.699951171875,
+     "toSettled": 120.699951171875,
+     "toLcp": 120.699951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 2.89990234375,
+     "shift": 0,
+     "requests": {
+      "total": 38,
+      "kb": 10.4150390625,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 63.699951171875,
+      "toLevel": 463.699951171875,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Трата с ошибкой (400)",
+     "toRequest": 20.370849609375,
+     "toView": 132.599853515625,
+     "toSettled": 133.39990234375,
+     "toLcp": 132.599853515625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 15.800048828125,
+     "shift": 0,
+     "requests": {
+      "total": 39,
+      "kb": 20.1025390625,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 0
+     },
+     "silence": {
+      "longest": 63.300048828125,
+      "toLevel": 463.39990234375,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Трата (303)",
+     "toRequest": 20.93603515625,
+     "toView": 185.099853515625,
+     "toSettled": 1431.099853515625,
+     "toLcp": 185.099853515625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 16.10009765625,
+     "shift": 0,
+     "requests": {
+      "total": 39,
+      "kb": 10.41015625,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 62.099853515625,
+      "toLevel": 462.199951171875,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Мешок → Мешки",
+     "toRequest": 3.5478515625,
+     "toView": 120.699951171875,
+     "toSettled": 120.699951171875,
+     "toLcp": 120.699951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 1.099853515625,
+     "shift": 0,
+     "requests": {
+      "total": 37,
+      "kb": 10.271484375,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 66.89990234375,
+      "toLevel": 467,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Летопись",
+     "toRequest": 508.1171875,
+     "toView": 625.7001953125,
+     "toSettled": 1223.500244140625,
+     "toLcp": 625.7001953125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 8.699951171875,
+     "shift": 0,
+     "requests": {
+      "total": 29,
+      "kb": 30.291015625,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 74.800048828125,
+      "toLevel": 474.800048828125,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-history-medium",
+       "box": [
+        1289,
+        459,
+        85,
+        85
+       ]
+      },
+      {
+       "file": "ink-splatter-b.webp",
+       "place": "blot-history-splatter",
+       "box": [
+        1243,
+        783,
+        103,
+        97
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Летопись: следующие 50",
+     "toRequest": 6.798095703125,
+     "toView": 120.89990234375,
+     "toSettled": 134.599853515625,
+     "toLcp": 120.89990234375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 12.900146484375,
+     "shift": 0.0015892876519097224,
+     "requests": {
+      "total": 29,
+      "kb": 11.3408203125,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 66.89990234375,
+      "toLevel": 466.89990234375,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Назад браузера",
+     "toRequest": 10.01611328125,
+     "toView": 13.60009765625,
+     "toSettled": 13.60009765625,
+     "toLcp": null,
+     "document": "restored",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": null,
+     "shift": 0,
+     "requests": {
+      "total": 1,
+      "kb": 0.4033203125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 0
+     },
+     "silence": {
+      "longest": 0.900146484375,
+      "toLevel": 401,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-history-medium",
+       "box": [
+        1289,
+        459,
+        85,
+        85
+       ]
+      },
+      {
+       "file": "ink-splatter-b.webp",
+       "place": "blot-history-splatter",
+       "box": [
+        1243,
+        783,
+        103,
+        97
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Летопись → Мешки",
+     "toRequest": 507.552001953125,
+     "toView": 617.199951171875,
+     "toSettled": 1211.39990234375,
+     "toLcp": 617.199951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 38.900146484375,
+     "shift": 0,
+     "requests": {
+      "total": 37,
+      "kb": 10.271484375,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 63.300048828125,
+      "toLevel": 463.300048828125,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Двор",
+     "toRequest": 510.18798828125,
+     "toView": 658.099853515625,
+     "toSettled": 1355.499755859375,
+     "toLcp": 658.099853515625,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 72.59999999403954,
+      "total": 72.59999999403954
+     },
+     "input": 6.599853515625,
+     "shift": 0,
+     "requests": {
+      "total": 43,
+      "kb": 9.2822265625,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 64.89990234375,
+      "toLevel": 465,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Выход → Вход (документ)",
+     "toRequest": 1.89111328125,
+     "toView": 1851.7001953125,
+     "toSettled": 2798.80029296875,
+     "toLcp": 1851.7001953125,
+     "document": "new",
+     "loaf": {
+      "count": 2,
+      "max": 68.19999998807907,
+      "total": 132.3999999910593
+     },
+     "input": 3.7001953125,
+     "shift": 0,
+     "requests": {
+      "total": 25,
+      "kb": 1205.62890625,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    }
+   ]
+  },
+  {
+   "profile": "Телефон",
+   "anim": true,
+   "run": 2,
+   "steps": [
+    {
+     "name": "Вход → Двор (документ)",
+     "toRequest": 5.560791015625,
+     "toView": 388.099853515625,
+     "toSettled": 10200.39990234375,
+     "toLcp": 10236.099853515625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 3.5,
+     "shift": 0,
+     "requests": {
+      "total": 38,
+      "kb": 763.349609375,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Двор → Мешки",
+     "toRequest": 1703.01611328125,
+     "toView": 1949.199951171875,
+     "toSettled": 4780.800048828125,
+     "toLcp": 1949.199951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 14.599853515625,
+     "shift": 0,
+     "requests": {
+      "total": 34,
+      "kb": 77.49609375,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 2899.39990234375,
+      "toLevel": 3299.5,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → мешок",
+     "toRequest": 502.904296875,
+     "toView": 729.10009765625,
+     "toSettled": 3714.10009765625,
+     "toLcp": 729.10009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 11.800048828125,
+     "shift": 0,
+     "requests": {
+      "total": 30,
+      "kb": 9.98828125,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 3051,
+      "toLevel": 3451.099853515625,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Трата с ошибкой (400)",
+     "toRequest": 4.921142578125,
+     "toView": 251.300048828125,
+     "toSettled": 855.699951171875,
+     "toLcp": 251.300048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 1.400146484375,
+     "shift": 0,
+     "requests": {
+      "total": 31,
+      "kb": 19.67578125,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 0
+     },
+     "silence": {
+      "longest": 2788.2001953125,
+      "toLevel": null,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Трата (303)",
+     "toRequest": 4.47314453125,
+     "toView": 403.000244140625,
+     "toSettled": 1682.2001953125,
+     "toLcp": 403.000244140625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 1.099853515625,
+     "shift": 0,
+     "requests": {
+      "total": 32,
+      "kb": 9.9833984375,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 1484.5,
+      "toLevel": null,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Мешок → Мешки",
+     "toRequest": 502.825927734375,
+     "toView": 733.10009765625,
+     "toSettled": 1330.2001953125,
+     "toLcp": 733.10009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 14.89990234375,
+     "shift": 0,
+     "requests": {
+      "total": 31,
+      "kb": 9.8447265625,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 2967.2998046875,
+      "toLevel": null,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Летопись",
+     "toRequest": 502.18408203125,
+     "toView": 728.39990234375,
+     "toSettled": 1465.599853515625,
+     "toLcp": 728.39990234375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 2.5,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 29.8642578125,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 3036.400146484375,
+      "toLevel": null,
+      "starts": 1
+     },
+     "blots": []
+    },
+    {
+     "name": "Летопись: следующие 50",
+     "toRequest": 2.947021484375,
+     "toView": 233.199951171875,
+     "toSettled": 3894.099853515625,
+     "toLcp": 233.199951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 16.10009765625,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 10.9140625,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 3724,
+      "toLevel": 4124.099853515625,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Назад браузера",
+     "toRequest": 1.596923828125,
+     "toView": 233.39990234375,
+     "toSettled": 961,
+     "toLcp": 233.39990234375,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": null,
+     "shift": 0,
+     "requests": {
+      "total": 28,
+      "kb": 29.8642578125,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 3994.599853515625,
+      "toLevel": null,
+      "starts": 1
+     },
+     "blots": []
+    },
+    {
+     "name": "Летопись → Мешки",
+     "toRequest": 502.42529296875,
+     "toView": 708.60009765625,
+     "toSettled": 1304.10009765625,
+     "toLcp": 708.60009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 8,
+     "shift": 0,
+     "requests": {
+      "total": 31,
+      "kb": 9.8447265625,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 3463.199951171875,
+      "toLevel": null,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-small.webp",
+       "place": "blot-pouches-small",
+       "box": [
+        340,
+        800,
+        32,
+        33
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Двор",
+     "toRequest": 502.462158203125,
+     "toView": 728.7001953125,
+     "toSettled": 1424.000244140625,
+     "toLcp": 744.7001953125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 9.60009765625,
+     "shift": 0,
+     "requests": {
+      "total": 41,
+      "kb": 383.36328125,
+      "repeated": 1,
+      "replaced": 1,
+      "canceled": 1,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 5391.199951171875,
+      "toLevel": null,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Выход → Вход (документ)",
+     "toRequest": 2.94677734375,
+     "toView": 2108.099853515625,
+     "toSettled": 2803.699951171875,
+     "toLcp": 2108.099853515625,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 191.5,
+      "total": 191.5
+     },
+     "input": 5.10009765625,
+     "shift": 0,
+     "requests": {
+      "total": 23,
+      "kb": 6.9599609375,
+      "repeated": 1,
+      "replaced": 2,
+      "canceled": 2,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    }
+   ]
+  },
+  {
+   "profile": "Компьютер",
+   "anim": true,
+   "run": 2,
+   "steps": [
+    {
+     "name": "Вход → Двор (документ)",
+     "toRequest": 16.360107421875,
+     "toView": 133.5,
+     "toSettled": 2728.39990234375,
+     "toLcp": 1549.5,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 62,
+      "total": 62
+     },
+     "input": 13.300048828125,
+     "shift": 0.006565576406303585,
+     "requests": {
+      "total": 45,
+      "kb": 3378.560546875,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    },
+    {
+     "name": "Двор → Мешки",
+     "toRequest": 1712.599853515625,
+     "toView": 1823.800048828125,
+     "toSettled": 2519.10009765625,
+     "toLcp": 1823.800048828125,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 51.5,
+      "total": 51.5
+     },
+     "input": 4.2001953125,
+     "shift": 0,
+     "requests": {
+      "total": 37,
+      "kb": 10.2763671875,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 62.900146484375,
+      "toLevel": 462.900146484375,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → мешок",
+     "toRequest": 6.2529296875,
+     "toView": 120.800048828125,
+     "toSettled": 120.800048828125,
+     "toLcp": 120.800048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 1.400146484375,
+     "shift": 0,
+     "requests": {
+      "total": 38,
+      "kb": 10.4150390625,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 63.800048828125,
+      "toLevel": 463.800048828125,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Трата с ошибкой (400)",
+     "toRequest": 15.6669921875,
+     "toView": 128,
+     "toSettled": 142.89990234375,
+     "toLcp": 128,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 11.2001953125,
+     "shift": 0,
+     "requests": {
+      "total": 39,
+      "kb": 20.1025390625,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 0
+     },
+     "silence": {
+      "longest": 65.5,
+      "toLevel": 465.5,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Трата (303)",
+     "toRequest": 17.52197265625,
+     "toView": 151.10009765625,
+     "toSettled": 1396.10009765625,
+     "toLcp": 151.10009765625,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 14.400146484375,
+     "shift": 0,
+     "requests": {
+      "total": 39,
+      "kb": 10.41015625,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 56.60009765625,
+      "toLevel": 456.7001953125,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Мешок → Мешки",
+     "toRequest": 3.920166015625,
+     "toView": 116.800048828125,
+     "toSettled": 118.5,
+     "toLcp": 116.800048828125,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 1.5,
+     "shift": 0,
+     "requests": {
+      "total": 37,
+      "kb": 10.271484375,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 64.699951171875,
+      "toLevel": 464.800048828125,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Летопись",
+     "toRequest": 509.032958984375,
+     "toView": 629.199951171875,
+     "toSettled": 1210.89990234375,
+     "toLcp": 629.199951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 11.800048828125,
+     "shift": 0,
+     "requests": {
+      "total": 29,
+      "kb": 30.291015625,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 71.5,
+      "toLevel": 471.599853515625,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-history-medium",
+       "box": [
+        1289,
+        459,
+        85,
+        85
+       ]
+      },
+      {
+       "file": "ink-splatter-b.webp",
+       "place": "blot-history-splatter",
+       "box": [
+        1243,
+        783,
+        103,
+        97
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Летопись: следующие 50",
+     "toRequest": 1.7109375,
+     "toView": 92.199951171875,
+     "toSettled": 108.39990234375,
+     "toLcp": 92.199951171875,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 6.699951171875,
+     "shift": 0.0013182463469328704,
+     "requests": {
+      "total": 29,
+      "kb": 11.3408203125,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 61,
+      "toLevel": 461.099853515625,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Назад браузера",
+     "toRequest": 5.458984375,
+     "toView": 7.699951171875,
+     "toSettled": 7.699951171875,
+     "toLcp": null,
+     "document": "restored",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": null,
+     "shift": 0,
+     "requests": {
+      "total": 1,
+      "kb": 0.4033203125,
+      "repeated": 0,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 0
+     },
+     "silence": {
+      "longest": 996.52783203125,
+      "toLevel": null,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-history-medium",
+       "box": [
+        1289,
+        459,
+        85,
+        85
+       ]
+      },
+      {
+       "file": "ink-splatter-b.webp",
+       "place": "blot-history-splatter",
+       "box": [
+        1243,
+        783,
+        103,
+        97
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Летопись → Мешки",
+     "toRequest": 507.90185546875,
+     "toView": 617.5,
+     "toSettled": 1214.199951171875,
+     "toLcp": 617.5,
+     "document": "new",
+     "loaf": {
+      "count": 0,
+      "max": 0,
+      "total": 0
+     },
+     "input": 15,
+     "shift": 0,
+     "requests": {
+      "total": 37,
+      "kb": 10.271484375,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 618.5,
+      "toLevel": 1018.5,
+      "starts": 1
+     },
+     "blots": [
+      {
+       "file": "ink-blot-medium.webp",
+       "place": "blot-pouches-medium",
+       "box": [
+        1339,
+        1201,
+        82,
+        82
+       ]
+      },
+      {
+       "file": "ink-splatter-a.webp",
+       "place": "blot-pouches-splatter",
+       "box": [
+        471,
+        1276,
+        63,
+        13
+       ]
+      },
+      {
+       "file": "ink-drip.webp",
+       "place": "blot-pouches-drip",
+       "box": [
+        1408,
+        450,
+        20,
+        36
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Мешки → Двор",
+     "toRequest": 509.6220703125,
+     "toView": 666.39990234375,
+     "toSettled": 1358,
+     "toLcp": 666.39990234375,
+     "document": "new",
+     "loaf": {
+      "count": 2,
+      "max": 112.8999999910593,
+      "total": 184.69999998807907
+     },
+     "input": 9.60009765625,
+     "shift": 0,
+     "requests": {
+      "total": 43,
+      "kb": 9.2822265625,
+      "repeated": 1,
+      "replaced": 0,
+      "canceled": 0,
+      "failed": 0,
+      "posts": 0,
+      "notModified": 0,
+      "data": 1
+     },
+     "silence": {
+      "longest": 64.89990234375,
+      "toLevel": 464.89990234375,
+      "starts": 1
+     }
+    },
+    {
+     "name": "Выход → Вход (документ)",
+     "toRequest": 2.96630859375,
+     "toView": 1849.60009765625,
+     "toSettled": 2944.400146484375,
+     "toLcp": 1849.60009765625,
+     "document": "new",
+     "loaf": {
+      "count": 1,
+      "max": 61.099999994039536,
+      "total": 61.099999994039536
+     },
+     "input": 12.699951171875,
+     "shift": 0,
+     "requests": {
+      "total": 26,
+      "kb": 2116.3955078125,
+      "repeated": 1,
+      "replaced": 2,
+      "canceled": 2,
+      "failed": 0,
+      "posts": 1,
+      "notModified": 0,
+      "data": 1
+     }
+    }
+   ]
+  }
+ ],
+ "memory": []
+}
