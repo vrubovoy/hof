@@ -67,6 +67,17 @@ export function formatChange(a: Summary | null, b: Summary | null): string {
   return `${percent > 0 ? '+' : ''}${shown} %`;
 }
 
+// The tolerance of «не хуже M13» (docs/OPERATIONS.md, «Пороги приёмки M14»): the interquartile
+// range of either series, 5 % of the base median or 15 ms, whichever is largest. Two series of M13
+// differed by up to 4 % and 14 ms.
+export function tolerance(base: Summary, other: Summary): number {
+  return Math.max(base.q3 - base.q1, other.q3 - other.q1, base.median * 0.05, 15);
+}
+
+export function notWorse(base: Summary, other: Summary): boolean {
+  return other.median <= base.median + tolerance(base, other);
+}
+
 // The power of a Mac from `pmset -g ps`: «сеть 100 %», «батарея 42 %»; anything else as it is.
 export function powerShort(text: string): string {
   const source = /'(AC|Battery) Power'/.exec(text)?.[1];
@@ -74,6 +85,13 @@ export function powerShort(text: string): string {
   if (source === undefined) return text;
   return `${source === 'AC' ? 'сеть' : 'батарея'}${level === undefined ? '' : ` ${level} %`}`;
 }
+
+// --- The way -------------------------------------------------------------------------------------
+
+// Steps of the way the report treats apart: Back to the first page of Летопись is compared with
+// the way forward to the same view (docs/OPERATIONS.md, «Пороги приёмки M14»).
+export const BACK_STEP = 'Назад браузера';
+export const BACK_REFERENCE = 'Мешки → Летопись';
 
 // --- The probe of a page ------------------------------------------------------------------------
 
@@ -221,21 +239,42 @@ export interface NetRequest {
   failed: boolean;
 }
 
-// The requests of a step: how many, their weight, how many were sent twice (the same method and
-// address), cancelled or failed, and the POSTs among them — a form goes once.
+// The requests of a step: how many and their weight; repeated — sent again although the same
+// method and address had already been answered in the step (a needless second request); replaced —
+// sent again after the first was cancelled (a navigation that took over, as at the sign-out of
+// M13); cancelled and failed; the POSTs — a form goes once; data — the views and data fetched from
+// the server with a fresh answer (a document, fetch or XHR answered 200), what a view shown again
+// must have to show current data.
 export function requestStats(list: readonly NetRequest[], window: Window) {
-  const mine = list.filter((r) => inside(r.at, window));
-  const seen = new Map<string, number>();
-  for (const r of mine)
-    seen.set(`${r.method} ${r.url}`, (seen.get(`${r.method} ${r.url}`) ?? 0) + 1);
+  const mine = list.filter((r) => inside(r.at, window)).sort((a, b) => a.at - b.at);
+  const before = new Map<string, NetRequest>();
+  let repeated = 0;
+  let replaced = 0;
+  for (const r of mine) {
+    const key = `${r.method} ${r.url}`;
+    const first = before.get(key);
+    if (first !== undefined) {
+      if (first.canceled) replaced += 1;
+      else repeated += 1;
+    }
+    before.set(key, r);
+  }
   return {
     total: mine.length,
     kb: mine.reduce((sum, r) => sum + r.bytes, 0) / 1024,
-    repeated: [...seen.values()].reduce((sum, n) => sum + n - 1, 0),
+    repeated,
+    replaced,
     canceled: mine.filter((r) => r.canceled).length,
     failed: mine.filter((r) => r.failed && !r.canceled).length,
     posts: mine.filter((r) => r.method === 'POST').length,
     notModified: mine.filter((r) => r.status === 304).length,
+    data: mine.filter(
+      (r) =>
+        r.method === 'GET' &&
+        r.status === 200 &&
+        !r.failed &&
+        (r.type === 'Document' || r.type === 'Fetch' || r.type === 'XHR'),
+    ).length,
   };
 }
 
@@ -246,14 +285,73 @@ export function normalizeText(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-// The ids of the records a run of the scenario wrote: the rows of Летопись with its note.
-export function recordIds(rows: readonly { href: string; text: string }[], note: string): number[] {
-  const ids: number[] = [];
-  for (const { href, text } of rows) {
-    const match = /\/saeckel\/operations\/([1-9]\d*)/.exec(href);
-    if (match !== null && normalizeText(text).split(' ').includes(note)) ids.push(Number(match[1]));
-  }
-  return ids;
+// A row of Летопись as the page shows it: the id of the record and its cells.
+export interface HistoryRow {
+  id: number;
+  pouch: string;
+  kind: string;
+  note: string;
+  sum: string;
+}
+
+// The record a run of the scenario writes: an expense of 123,45 from Еда with the note «Замер».
+export interface Mark {
+  pouch: string;
+  kind: string;
+  note: string;
+  amount: string;
+}
+
+// Whether a row is that record: every cell must be it, the note whole — not a word of the row.
+export function isMark(row: HistoryRow, mark: Mark): boolean {
+  return (
+    normalizeText(row.note) === mark.note &&
+    normalizeText(row.kind) === mark.kind &&
+    normalizeText(row.pouch) === mark.pouch &&
+    /^[−-]/.test(normalizeText(row.sum)) &&
+    row.sum.replace(/[^\d,]/g, '') === mark.amount
+  );
+}
+
+export function markIds(rows: readonly HistoryRow[], mark: Mark): number[] {
+  return rows.filter((row) => isMark(row, mark)).map((row) => row.id);
+}
+
+// Whether Летопись is that of the test court: besides records of the mark, exactly `count` records,
+// among them every note of `notes` once. Nothing is deleted before this holds.
+export function isTestCourt(
+  rows: readonly HistoryRow[],
+  mark: Mark,
+  count: number,
+  notes: readonly string[],
+): boolean {
+  const others = rows.filter((row) => !isMark(row, mark));
+  if (others.length !== count) return false;
+  return notes.every(
+    (note) => others.filter((row) => normalizeText(row.note) === note).length === 1,
+  );
+}
+
+// The id of the record written, from the address a form led to (`?fresh=<id>` of M13), or null.
+export function freshId(path: string): number | null {
+  const value = new URLSearchParams(path.split('?')[1] ?? '').get('fresh');
+  return value !== null && /^[1-9]\d*$/.test(value) ? Number(value) : null;
+}
+
+// What became of the document at a step: the same one went on (a view drawn by a script), one
+// seen before in this tab came back (the back/forward cache), or a new one was loaded. `before` —
+// the document of the press, `seen` — every document of the tab until then, `restored` — the
+// arrival came with pageshow of a persisted page.
+export type DocumentFate = 'new' | 'same' | 'restored';
+
+export function documentFate(
+  arrival: { doc: string; restored?: unknown },
+  before: string,
+  seen: ReadonlySet<string>,
+): DocumentFate {
+  if (arrival.restored === true) return 'restored';
+  if (arrival.doc === before) return 'same';
+  return seen.has(arrival.doc) ? 'restored' : 'new';
 }
 
 // The fixed test budget of the measurement (docs/OPERATIONS.md): an income, the same share laid

@@ -3,10 +3,15 @@
 // the medians are closer than the interquartile range of either (measure-stats.ts).
 
 import {
+  BACK_REFERENCE,
+  BACK_STEP,
   formatChange,
   formatSummary,
+  notWorse,
   powerShort,
   summarize,
+  tolerance,
+  type DocumentFate,
   type Summary,
 } from './measure-stats.ts';
 import type { ChainRecord, LoadRead, Series, StepRead } from './measure.ts';
@@ -21,12 +26,51 @@ function table(head: readonly string[], rows: readonly (readonly string[])[]): s
   ];
 }
 
+// Series of M14.1 were written before `document`: their `newDocument` false is a page back from
+// the back/forward cache — M13 draws no view without a new document (it never marks hof:view), so
+// a view came only from pageshow of a persisted page.
+export function fateOf(step: StepRead): DocumentFate {
+  const stored = step as Partial<StepRead> & { newDocument?: boolean };
+  return stored.document ?? (stored.newDocument === true ? 'new' : 'restored');
+}
+
+const FATES: Record<DocumentFate, string> = { new: 'новый', same: 'тот же', restored: 'bfcache' };
+
+// The fate of the document most runs of a step had.
+function usualFate(steps: readonly StepRead[]): DocumentFate | null {
+  const counts = new Map<DocumentFate, number>();
+  for (const step of steps) counts.set(fateOf(step), (counts.get(fateOf(step)) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+}
+
+interface Row {
+  key: string[];
+  pick: (s: Series) => (number | null)[];
+  // The usual document of the step in a series: a page from the back/forward cache on one side
+  // only is not compared (what it showed before against current data).
+  fate?: (s: Series) => DocumentFate | null;
+}
+
+function apart(row: Row, base: Series, other: Series): string | null {
+  if (row.fate === undefined) return null;
+  const a = row.fate(base);
+  const b = row.fate(other);
+  // A new document and a view drawn in the same one both show current data and are compared.
+  return a !== null && b !== null && a !== b && (a === 'restored' || b === 'restored')
+    ? `≠ (${FATES[a]} / ${FATES[b]})`
+    : null;
+}
+
 // One row of a metric: the cell of every series, then the change of every other one.
-function compared(all: readonly Series[], pick: (s: Series) => (number | null)[], digits = 0) {
-  const summaries = all.map((s) => summarize(pick(s)));
+function compared(all: readonly Series[], row: Row, digits = 0) {
+  const summaries = all.map((s) => summarize(row.pick(s)));
   return [
     ...summaries.map((summary) => formatSummary(summary, digits)),
-    ...summaries.slice(1).map((summary) => formatChange(summaries[0]!, summary)),
+    ...summaries
+      .slice(1)
+      .map(
+        (summary, i) => apart(row, all[0]!, all[i + 1]!) ?? formatChange(summaries[0]!, summary),
+      ),
   ];
 }
 
@@ -49,19 +93,16 @@ function note(base: Summary | null, other: Summary | null, label: string) {
   changes.set(label, entry);
 }
 
-function metric(
-  all: readonly Series[],
-  rows: { key: string[]; pick: (s: Series) => (number | null)[] }[],
-  first: string[],
-  digits = 0,
-) {
+function metric(all: readonly Series[], rows: Row[], first: string[], digits = 0) {
   for (const row of rows) {
     const summaries = all.map((s) => summarize(row.pick(s)));
-    all.slice(1).forEach((s, i) => note(summaries[0]!, summaries[i + 1]!, s.label));
+    all.slice(1).forEach((s, i) => {
+      if (apart(row, all[0]!, s) === null) note(summaries[0]!, summaries[i + 1]!, s.label);
+    });
   }
   return table(
     head(all, first),
-    rows.map((row) => [...row.key, ...compared(all, row.pick, digits)]),
+    rows.map((row) => [...row.key, ...compared(all, row, digits)]),
   );
 }
 
@@ -102,7 +143,8 @@ function loads(all: readonly Series[]) {
     '',
     'КБ — всё по сети до конца анимаций + 1 с; JS и CSS — тела, сжатые gzip уровня 1, как nginx',
     'production; запросов — холодно / повторно (из них 304); LCP — элемент последнего прогона; LoAF —',
-    'медиана числа кадров от 50 мс / самый длинный за все прогоны; CLS — медиана.',
+    'медиана числа кадров от 50 мс / самый длинный за все прогоны; сдвиги — медиана суммы сдвигов',
+    'без недавнего ввода до конца загрузки + 1 с (не CLS всей жизни документа).',
     '',
   );
   const rows: string[][] = [];
@@ -146,7 +188,7 @@ function loads(all: readonly Series[]) {
         'Запросов',
         'Элемент LCP',
         'LoAF',
-        'CLS',
+        'Сдвиги',
       ],
       rows,
     ),
@@ -173,6 +215,7 @@ function chain(all: readonly Series[]) {
       names.map((name) => ({
         key: label(config, name),
         pick: (s: Series) => stepsOf(s.chain, config, name).map((step) => step[field]),
+        fate: (s: Series) => usualFate(stepsOf(s.chain, config, name)),
       })),
     );
   const out: string[] = [];
@@ -189,9 +232,13 @@ function chain(all: readonly Series[]) {
     '#### Длинные кадры, отклик, сдвиги и запросы шага',
     '',
     'LoAF — доля прогонов с кадром от 50 мс, медиана их числа, самый длинный за все прогоны, мс;',
-    'отклик — Event Timing нажатия, медиана / наибольшее, мс («—» — браузер не успел отдать запись);',
-    'CLS — медиана / наибольший; запросы — медиана числа, затем наибольшее за прогоны: повторные',
-    '(тот же метод и адрес), отменённые, неудачные, POST; документ — доля прогонов с новым документом.',
+    'отклик — самое долгое нажатие в окне шага (Event Timing или следующий кадр), медиана /',
+    'наибольшее, мс; это не INP документа, «—» — показания нет, это не ноль; сдвиги — сумма',
+    'сдвигов без недавнего ввода в окне шага, медиана / наибольшая, это не CLS документа; запросы —',
+    'медиана числа, затем наибольшее за прогоны: лишние повторы (тот же метод и адрес после ответа),',
+    'повторы после отмены, отменённые, неудачные, POST, данные с сервера (документ, fetch или XHR с',
+    'ответом 200); документ — прогонов с новым документом / тем же / из back/forward cache. «*» —',
+    'серия M14.1, записанная до разделения повторов: любой повтор того же адреса.',
     '',
   );
   const lines: string[][] = [];
@@ -212,8 +259,10 @@ function chain(all: readonly Series[]) {
             .replace('.', ',')} / ${Math.max(...list.map((step) => step.shift))
             .toFixed(3)
             .replace('.', ',')}`,
-          `${round(median(list.map((step) => step.requests.total)))}; ${Math.max(...list.map((step) => step.requests.repeated))}/${Math.max(...list.map((step) => step.requests.canceled))}/${Math.max(...list.map((step) => step.requests.failed))}/${Math.max(...list.map((step) => step.requests.posts))}`,
-          share(list.filter((step) => step.newDocument).length),
+          requestCell(list),
+          (['new', 'same', 'restored'] as const)
+            .map((fate) => list.filter((step) => fateOf(step) === fate).length)
+            .join('/'),
         ]);
       }
     }
@@ -227,14 +276,93 @@ function chain(all: readonly Series[]) {
         'Серия',
         'LoAF',
         'Отклик',
-        'CLS',
-        'Запросы; повт./отм./неуд./POST',
-        'Документ',
+        'Сдвиги',
+        'Запросы; повт./после отмены/отм./неуд./POST/данные',
+        'Документ: новый/тот же/bfcache',
       ],
       lines,
     ),
   );
   return out;
+}
+
+function requestCell(list: readonly StepRead[]) {
+  const most = (pick: (r: StepRead['requests']) => number | undefined) => {
+    const values = list.map((step) => pick(step.requests));
+    return values.some((v) => v === undefined) ? '—' : String(Math.max(...values.map((v) => v!)));
+  };
+  const old = list.some((step) => step.requests.replaced === undefined);
+  return [
+    `${round(median(list.map((step) => step.requests.total)))}; `,
+    `${most((r) => r.repeated)}${old ? '*' : ''}/${most((r) => r.replaced)}/`,
+    `${most((r) => r.canceled)}/${most((r) => r.failed)}/${most((r) => r.posts)}/`,
+    most((r) => r.data),
+  ].join('');
+}
+
+// Back to the first page of Летопись, against the way forward to the same view without animations
+// in the base: a page back from the back/forward cache of M13 shows what it showed before, a
+// prototype must show current data (docs/OPERATIONS.md, «Пороги приёмки M14»).
+function back(all: readonly Series[]) {
+  const base = all[0]!;
+  const configs = [...new Set(base.chain.map((r) => `${r.profile}|${r.anim}`))];
+  const rows: string[][] = [];
+  for (const config of configs) {
+    const [profile, anim] = config.split('|');
+    const reference = summarize(
+      stepsOf(base.chain, `${profile}|false`, BACK_REFERENCE).map((step) => step.toView),
+    );
+    for (const s of all) {
+      const list = stepsOf(s.chain, config, BACK_STEP);
+      if (list.length === 0) continue;
+      const view = summarize(list.map((step) => step.toView));
+      const fresh = list.every(
+        (step) => fateOf(step) !== 'restored' && (step.requests.data ?? 0) > 0,
+      );
+      const verdict =
+        view === null || reference === null || view.n < list.length
+          ? 'не проверено'
+          : fresh && notWorse(reference, view)
+            ? 'да'
+            : 'нет';
+      rows.push([
+        profile!,
+        yes(anim === 'true'),
+        s.label,
+        formatSummary(view),
+        (['new', 'same', 'restored'] as const)
+          .map((fate) => list.filter((step) => fateOf(step) === fate).length)
+          .join('/'),
+        list.map((step) => step.requests.data ?? '—').join(','),
+        reference === null || view === null
+          ? '—'
+          : String(Math.round(reference.median + tolerance(reference, view))),
+        verdict,
+      ]);
+    }
+  }
+  if (rows.length === 0) return [];
+  return [
+    '',
+    `#### «${BACK_STEP}»: первый кадр против «${BACK_REFERENCE}» без анимаций у базы`,
+    '',
+    'Порог — медиана базы на пути вперёд к тому же виду без анимаций плюс допуск; проходит шаг, у',
+    'которого во всех прогонах есть свежие данные с сервера и нет страницы из back/forward cache.',
+    '',
+    ...table(
+      [
+        'Профиль',
+        'Анимации',
+        'Серия',
+        'Первый кадр, мс',
+        'Документ: новый/тот же/bfcache',
+        'Данных с сервера по прогонам',
+        'Порог, мс',
+        'Проходит',
+      ],
+      rows,
+    ),
+  ];
 }
 
 function music(all: readonly Series[]) {
@@ -327,9 +455,19 @@ export function report(all: readonly Series[]): string {
     '### Серии',
     '',
     ...table(
-      ['Серия', 'Дата, UTC', 'Chrome', 'Node', 'Прогонов', 'Питание', 'Данные как у базы'],
+      [
+        'Серия',
+        'Сценарий',
+        'Дата, UTC',
+        'Chrome',
+        'Node',
+        'Прогонов',
+        'Питание',
+        'Данные как у базы',
+      ],
       all.map((s) => [
         s.label,
+        (s.scenario ?? 'full') === 'full' ? 'полный' : 'навигация',
         s.date.slice(0, 16).replace('T', ' '),
         s.product,
         s.node,
@@ -349,6 +487,7 @@ export function report(all: readonly Series[]): string {
     '',
     '### Путь по двору: внутренняя навигация',
     ...chain(all),
+    ...back(all),
     ...music(all),
     ...memory(all),
     ...blots(all),

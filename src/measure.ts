@@ -2,7 +2,8 @@
 // страниц»). Run by hand, never by CI: the numbers depend on the computer.
 //
 //   node src/measure.ts --label <версия> --out <файл.json> [--gate-key <ключ>] [--runs 10]
-//                       [--parts loads,chain,music,memory] [--origin <адрес>] [--chrome <путь>]
+//                       [--parts loads,chain,music,memory] [--scenario full|navigation]
+//                       [--origin <адрес>] [--chrome <путь>]
 //   node src/measure.ts --report <база.json> [<серия.json> …]
 //
 // Headless Chrome is driven over the DevTools protocol with the WebSocket and fetch of Node, so
@@ -12,6 +13,8 @@
 //   and the sign-out, each step from the press to the new view and to the end of its animations;
 // - music — the same way with the music on: when it was silent;
 // - memory — the way repeated 50 times in one tab: nodes, listeners and the heap of JavaScript.
+// Two scenarios: full — the way with its two expenses; navigation — the way without them, for a
+// prototype whose forms still reload the page (M14.2, M14.4).
 // Every series goes to a JSON file; --report turns files into Markdown tables, the first file
 // being the base the others are compared with. Statistics and tables live in measure-stats.ts.
 //
@@ -28,16 +31,25 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
 import { gzipSync } from 'node:zlib';
 import {
+  BACK_STEP,
+  BACK_REFERENCE,
+  documentFate,
+  freshId,
+  isTestCourt,
   layoutShift,
   longFrames,
+  markIds,
   normalizeText,
   arrivedAt,
   playingNow,
-  recordIds,
+  powerShort,
   requestStats,
   seedExpenses,
   silence,
   slowestInput,
+  type DocumentFate,
+  type HistoryRow,
+  type Mark,
   type NetRequest,
   type Probe,
   type Window,
@@ -46,7 +58,8 @@ import { report } from './measure-report.ts';
 
 const USAGE =
   'Использование: node src/measure.ts --label <версия> --out <файл.json> [--gate-key <ключ>] ' +
-  '[--runs 10] [--parts loads,chain,music,memory] [--origin http://localhost:3000] ' +
+  '[--runs 10] [--parts loads,chain,music,memory] [--scenario full|navigation] ' +
+  '[--origin http://localhost:3000] ' +
   '[--chrome <путь к Chrome>]\n       node src/measure.ts --report <база.json> [<серия.json> …]';
 
 // The test court of the measurement. Local data only, so the password may be written here.
@@ -62,6 +75,10 @@ const EXPENSES = seedExpenses(56, POUCHES.length);
 const SEEDED = 1 + POUCHES.length + EXPENSES.length;
 const PAGE_SIZE = 50;
 const NOTE = 'Замер';
+// The record of a run as Летопись shows it; only rows of all four are the script's to delete.
+const MARK: Mark = { pouch: POUCHES[0]!, kind: 'Трата', note: NOTE, amount: '123,45' };
+// The notes every test court has once each: what tells it from other data.
+const SEEDED_NOTES = [INCOME.note, ...EXPENSES.map((e) => e.note)];
 
 export const PROFILES = [
   {
@@ -135,7 +152,7 @@ export const WAY: readonly Step[] = [
   },
   {
     name: 'Трата (303)',
-    fill: { [AMOUNT]: '123,45', 'form.expense input[name="note"]': NOTE },
+    fill: { [AMOUNT]: MARK.amount, 'form.expense input[name="note"]': NOTE },
     press: [SEND_EXPENSE],
     to: ['/saeckel/pouches/1'],
     check: 'written',
@@ -147,7 +164,7 @@ export const WAY: readonly Step[] = [
     check: 'blots',
   },
   {
-    name: 'Мешки → Летопись',
+    name: BACK_REFERENCE,
     press: ['nav.tabs a[href="/saeckel/history"]'],
     to: ['/saeckel/history'],
     check: 'first-page',
@@ -158,7 +175,7 @@ export const WAY: readonly Step[] = [
     to: ['/saeckel/history?page=2'],
     check: 'second-page',
   },
-  { name: 'Назад браузера', back: true, to: ['/saeckel/history'], check: 'first-page' },
+  { name: BACK_STEP, back: true, to: ['/saeckel/history'], check: 'first-page' },
   {
     name: 'Летопись → Мешки',
     press: ['nav.tabs a[href="/saeckel/"]'],
@@ -167,6 +184,14 @@ export const WAY: readonly Step[] = [
   },
   { name: 'Мешки → Двор', press: ['a.sk-court'], to: ['/'] },
 ];
+
+// The scenarios: full — the whole way; navigation — the way without the steps that send a form.
+export const SCENARIOS = ['full', 'navigation'] as const;
+export type Scenario = (typeof SCENARIOS)[number];
+
+export function wayOf(scenario: Scenario): readonly Step[] {
+  return scenario === 'full' ? WAY : WAY.filter((def) => def.fill === undefined);
+}
 
 export const SIGN_OUT: Step = {
   name: 'Выход → Вход (документ)',
@@ -762,7 +787,7 @@ async function fill(tab: Tab, selector: string, text: string) {
 
 // What a view shows for the checks of a step.
 interface ViewRead {
-  rows: { href: string; text: string }[];
+  rows: HistoryRow[];
   fingerprint: string | null;
   refused: boolean;
   blots: Blot[];
@@ -776,10 +801,18 @@ export interface Blot {
 }
 
 const READ_VIEW = `(() => ({
-  rows: [...document.querySelectorAll('a[href^="/saeckel/operations/"]')].map((a) => ({
-    href: a.getAttribute('href'),
-    text: (a.closest('tr, li') ?? a).textContent,
-  })),
+  rows: [...document.querySelectorAll('tr[id^="op-"]')].map((tr) => {
+    const cell = (name) => tr.querySelector('.' + name)?.textContent ?? '';
+    const pouch = tr.querySelector('.h-pouch')?.cloneNode(true);
+    pouch?.querySelector('.h-kind-phone')?.remove();
+    return {
+      id: Number(tr.id.slice(3)),
+      pouch: pouch?.textContent ?? '',
+      kind: cell('h-kind'),
+      note: cell('h-note'),
+      sum: cell('h-sum'),
+    };
+  }),
   fingerprint: document.querySelector('.sk-list')?.textContent ?? null,
   refused: document.querySelector('.err-text') !== null,
   blots: [...document.querySelectorAll('img.blot')].filter((img) => img.getClientRects().length > 0).map((img) => {
@@ -803,7 +836,9 @@ export interface StepRead {
   toView: number | null;
   toSettled: number | null;
   toLcp: number | null;
-  newDocument: boolean;
+  // The document after the step: a new one, the same one, or one back from the back/forward cache.
+  // Series of M14.1 before this field have `newDocument` (true for a new document).
+  document: DocumentFate;
   loaf: { count: number; max: number; total: number };
   input: number | null;
   shift: number;
@@ -816,6 +851,7 @@ interface Context {
   origin: string;
   fingerprint: string;
   music: boolean;
+  scenario: Scenario;
 }
 
 // The slowest answer to the press: Event Timing where the browser gave it, else the next frame.
@@ -827,14 +863,20 @@ function answer(events: readonly Probe[], window: Window, since: number) {
   return known.length === 0 ? null : Math.max(...known);
 }
 
+// `wrote` — how many records of the mark the way has written so far: Летопись must show them.
 async function step(
   tab: Tab,
   context: Context,
   def: Step,
+  wrote: number,
 ): Promise<{ read: StepRead; ids: number[] }> {
   await sleep(BEFORE_PRESS_MS);
   for (const [selector, text] of Object.entries(def.fill ?? {})) await fill(tab, selector, text);
   const since = tab.events.length;
+  // The document of the press and every document of the tab before it, by the ids of the probe.
+  const earlier = tab.events.slice(0, since).filter((e) => e.doc !== '');
+  const before = earlier.at(-1)?.doc ?? '';
+  const seen = new Set(earlier.map((e) => e.doc));
   if (def.back === true) {
     await tab.chrome.evaluate(
       `window.hofMeasure(JSON.stringify({ kind: 'press', at: performance.timeOrigin + performance.now(), doc: '', path: location.pathname + location.search })), history.back(), true`,
@@ -874,16 +916,20 @@ async function step(
 
   const window: Window = { from: pressed.at, to: end };
   const events = tab.events;
-  const newDocument = arrival.kind === 'load';
-  const viewAt = newDocument
-    ? events.find(
-        (e) => e.kind === 'paint' && e.name === 'first-contentful-paint' && e.doc === arrival.doc,
-      )?.at
-    : events.find((e, i) => i >= since && e.kind === 'viewFrame' && e.doc === arrival.doc)?.at;
+  const document = documentFate(arrival, before, seen);
+  // A new document is seen first at its first contentful paint; a view drawn without one, or a
+  // page back from the cache, at the frame after it said so.
+  const viewAt =
+    document === 'new'
+      ? events.find(
+          (e) => e.kind === 'paint' && e.name === 'first-contentful-paint' && e.doc === arrival.doc,
+        )?.at
+      : events.find((e, i) => i >= since && e.kind === 'viewFrame' && e.doc === arrival.doc)?.at;
   if (viewAt === undefined) throw new Refusal(`${def.name}: ${NO_PAINT}`);
-  const lcp = newDocument
-    ? events.filter((e) => e.kind === 'lcp' && e.doc === arrival.doc).at(-1)
-    : undefined;
+  const lcp =
+    document === 'new'
+      ? events.filter((e) => e.kind === 'lcp' && e.doc === arrival.doc).at(-1)
+      : undefined;
   const firstRequest = tab.requests.find(
     (r) =>
       r.at >= pressed.at - 5 &&
@@ -896,7 +942,7 @@ async function step(
     // A document may fire its load before its first frame; the end is never before the view.
     toSettled: settledAt === null ? null : Math.max(settledAt, viewAt) - pressed.at,
     toLcp: lcp === undefined ? null : lcp.at - pressed.at,
-    newDocument,
+    document,
     loaf: longFrames(events, window),
     input: def.back === true ? null : answer(events, window, since),
     shift: layoutShift(events, window),
@@ -919,14 +965,21 @@ async function step(
   if (def.check === 'refused' && !view.refused) {
     throw new Refusal(`${def.name}: форма не отказала.`);
   }
-  if (def.check === 'written' && view.refused) throw new Refusal(`${def.name}: форма отказала.`);
+  if (def.check === 'written') {
+    if (view.refused) throw new Refusal(`${def.name}: форма отказала.`);
+    // The id of the record from the address the form led to; without it Летопись gives it later.
+    const id = freshId(arrival.path);
+    if (id !== null) ids = [id];
+  }
   if (def.check === 'first-page') {
-    ids = recordIds(view.rows, NOTE);
-    if (rows !== PAGE_SIZE || ids.length !== 1) {
-      throw new Refusal(`${def.name}: ${rows} строк и ${ids.length} записей «${NOTE}».`);
+    ids = markIds(view.rows, MARK);
+    if (rows !== PAGE_SIZE || ids.length !== wrote) {
+      throw new Refusal(
+        `${def.name}: ${rows} строк и ${ids.length} записей замера вместо ${wrote}.`,
+      );
     }
   }
-  if (def.check === 'second-page' && rows !== SEEDED + 1 - PAGE_SIZE) {
+  if (def.check === 'second-page' && rows !== SEEDED + wrote - PAGE_SIZE) {
     throw new Refusal(`${def.name}: ${rows} строк на второй странице.`);
   }
   if (def.check === 'blots' || def.check === 'first-page' || def.check === 'fingerprint') {
@@ -935,9 +988,34 @@ async function step(
   return { read, ids };
 }
 
+// The way of a scenario in a tab already signed in: the records it wrote, by id, to be deleted.
+// A record is the script's only when the form led to it (?fresh=<id>) or Летопись shows it with
+// every cell of the mark; the ids found both ways must agree. They go into `written` as they are
+// found, so that a way broken off still has its record deleted.
+async function walk(
+  tab: Tab,
+  context: Context,
+  written: Set<number>,
+  each: (read: StepRead) => void,
+) {
+  let wrote = 0;
+  for (const def of wayOf(context.scenario)) {
+    if (def.check === 'written') wrote += 1;
+    const { read, ids } = await step(tab, context, def, wrote);
+    if (def.check === 'first-page' && written.size > 0) {
+      if (ids.some((id) => !written.has(id))) {
+        throw new Refusal(`${def.name}: в Летописи не та запись замера, что записала форма.`);
+      }
+    }
+    for (const id of ids) written.add(id);
+    each(read);
+  }
+}
+
 // The data before the series and after it, in a browser without throttling: the pouches as Мешки
-// show them, the number of records on both pages of Летопись. Records of NOTE left by a run that
-// was interrupted are deleted first.
+// show them, the number of records on both pages of Летопись. Records of the mark left by a run
+// that was interrupted are deleted, but only after Летопись has proved to be that of the test
+// court: its seeded records, every one in its place.
 async function verify(chromePath: string, origin: string, token: string) {
   const tab = await browser(chromePath, PROFILES[1], { anim: false, music: false }, origin, token);
   try {
@@ -945,23 +1023,35 @@ async function verify(chromePath: string, origin: string, token: string) {
       await open(tab, origin + path);
       return (await tab.chrome.evaluate<ViewRead>(READ_VIEW)).rows;
     };
-    const left = [
-      ...recordIds(await rows('/saeckel/history'), NOTE),
-      ...recordIds(await rows('/saeckel/history?page=2'), NOTE),
-    ];
+    const history = async () => {
+      const first = await rows('/saeckel/history');
+      const second = await rows('/saeckel/history?page=2');
+      // A third page would hold rows this check does not see.
+      if (second.length >= PAGE_SIZE) return null;
+      return { first, second, all: [...first, ...second] };
+    };
+    const notTest = new Refusal(
+      'Летопись не тестового двора замера M14 — ничего не удалено; пересоздайте базу разработки ' +
+        '(README.md).',
+    );
+    const before = await history();
+    if (before === null || !isTestCourt(before.all, MARK, SEEDED, SEEDED_NOTES)) throw notTest;
+    const left = markIds(before.all, MARK);
     if (left.length > 0) {
       process.stderr.write(
-        `удаляю ${left.length} записей «${NOTE}», оставшихся от прерванного прогона\n`,
+        `удаляю ${left.length} записей замера, оставшихся от прерванного прогона\n`,
       );
       await deleteRecords(origin, token, left);
     }
-    const first = (await rows('/saeckel/history')).length;
-    const second = (await rows('/saeckel/history?page=2')).length;
-    if (first !== PAGE_SIZE || second !== SEEDED - PAGE_SIZE) {
-      throw new Refusal(
-        `В Летописи ${first} + ${second} записей вместо ${PAGE_SIZE} + ${SEEDED - PAGE_SIZE}: ` +
-          'база разработки не с данными замера M14 — пересоздайте её (README.md).',
-      );
+    const after = await history();
+    if (
+      after === null ||
+      after.first.length !== PAGE_SIZE ||
+      after.second.length !== SEEDED - PAGE_SIZE ||
+      !isTestCourt(after.all, MARK, SEEDED, SEEDED_NOTES) ||
+      markIds(after.all, MARK).length > 0
+    ) {
+      throw notTest;
     }
     await open(tab, `${origin}/saeckel/`);
     const view = await tab.chrome.evaluate<ViewRead>(READ_VIEW);
@@ -1087,12 +1177,12 @@ async function chain(
   token: string,
 ): Promise<StepRead[]> {
   const tab = await browser(chromePath, profile, fx, context.origin, null);
-  const ids: number[] = [];
+  const written = new Set<number>();
   try {
     await open(tab, `${context.origin}/login`);
     await checkFrames(tab);
     const quiet = { ...context, music: false };
-    const reads = [(await step(tab, quiet, SIGN_IN)).read];
+    const reads = [(await step(tab, quiet, SIGN_IN, 0)).read];
     for (const path of WARM) await open(tab, context.origin + path);
     if (fx.music) {
       const until = Date.now() + 30_000;
@@ -1101,16 +1191,12 @@ async function chain(
         await sleep(100);
       }
     }
-    for (const def of WAY) {
-      const { read, ids: written } = await step(tab, context, def);
-      reads.push(read);
-      ids.push(...written);
-    }
-    reads.push((await step(tab, quiet, SIGN_OUT)).read);
+    await walk(tab, context, written, (read) => reads.push(read));
+    reads.push((await step(tab, quiet, SIGN_OUT, 0)).read);
     return reads;
   } finally {
     await tab.chrome.close();
-    await deleteRecords(context.origin, token, [...new Set(ids)]);
+    await deleteRecords(context.origin, token, [...written]);
   }
 }
 
@@ -1142,9 +1228,12 @@ async function memory(chromePath: string, context: Context, token: string) {
     await count(0);
     for (let cycle = 1; cycle <= MEMORY_CYCLES; cycle += 1) {
       process.stderr.write(`память: круг ${cycle}/${MEMORY_CYCLES}\n`);
-      const ids: number[] = [];
-      for (const def of WAY) ids.push(...(await step(tab, context, def)).ids);
-      await deleteRecords(context.origin, token, [...new Set(ids)]);
+      const written = new Set<number>();
+      try {
+        await walk(tab, context, written, () => {});
+      } finally {
+        await deleteRecords(context.origin, token, [...written]);
+      }
       if (MEMORY_AT.includes(cycle)) await count(cycle);
     }
     return counts;
@@ -1157,6 +1246,8 @@ async function memory(chromePath: string, context: Context, token: string) {
 
 export interface Series {
   label: string;
+  // The way measured; absent in the series of M14.1, which are full.
+  scenario?: Scenario;
   date: string;
   product: string;
   flags: string[];
@@ -1177,7 +1268,8 @@ const PARTS = ['loads', 'chain', 'music', 'memory'] as const;
 function power() {
   if (process.platform !== 'darwin') return '';
   const answer = spawnSync('pmset', ['-g', 'ps'], { encoding: 'utf8' });
-  return normalizeText(answer.stdout ?? '');
+  // The source and the charge only: the rest of pmset names the battery of this computer.
+  return powerShort(normalizeText(answer.stdout ?? ''));
 }
 
 async function build(origin: string) {
@@ -1191,12 +1283,15 @@ async function measure(values: {
   'gate-key'?: string;
   runs: string;
   parts: string;
+  scenario: string;
   origin: string;
   chrome: string;
 }) {
   const runs = Number(values.runs);
   const parts = values.parts.split(',');
+  const scenario = values.scenario as Scenario;
   if (
+    !SCENARIOS.includes(scenario) ||
     values.label === undefined ||
     values.out === undefined ||
     !Number.isInteger(runs) ||
@@ -1219,9 +1314,10 @@ async function measure(values: {
 
   const token = await courtSession(origin, values['gate-key']);
   const fingerprint = await verify(values.chrome, origin, token);
-  const context: Context = { origin, fingerprint, music: false };
+  const context: Context = { origin, fingerprint, music: false, scenario };
   const series: Series = {
     label: values.label,
+    scenario,
     date: new Date().toISOString(),
     product,
     flags: CHROME_FLAGS,
@@ -1321,6 +1417,7 @@ async function main() {
       'gate-key': { type: 'string' },
       runs: { type: 'string', default: '10' },
       parts: { type: 'string', default: PARTS.join(',') },
+      scenario: { type: 'string', default: 'full' },
       origin: { type: 'string', default: 'http://localhost:3000' },
       chrome: {
         type: 'string',

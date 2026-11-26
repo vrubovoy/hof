@@ -3,6 +3,14 @@ import { test } from 'node:test';
 import {
   arrivedAt,
   beyondNoise,
+  documentFate,
+  freshId,
+  isMark,
+  isTestCourt,
+  markIds,
+  notWorse,
+  tolerance,
+  type HistoryRow,
   formatChange,
   formatSummary,
   layoutShift,
@@ -11,7 +19,6 @@ import {
   normalizeText,
   playingNow,
   quantile,
-  recordIds,
   requestStats,
   seedExpenses,
   silence,
@@ -20,8 +27,8 @@ import {
   type NetRequest,
   type Probe,
 } from './measure-stats.ts';
-import { report } from './measure-report.ts';
-import type { Series } from './measure.ts';
+import { fateOf, report } from './measure-report.ts';
+import { WAY, wayOf, type Series, type StepRead } from './measure.ts';
 
 const event = (kind: string, at: number, fields: Record<string, unknown> = {}): Probe => ({
   kind,
@@ -188,22 +195,112 @@ test('request stats find repeated, cancelled and failed requests and the POSTs',
     total: 5,
     kb: 4,
     repeated: 1,
+    replaced: 0,
     canceled: 1,
     failed: 1,
     posts: 1,
     notModified: 1,
+    data: 1,
   });
 });
 
-test('record ids are the rows of Летопись with the note of a run', () => {
-  const rows = [
-    { href: '/saeckel/operations/12?page=1', text: '25.11.2026 Еда Трата Замер −123,45 ₽ ›' },
-    { href: '/saeckel/operations/7', text: '02.10.2026 Еда Трата Запись 1 −150,00 ₽' },
-    { href: '/saeckel/operations/8', text: 'Замерить −1,00' },
-    { href: '/elsewhere', text: 'Замер' },
-  ];
-  assert.deepEqual(recordIds(rows, 'Замер'), [12]);
+test('a request sent again after its cancel is a replacement, after an answer a needless repeat', () => {
+  const r = (at: number, fields: Partial<NetRequest> = {}): NetRequest => ({
+    method: 'GET',
+    url: 'http://localhost:3000/login',
+    type: 'Document',
+    at,
+    status: 200,
+    bytes: 0,
+    canceled: false,
+    failed: false,
+    ...fields,
+  });
+  // As at the sign-out of M13: the document asked for, cancelled by the navigation that followed.
+  const signOut = requestStats([r(20), r(10, { canceled: true, failed: true, status: 0 })], {
+    from: 0,
+    to: 100,
+  });
+  assert.equal(signOut.replaced, 1);
+  assert.equal(signOut.repeated, 0);
+  assert.equal(signOut.data, 1);
+  const twice = requestStats([r(10), r(20, { type: 'Fetch' }), r(30, { type: 'Fetch' })], {
+    from: 0,
+    to: 100,
+  });
+  assert.equal(twice.repeated, 2);
+  // A page back from the cache asks for nothing; an image is not data.
+  assert.equal(requestStats([r(10, { type: 'Image' })], { from: 0, to: 100 }).data, 0);
+  assert.equal(requestStats([r(10, { status: 304 })], { from: 0, to: 100 }).data, 0);
+});
+
+const mark = { pouch: 'Еда', kind: 'Трата', note: 'Замер', amount: '123,45' };
+const row = (id: number, fields: Partial<HistoryRow> = {}): HistoryRow => ({
+  id,
+  pouch: ' Еда ',
+  kind: 'Трата',
+  note: 'Замер',
+  sum: '\n −123,45\u00a0₽ ',
+  ...fields,
+});
+
+test('a record is that of a run only when every cell is the mark, the note whole', () => {
+  assert.equal(isMark(row(1), mark), true);
+  assert.equal(isMark(row(2, { note: 'Замер на кухне' }), mark), false);
+  assert.equal(isMark(row(3, { note: 'Замерить' }), mark), false);
+  assert.equal(isMark(row(4, { pouch: 'Дом' }), mark), false);
+  assert.equal(isMark(row(5, { kind: 'Доход', sum: '+123,45 ₽' }), mark), false);
+  assert.equal(isMark(row(6, { sum: '−1 123,45 ₽' }), mark), false);
+  assert.equal(isMark(row(7, { kind: 'Расход' }), mark), false);
+  assert.deepEqual(markIds([row(8), row(9, { note: 'Запись 1' }), row(10)], mark), [8, 10]);
   assert.equal(normalizeText('  a \n\t b  '), 'a b');
+});
+
+test('the test court is proved by its seeded records before anything is deleted', () => {
+  const seeded = [row(1, { note: 'Жалованье', kind: 'Доход' }), row(2, { note: 'Запись 1' })];
+  const notes = ['Жалованье', 'Запись 1'];
+  assert.equal(isTestCourt(seeded, mark, 2, notes), true);
+  // Leftovers of the mark do not count.
+  assert.equal(isTestCourt([...seeded, row(3), row(4)], mark, 2, notes), true);
+  // A record of a person, a missing or a doubled seeded record: not the test court.
+  assert.equal(isTestCourt([...seeded, row(5, { note: 'Хлеб' })], mark, 2, notes), false);
+  assert.equal(isTestCourt([seeded[0]!, row(6, { note: 'Хлеб' })], mark, 2, notes), false);
+  assert.equal(isTestCourt([seeded[0]!, seeded[0]!], mark, 2, notes), false);
+});
+
+test('the record written is known by the address the form led to', () => {
+  assert.equal(freshId('/saeckel/pouches/1?fresh=123'), 123);
+  assert.equal(freshId('/saeckel/pouches/1'), null);
+  assert.equal(freshId('/saeckel/pouches/1?fresh=0'), null);
+  assert.equal(freshId('/saeckel/pouches/1?fresh=1e3'), null);
+});
+
+test('the document of a step: new, the same one, or back from the cache', () => {
+  const seen = new Set(['a', 'b']);
+  assert.equal(documentFate({ doc: 'c' }, 'b', seen), 'new');
+  assert.equal(documentFate({ doc: 'b' }, 'b', seen), 'same');
+  assert.equal(documentFate({ doc: 'a' }, 'b', seen), 'restored');
+  assert.equal(documentFate({ doc: 'b', restored: true }, 'b', seen), 'restored');
+});
+
+test('not worse than M13 allows the largest of the spread, 5 % and 15 ms', () => {
+  const base = summarize([200, 200, 200])!;
+  assert.equal(tolerance(base, summarize([210, 210, 210])!), 15);
+  assert.equal(notWorse(base, summarize([215, 215, 215])!), true);
+  assert.equal(notWorse(base, summarize([216, 216, 216])!), false);
+  const slow = summarize([1000, 1000, 1000])!;
+  assert.equal(tolerance(slow, slow), 50);
+  const wide = summarize([100, 200, 300, 400, 500])!; // IQR 200
+  assert.equal(notWorse(summarize([300, 300, 300])!, wide), true);
+});
+
+test('the navigation scenario is the way without the steps that send a form', () => {
+  const names = wayOf('navigation').map((def) => def.name);
+  assert.deepEqual(wayOf('full'), WAY);
+  assert.equal(names.length, WAY.length - 2);
+  assert.ok(!names.some((name) => name.startsWith('Трата')));
+  assert.ok(names.includes('Назад браузера') && names.includes('Мешки → Летопись'));
+  assert.ok(wayOf('navigation').every((def) => def.check !== 'written'));
 });
 
 test('the test budget is fixed: the same expenses every time, valid amounts and dates', () => {
@@ -240,11 +337,21 @@ test('the report compares series and names the noise', () => {
     toView,
     toSettled: toView + 500,
     toLcp: null,
-    newDocument: true,
+    document: 'new' as const,
     loaf: { count: 0, max: 0, total: 0 },
     input: 20,
     shift: 0,
-    requests: { total: 3, kb: 10, repeated: 0, canceled: 0, failed: 0, posts: 0, notModified: 0 },
+    requests: {
+      total: 3,
+      kb: 10,
+      repeated: 0,
+      replaced: 0,
+      canceled: 0,
+      failed: 0,
+      posts: 0,
+      notModified: 0,
+      data: 1,
+    },
     blots: [
       { file: 'ink.webp', place: 'blot-x', box: [1, 2, 3, 4] as [number, number, number, number] },
     ],
@@ -283,4 +390,85 @@ test('the power of the Mac is shown short', () => {
     'батарея 80 %',
   );
   assert.equal(powerShort(''), '');
+});
+
+test('Back is not compared with a page from the cache but with the way forward to its view', () => {
+  const requests = (data?: number) => ({
+    total: 1,
+    kb: 1,
+    repeated: 0,
+    canceled: 0,
+    failed: 0,
+    posts: 0,
+    notModified: 0,
+    ...(data === undefined ? {} : { replaced: 0, data }),
+  });
+  const read = (name: string, toView: number, fields: Record<string, unknown>): StepRead =>
+    ({
+      name,
+      toRequest: 1,
+      toView,
+      toSettled: toView,
+      toLcp: null,
+      loaf: { count: 0, max: 0, total: 0 },
+      input: null,
+      shift: 0,
+      ...fields,
+    }) as unknown as StepRead;
+  const series = (label: string, back: StepRead, forward: StepRead): Series => ({
+    label,
+    date: '2026-11-26T12:00:00.000Z',
+    product: 'HeadlessChrome/158',
+    flags: [],
+    node: 'v24',
+    power: { start: 'сеть 100 %', end: 'сеть 100 %' },
+    build: [],
+    fingerprint: 'Казна',
+    runs: 3,
+    loads: [],
+    chain: [1, 2, 3].map((run) => ({
+      profile: 'Телефон',
+      anim: false,
+      run,
+      steps: [forward, back],
+    })),
+    music: [],
+    memory: [],
+  });
+  // A series of M14.1: `newDocument`, requests without the replaced and the data.
+  const old = series(
+    'M13',
+    read('Назад браузера', 11, { newDocument: false, requests: requests() }),
+    read('Мешки → Летопись', 207, { newDocument: true, requests: requests() }),
+  );
+  assert.equal(fateOf(old.chain[0]!.steps[1]!), 'restored');
+  assert.equal(fateOf(old.chain[0]!.steps[0]!), 'new');
+  const fresh = (toView: number) =>
+    series(
+      `A ${toView}`,
+      read('Назад браузера', toView, { document: 'same', requests: requests(1) }),
+      read('Мешки → Летопись', 200, { document: 'same', requests: requests(1) }),
+    );
+  const text = report([old, fresh(150), fresh(230)]);
+  // In the tables Back of the prototype is not compared with the cache of M13.
+  assert.match(
+    text,
+    /\| Назад браузера \| 11 \[[^|]+\| 150 \[[^|]+\| 230 \[[^|]+\| ≠ \(bfcache \/ тот же\) \|/,
+  );
+  // A new document against a view in the same one is compared.
+  assert.match(
+    text,
+    /\| Мешки → Летопись \| 207 \[[^|]+\| 200 \[[^|]+\| 200 \[[^|]+\| -3 % \| -3 % \|/,
+  );
+  assert.match(text, /\| 1; 0\*\/—\/0\/0\/0\/— \| 0\/0\/3 \|/);
+  // Its threshold: 207 + 15 ms.
+  assert.match(text, /\| Телефон \| выкл \| M13 \| 11 \[[^|]+\| 0\/0\/3 \| —,—,— \| 222 \| нет \|/);
+  assert.match(
+    text,
+    /\| Телефон \| выкл \| A 150 \| 150 \[[^|]+\| 0\/3\/0 \| 1,1,1 \| 222 \| да \|/,
+  );
+  assert.match(
+    text,
+    /\| Телефон \| выкл \| A 230 \| 230 \[[^|]+\| 0\/3\/0 \| 1,1,1 \| 222 \| нет \|/,
+  );
 });
