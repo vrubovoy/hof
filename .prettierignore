@@ -5,3 +5,5 @@ ROADMAP.md
 design/
 .claude/
 package-lock.json
+# Series files of the measurement, kept as the script wrote them (docs/benchmarks/*/README.md).
+docs/benchmarks/**/*.json
