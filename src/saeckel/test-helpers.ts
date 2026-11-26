@@ -27,6 +27,8 @@ export const SETTINGS = { currency: 'RUB', timeZone: 'Europe/Moscow' };
 export const CORE_SCRIPTS: CoreScripts = {
   head: '/static/fx-head.js?v=0123456789ab',
   effects: '/static/fx.js?v=ba9876543210',
+  turbo: '/static/vendor/turbo-8.0.23.js?v=a1b2c3d4e5f6',
+  drive: '/static/drive.js?v=6f5e4d3c2b1a',
 };
 export const app = createSaeckelApp(pool, signedIn, SETTINGS, CORE_SCRIPTS);
 

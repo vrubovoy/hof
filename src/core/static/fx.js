@@ -6,22 +6,26 @@
 //
 // The top of the file decides: small functions without the page, tested by src/core/fx.test.ts.
 // start() at the bottom joins them to the page; it runs only in a browser. A module runs once a
-// page, so nothing here is set up twice.
+// document, so nothing here is set up twice.
+//
+// Prototype A of M14 (Issue #165, drive.js): Turbo puts the views of Двор and Säckel into one
+// document, so the music, the sounds and this module live through the whole way, and what belongs
+// to a view — the living courtyard, «Звуки и движение», the question about the session — is set up
+// when the view comes (turbo:load) and let go before the next one is put in place
+// (turbo:before-render). The way away by a link to such a view does not wait for the next page:
+// Turbo asks for it at once, and its render waits for the animation.
 //
 // Kept in the browser, nothing else: in localStorage `hof.fx` — the settings of this device, and
 // `hof.fountain` — which loop of the fountain the next visit of the courtyard plays; in
-// sessionStorage `hof.music` — the piece of music and the place in it, and the two flags of a way
-// to the next page, `hof.arrive` (a link) and `hof.after` (a form), which fx-head.js of that page
-// reads once.
+// sessionStorage the two flags of a way to a page loaded by the browser, `hof.arrive` (a link) and
+// `hof.after` (a form), which fx-head.js of that page reads once.
 
 export const SETTINGS_KEY = 'hof.fx';
-export const MUSIC_KEY = 'hof.music';
 export const ARRIVE_KEY = 'hof.arrive';
 export const AFTER_KEY = 'hof.after';
 export const FOUNTAIN_KEY = 'hof.fountain';
 
 /** @typedef {{ anim: boolean, sound: boolean, soundVol: number, music: boolean, musicVol: number }} Settings */
-/** @typedef {{ piece: number, time: number, at: number }} MusicPlace */
 
 /** A new device: everything off; the volumes in per cent. @type {Readonly<Settings>} */
 export const DEFAULTS = Object.freeze({
@@ -175,43 +179,6 @@ export function pickVariant(count, last, random = Math.random) {
   return known && variant >= last ? variant + 1 : variant;
 }
 
-/**
- * Where the music of this tab stopped: a piece from 1 to `pieces` and a time in seconds, or null
- * for nothing kept or something broken.
- * @param {Pick<Storage, 'getItem'> | null} storage
- * @param {number} pieces
- * @returns {MusicPlace | null}
- */
-export function readMusic(storage, pieces = PIECES) {
-  /** @type {unknown} */
-  let stored = null;
-  try {
-    stored = JSON.parse(storage?.getItem(MUSIC_KEY) ?? 'null');
-  } catch {
-    return null;
-  }
-  if (typeof stored !== 'object' || stored === null) return null;
-  const { piece, time, at } = /** @type {Record<string, unknown>} */ (stored);
-  if (typeof piece !== 'number' || !Number.isInteger(piece) || piece < 1 || piece > pieces) {
-    return null;
-  }
-  if (typeof time !== 'number' || !Number.isFinite(time) || time < 0) return null;
-  if (typeof at !== 'number' || !Number.isFinite(at)) return null;
-  return { piece, time, at };
-}
-
-/**
- * @param {Pick<Storage, 'setItem'> | null} storage
- * @param {MusicPlace} place
- */
-export function writeMusic(storage, place) {
-  try {
-    storage?.setItem(MUSIC_KEY, JSON.stringify(place));
-  } catch {
-    // No storage: the next page starts a piece of its own.
-  }
-}
-
 /** The piece after this one, round the list. @param {number} piece @param {number} pieces */
 export function nextPiece(piece, pieces = PIECES) {
   return piece >= pieces ? 1 : piece + 1;
@@ -324,6 +291,19 @@ export const LINK_FX = Object.freeze([
   'page',
   'door',
 ]);
+
+/**
+ * The class a view comes in with after the effect of its link, with «Анимации»: as fx-head.js
+ * gives a page the browser loads (ARRIVE there). A page only rustled has none.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const ARRIVE_CLASS = Object.freeze({
+  left: 'from-right',
+  right: 'from-left',
+  'flip-fwd': 'from-right',
+  'flip-back': 'from-left',
+  door: 'from-door',
+});
 
 /** A page waits this long for its slide away before it follows the link. */
 export const SLIDE_MS = 500;
@@ -748,7 +728,8 @@ function start() {
     return audio;
   }
 
-  // ---- music: one player in this page; the piece and the place are kept for the next one.
+  // ---- music: one player in this document, from the first view to the last (Turbo); a page the
+  // browser loads starts a piece of its own.
   /** @typedef {{ audio: HTMLAudioElement, gain: AudioParam | null, release: () => void, piece: number, from: number }} Track */
   /** @type {Track | null} */
   let track = null;
@@ -756,7 +737,6 @@ function start() {
   /** @type {{ t: Track, timer: ReturnType<typeof setTimeout> } | null} */
   let fading = null;
   let failures = 0;
-  let savedAt = 0;
   let duckTimer = 0;
   const musicGain = () => level(settings.musicVol) * (duckTimer === 0 ? 1 : DUCK);
 
@@ -783,11 +763,6 @@ function start() {
       },
       { once: true },
     );
-    // The place is kept while the piece plays, not only when the page goes: Chrome shows a page
-    // back from the back/forward cache before the page left has written its last place.
-    audio.addEventListener('timeupdate', () => {
-      if (track === t && Date.now() - savedAt >= 1000) savePlace();
-    });
     audio.addEventListener('ended', () => {
       if (track !== t) return;
       close(t, 0);
@@ -857,26 +832,13 @@ function start() {
 
   function startMusic() {
     if (!settings.music || track !== null) return;
-    const place = readMusic(session);
-    open(place?.piece ?? firstPiece(), place?.time ?? 0);
+    open(firstPiece(), 0);
   }
 
-  function savePlace() {
-    if (track === null) return;
-    const { audio } = track;
-    // Not loaded yet: the place it was to start from.
-    const time =
-      audio.readyState >= HTMLMediaElement.HAVE_METADATA ? audio.currentTime : track.from;
-    savedAt = Date.now();
-    writeMusic(session, { piece: track.piece, time, at: savedAt });
-  }
-  addEventListener('pagehide', savePlace);
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) savePlace();
-  });
-
-  // ---- «Звуки и движение» in «Мои покои»: hidden without this file.
-  const block = document.getElementById('fx-settings');
+  // ---- «Звуки и движение» in «Мои покои»: hidden without this file. The block of the view now
+  // shown (settingsOf).
+  /** @type {HTMLElement | null} */
+  let block = null;
   function showSettings() {
     if (block === null) return;
     block.hidden = false;
@@ -911,7 +873,10 @@ function start() {
     }
     if (key === 'musicVol' && track !== null) setGain(track, musicGain(), 0.1);
   }
-  if (block !== null) {
+  /** The block of a view just put in place; its listeners go with it. */
+  function settingsOf() {
+    block = document.getElementById('fx-settings');
+    if (block === null) return;
     showSettings();
     block.addEventListener('change', changeSetting);
     block.addEventListener('input', changeSetting);
@@ -925,7 +890,8 @@ function start() {
 
   // ---- the way to the next page (M10.2). A link with data-fx: a slide away waits SLIDE_MS, a
   // door DOOR_MS or DARK_MS (M10.3), and then follows the link; a press on a link meanwhile goes
-  // at once.
+  // at once. To a view of this document (drive.js) Turbo follows the link at once and its render
+  // waits as long: the request goes while the page goes away.
   const phone = matchMedia('(max-width: 1023.98px)');
   const LEAVING = ['go-left', 'go-right', 'keep-banner', 'go-door', 'go-dark'];
   /** The timer of the slide away or the door now on. @type {ReturnType<typeof setTimeout> | undefined} */
@@ -942,6 +908,17 @@ function start() {
    * @type {Out | null}
    */
   let out = null;
+  /**
+   * The way to a view of this document now on: what the view comes in as, whether the banner
+   * stays over the veil, and until when its render waits.
+   * @type {{ fx: string, keep: boolean, until: number } | null}
+   */
+  let turn = null;
+  /** drive.js, when this document has Turbo. */
+  const drive = () =>
+    /** @type {{ drives: (href: string) => boolean, hold: (ms: number) => void } | undefined} */ (
+      /** @type {any} */ (window).hofDrive
+    );
 
   /**
    * Through the door `named` of the map — the one drawn now: in its place on a computer, on the
@@ -983,8 +960,8 @@ function start() {
     if (!(link instanceof HTMLAnchorElement) || !plainPress(event, link)) return;
     // The page is going out through the gate: no other way now (M12.15).
     if (out !== null) return event.preventDefault();
-    // A second press while the page slides away: the browser follows the link pressed now.
-    const second = sliding !== undefined;
+    // A second press while the page slides away: the link pressed now goes at once.
+    const second = sliding !== undefined || (turn !== null && Date.now() < turn.until);
     stopSliding();
     const move = canMove(settings, reduced.matches);
     const effect = leaving(link.dataset.fx, {
@@ -992,8 +969,21 @@ function start() {
       sound: settings.sound,
       phone: phone.matches,
     });
-    if (effect === null) return;
     const keep = link.dataset.keep !== undefined;
+    if (drive()?.drives(link.href) === true) {
+      let ms = 0;
+      if (effect !== null && effect.away !== null && !second) {
+        let away = effect.away;
+        ms = SLIDE_MS;
+        if (away === 'go-door') ({ away, ms } = goThrough(link.dataset.door));
+        root.classList.add(away);
+        if (keep) root.classList.add('keep-banner');
+      }
+      turn = effect === null ? null : { fx: effect.fx, keep, until: Date.now() + ms };
+      drive()?.hold(ms);
+      return;
+    }
+    if (effect === null) return;
     writeFlag(session, ARRIVE_KEY, {
       fx: effect.fx,
       to: link.origin + link.pathname + link.search,
@@ -1021,6 +1011,27 @@ function start() {
     stopSliding();
     if (out !== null) out.timers.forEach(clearTimeout);
     out = null;
+  });
+
+  // ---- a view of this document put in place by Turbo (drive.js): the way away ends, the view
+  // comes in as its link says — fx-head.js does the same for a page the browser loads — and the
+  // effects of the view gone give way to its own. Back and Forward come without the way of a link.
+  document.addEventListener('turbo:visit', (event) => {
+    if (/** @type {CustomEvent} */ (event).detail.action !== 'restore') return;
+    turn = null;
+    root.classList.remove(...LEAVING);
+  });
+  document.addEventListener('turbo:render', () => {
+    root.classList.remove(...LEAVING);
+    const come = turn;
+    turn = null;
+    view();
+    if (come === null) return;
+    const move = canMove(settings, reduced.matches);
+    const name = move ? (ARRIVE_CLASS[come.fx] ?? null) : null;
+    if (name !== null) root.classList.add(name, ...(come.keep ? ['keep-banner'] : []));
+    if (come.fx === 'flip-fwd' || come.fx === 'flip-back' || come.fx === 'page') playSound('page');
+    if (come.fx === 'door' && !move) playSound('door');
   });
 
   // ---- the way out through the gate (M12.15), only with «Анимации». The first press sends the
@@ -1224,9 +1235,14 @@ function start() {
   // ---- M11.6: a page of a signed-in person (data-session) learns within a minute of being seen
   // that its session has ended, and goes to the sign-in, which then says so. The address back is
   // only the path and query of this page; /login takes it through safeNext. A page on its way out
-  // (M12.15) has a way of its own.
-  if (document.querySelector('[data-session]') !== null) {
-    const watch = createSessionWatch(
+  // (M12.15) has a way of its own. In one document (Turbo) the views change: a view with
+  // data-session asks, one without it does not (view()).
+  /** Whether the view now shown is of a signed-in person. */
+  let signedIn = false;
+  /** @type {ReturnType<typeof createSessionWatch> | null} */
+  let watch = null;
+  if (typeof fetch === 'function') {
+    const ask = createSessionWatch(
       async () => (await fetch('/session', { cache: 'no-store' })).status,
       () => {
         if (out !== null) return;
@@ -1237,15 +1253,15 @@ function start() {
         clear: (timer) => clearTimeout(/** @type {ReturnType<typeof setTimeout>} */ (timer)),
       },
     );
-    // The page has just come from the server with a live session: the first question in a minute.
-    if (!document.hidden) watch.seen(false);
+    watch = ask;
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) watch.hidden();
-      else watch.seen(true);
+      if (!signedIn) return;
+      if (document.hidden) ask.hidden();
+      else ask.seen(true);
     });
-    addEventListener('pagehide', watch.hidden);
+    addEventListener('pagehide', ask.hidden);
     addEventListener('pageshow', (event) => {
-      if (event.persisted) watch.seen(true);
+      if (event.persisted && signedIn) ask.seen(true);
     });
   }
 
@@ -1284,7 +1300,7 @@ function start() {
     fresh = firstVisit(local);
     showMotion();
     showSettings();
-    courtBack();
+    courtNow?.back();
     // A piece put away while fading out ends now: the place to go on from is decided below.
     if (fading !== null) {
       clearTimeout(fading.timer);
@@ -1294,14 +1310,29 @@ function start() {
       if (track !== null) close(track, 0);
       return;
     }
-    // Another page played on since this one was put away: go on from its place, not from here.
-    const place = readMusic(session);
-    if (track !== null && place !== null && place.at > savedAt) close(track, 0);
     if (track === null) startMusic();
     else begin(track);
   });
 
   startMusic();
+
+  // ---- what a view sets up and lets go of when the next one is put in place (Turbo): the
+  // living courtyard, «Звуки и движение», the question about the session, the decor busy.
+  /** The living courtyard of the view now shown. @type {{ back: () => void, stop: () => void } | null} */
+  let courtNow = null;
+  function view() {
+    courtNow?.stop();
+    meowing.reset();
+    busy.reset();
+    clearTimeout(sniffing);
+    settingsOf();
+    courtNow = court();
+    signedIn = document.querySelector('[data-session]') !== null;
+    // A view has just come from the server with a live session: the first question in a minute.
+    if (signedIn && !document.hidden) watch?.seen(false);
+    else watch?.hidden();
+  }
+  view();
 
   // The page arrived by a page of the book turned or by «Назад» and «Следующие 50» of Летопись:
   // the sound of a page, the music a little quieter under it (fx-head.js has checked the flag).
@@ -1323,163 +1354,188 @@ function start() {
   if (arrived !== undefined && MONEY.includes(arrived)) playSound('coins');
 
   // ---- the living courtyard (M10.3): the fountain, the wind in the crowns, the birds. The
-  // frames turning round (water, banners, smoke) are the CSS alone.
-  const fountain = document.querySelector('.fx-fountain');
-  const leaves = [...document.querySelectorAll('.fx-leaves')];
-  const flock = document.querySelector('.fx-birds');
+  // frames turning round (water, banners, smoke) are the CSS alone. Set up for the view now shown
+  // (view()); stop() lets go of its timers, its listeners and the water when the next view comes.
+  function court() {
+    const stopping = new AbortController();
+    const { signal } = stopping;
+    const fountain = document.querySelector('.fx-fountain');
+    const leaves = [...document.querySelectorAll('.fx-leaves')];
+    const flock = document.querySelector('.fx-birds');
 
-  // The fountain: a quiet loop while «Звуки» are on, the next of the loops on each visit, 2 s to
-  // come up. It waits for an action of the person as music does.
-  /** @type {{ audio: HTMLAudioElement, gain: AudioParam | null, release: () => void } | null} */
-  let water = null;
-  /** @param {NonNullable<typeof water>} w */
-  function flow(w) {
-    if (water !== w) return;
-    const resumed = context?.resume();
-    w.audio.play().then(
-      async () => {
-        if (water !== w) return;
-        if (!audible() && resumed) await Promise.race([resumed, sleep(500)]).catch(() => {});
-        if (water !== w) return;
-        if (!audible()) {
-          w.audio.pause();
-          waiting.add(() => flow(w));
-          return;
-        }
-        setGain(w, level(settings.soundVol), 2);
-      },
-      () => {
-        if (water === w) waiting.add(() => flow(w));
-      },
-    );
-  }
-  // Before the first action of the person on this page no sound may start, and a context made
-  // then only makes Chrome warn: the fountain waits for the action, a gust is silent.
-  const allowed = () => navigator.userActivation?.hasBeenActive !== false;
-  function startFountain() {
-    if (fountain === null || !settings.sound || water !== null) return;
-    if (!allowed()) {
-      waiting.add(startFountain);
-      return;
+    // The fountain: a quiet loop while «Звуки» are on, the next of the loops on each visit, 2 s to
+    // come up. It waits for an action of the person as music does.
+    /** @type {{ audio: HTMLAudioElement, gain: AudioParam | null, release: () => void } | null} */
+    let water = null;
+    /** @param {NonNullable<typeof water>} w */
+    function flow(w) {
+      if (water !== w || signal.aborted) return;
+      const resumed = context?.resume();
+      w.audio.play().then(
+        async () => {
+          if (water !== w) return;
+          if (!audible() && resumed) await Promise.race([resumed, sleep(500)]).catch(() => {});
+          if (water !== w) return;
+          if (!audible()) {
+            w.audio.pause();
+            waiting.add(() => flow(w));
+            return;
+          }
+          setGain(w, level(settings.soundVol), 2);
+        },
+        () => {
+          if (water === w) waiting.add(() => flow(w));
+        },
+      );
     }
-    const audio = new Audio(fountainAddress(nextFountain(local)));
-    audio.loop = true;
-    // Not there or not playable: silence, nothing tries again.
-    audio.addEventListener('error', () => {
-      if (water?.audio === audio) stopFountain();
-    });
-    water = { audio, ...output(audio, 0) };
-    flow(water);
-  }
-  function stopFountain() {
-    if (water === null) return;
-    const w = water;
-    water = null;
-    w.audio.pause();
-    w.audio.removeAttribute('src');
-    w.audio.load();
-    w.release();
-  }
-
-  // The frames of the courtyard wait until the page has loaded, so that the map comes first
-  // (M12.5): then the frames always seen, the water and the banners, and the doors; the leaves,
-  // the largest and seen only in a gust, after them. A crown gusts only with its frames loaded.
-  // The address of a layer is the one the CSS gives it once it is awake.
-  const loops = [...document.querySelectorAll('.fx-fountain, .fx-banner, .door')];
-  /** @type {Set<Element>} */
-  const ready = new Set();
-  /**
-   * @param {Element} layer
-   * @returns {Promise<boolean>} whether its frames are there
-   */
-  function frames(layer) {
-    layer.classList.add('wake');
-    const address = /url\("?([^")]+)"?\)/.exec(getComputedStyle(layer).backgroundImage)?.[1];
-    if (address === undefined) return Promise.resolve(false);
-    const image = new Image();
-    image.src = address;
-    return image.decode().then(
-      () => true,
-      () => false,
-    );
-  }
-  let awake = false;
-  function wake() {
-    if (awake || !canMove(settings, reduced.matches)) return;
-    awake = true;
-    Promise.all(loops.map(frames)).then(() => {
-      for (const layer of leaves) frames(layer).then((there) => there && ready.add(layer));
-    });
-  }
-  function gust() {
-    if (canMove(settings, reduced.matches)) {
-      wake();
-      const crowns = [...ready];
-      const crown = crowns[Math.floor(Math.random() * crowns.length)];
-      if (crown !== undefined) {
-        crown.classList.remove('gust');
-        void (/** @type {HTMLElement} */ (crown).offsetWidth);
-        crown.classList.add('gust');
+    // Before the first action of the person on this page no sound may start, and a context made
+    // then only makes Chrome warn: the fountain waits for the action, a gust is silent.
+    const allowed = () => navigator.userActivation?.hasBeenActive !== false;
+    function startFountain() {
+      if (fountain === null || !settings.sound || water !== null || signal.aborted) return;
+      if (!allowed()) {
+        waiting.add(startFountain);
+        return;
       }
-    }
-    if (allowed()) playSound('wind');
-  }
-  function fly() {
-    if (flock === null || !canMove(settings, reduced.matches)) return;
-    flock.classList.remove('fly');
-    void (/** @type {HTMLElement} */ (flock).offsetWidth);
-    flock.classList.add('fly');
-  }
-  for (const layer of [...leaves, flock]) {
-    layer?.addEventListener('animationend', (event) => {
-      if (event.target === layer) layer.classList.remove('gust', 'fly');
-    });
-  }
-
-  // One chain of timers for the wind and one for the birds, and only while the tab is seen and
-  // the chain has anything to show or sound: the wind while «Анимации» or «Звуки» are on, the
-  // birds with «Анимации».
-  const clock = {
-    set: (/** @type {() => void} */ go, /** @type {number} */ ms) => setTimeout(go, ms),
-    clear: (/** @type {unknown} */ timer) =>
-      clearTimeout(/** @type {ReturnType<typeof setTimeout>} */ (timer)),
-    now: () => Date.now(),
-  };
-  const wind = leaves.length > 0 ? createChain(gust, GUST, clock) : null;
-  const birds = flock !== null ? createChain(fly, FLOCK, clock) : null;
-  function live() {
-    const seen = !document.hidden;
-    const move = canMove(settings, reduced.matches);
-    if (seen && (move || settings.sound)) wind?.resume();
-    else wind?.pause();
-    if (seen && move) birds?.resume();
-    else birds?.pause();
-  }
-  document.addEventListener('visibilitychange', live);
-  // Motion allowed again: the crowns that have not woken yet wake now, not at the next gust.
-  reduced.addEventListener('change', () => {
-    live();
-    wake();
-  });
-  addEventListener('pagehide', () => {
-    wind?.pause();
-    birds?.pause();
-  });
-  live();
-  startFountain();
-  if (document.readyState === 'complete') wake();
-  else addEventListener('load', wake, { once: true });
-
-  /** Back from the back/forward cache: the settings may have changed meanwhile. */
-  function courtBack() {
-    live();
-    wake();
-    if (!settings.sound) stopFountain();
-    else if (water === null) startFountain();
-    else {
-      setGain(water, 0, 0);
+      const audio = new Audio(fountainAddress(nextFountain(local)));
+      audio.loop = true;
+      // Not there or not playable: silence, nothing tries again.
+      audio.addEventListener('error', () => {
+        if (water?.audio === audio) stopFountain();
+      });
+      water = { audio, ...output(audio, 0) };
       flow(water);
     }
+    function stopFountain() {
+      if (water === null) return;
+      const w = water;
+      water = null;
+      w.audio.pause();
+      w.audio.removeAttribute('src');
+      w.audio.load();
+      w.release();
+    }
+
+    // The frames of the courtyard wait until the page has loaded, so that the map comes first
+    // (M12.5): then the frames always seen, the water and the banners, and the doors; the leaves,
+    // the largest and seen only in a gust, after them. A crown gusts only with its frames loaded.
+    // The address of a layer is the one the CSS gives it once it is awake.
+    const loops = [...document.querySelectorAll('.fx-fountain, .fx-banner, .door')];
+    /** @type {Set<Element>} */
+    const ready = new Set();
+    /**
+     * @param {Element} layer
+     * @returns {Promise<boolean>} whether its frames are there
+     */
+    function frames(layer) {
+      layer.classList.add('wake');
+      const address = /url\("?([^")]+)"?\)/.exec(getComputedStyle(layer).backgroundImage)?.[1];
+      if (address === undefined) return Promise.resolve(false);
+      const image = new Image();
+      image.src = address;
+      return image.decode().then(
+        () => true,
+        () => false,
+      );
+    }
+    let awake = false;
+    function wake() {
+      if (awake || signal.aborted || !canMove(settings, reduced.matches)) return;
+      awake = true;
+      Promise.all(loops.map(frames)).then(() => {
+        for (const layer of leaves) frames(layer).then((there) => there && ready.add(layer));
+      });
+    }
+    function gust() {
+      if (signal.aborted) return;
+      if (canMove(settings, reduced.matches)) {
+        wake();
+        const crowns = [...ready];
+        const crown = crowns[Math.floor(Math.random() * crowns.length)];
+        if (crown !== undefined) {
+          crown.classList.remove('gust');
+          void (/** @type {HTMLElement} */ (crown).offsetWidth);
+          crown.classList.add('gust');
+        }
+      }
+      if (allowed()) playSound('wind');
+    }
+    function fly() {
+      if (signal.aborted || flock === null || !canMove(settings, reduced.matches)) return;
+      flock.classList.remove('fly');
+      void (/** @type {HTMLElement} */ (flock).offsetWidth);
+      flock.classList.add('fly');
+    }
+    for (const layer of [...leaves, flock]) {
+      layer?.addEventListener('animationend', (event) => {
+        if (event.target === layer) layer.classList.remove('gust', 'fly');
+      });
+    }
+
+    // One chain of timers for the wind and one for the birds, and only while the tab is seen and
+    // the chain has anything to show or sound: the wind while «Анимации» or «Звуки» are on, the
+    // birds with «Анимации».
+    const clock = {
+      set: (/** @type {() => void} */ go, /** @type {number} */ ms) => setTimeout(go, ms),
+      clear: (/** @type {unknown} */ timer) =>
+        clearTimeout(/** @type {ReturnType<typeof setTimeout>} */ (timer)),
+      now: () => Date.now(),
+    };
+    const wind = leaves.length > 0 ? createChain(gust, GUST, clock) : null;
+    const birds = flock !== null ? createChain(fly, FLOCK, clock) : null;
+    function live() {
+      if (signal.aborted) return;
+      const seen = !document.hidden;
+      const move = canMove(settings, reduced.matches);
+      if (seen && (move || settings.sound)) wind?.resume();
+      else wind?.pause();
+      if (seen && move) birds?.resume();
+      else birds?.pause();
+    }
+    document.addEventListener('visibilitychange', live, { signal });
+    // Motion allowed again: the crowns that have not woken yet wake now, not at the next gust.
+    reduced.addEventListener(
+      'change',
+      () => {
+        live();
+        wake();
+      },
+      { signal },
+    );
+    addEventListener(
+      'pagehide',
+      () => {
+        wind?.pause();
+        birds?.pause();
+      },
+      { signal },
+    );
+    live();
+    startFountain();
+    if (document.readyState === 'complete') wake();
+    else addEventListener('load', wake, { once: true, signal });
+
+    /** Back from the back/forward cache: the settings may have changed meanwhile. */
+    function courtBack() {
+      live();
+      wake();
+      if (!settings.sound) stopFountain();
+      else if (water === null) startFountain();
+      else {
+        setGain(water, 0, 0);
+        flow(water);
+      }
+    }
+
+    return {
+      back: courtBack,
+      stop() {
+        stopping.abort();
+        wind?.pause();
+        birds?.pause();
+        stopFountain();
+      },
+    };
   }
 }
 

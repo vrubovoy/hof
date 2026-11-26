@@ -48,9 +48,13 @@ const asset = saeckelStatic.url;
 const VERSION = String.raw`\?v=[0-9a-f]{12}`;
 // The scripts of the effects of Hof that every page names (§2, §6), as main.ts gives them, and
 // the scripts of Säckel itself: the groups of an amount (M13.4) and the calendar (M13.5).
+// Prototype A of M14: the scripts of Core — fx-head.js, Turbo, its glue and fx.js — tracked by
+// Turbo (data-turbo-track), the same as on the pages of Core; then the scripts of Säckel.
 const SCRIPTS = [
-  `<script src="${CORE_SCRIPTS.head}"></script>`,
-  `<script type="module" src="${CORE_SCRIPTS.effects}"></script>`,
+  `<script src="${CORE_SCRIPTS.head}" data-turbo-track="reload"></script>`,
+  `<script type="module" src="${CORE_SCRIPTS.turbo}" data-turbo-track="reload"></script>`,
+  `<script type="module" src="${CORE_SCRIPTS.drive}" data-turbo-track="reload"></script>`,
+  `<script type="module" src="${CORE_SCRIPTS.effects}" data-turbo-track="reload"></script>`,
   `<script type="module" src="${asset('amount.js')}"></script>`,
   `<script type="module" src="${asset('calendar.js')}"></script>`,
 ];
@@ -309,7 +313,7 @@ describe('the pages of Säckel', () => {
       }
       // Files only of the static folder of Säckel, never of Core's, but for the scripts above;
       // each with its version, kept by the browser without asking.
-      const own = SCRIPTS.slice(0, 2).reduce((rest, script) => rest.replace(script, ''), page);
+      const own = SCRIPTS.slice(0, 4).reduce((rest, script) => rest.replace(script, ''), page);
       for (const address of pageFiles(own)) {
         assert.match(
           address,
@@ -365,7 +369,12 @@ describe('the pages of Säckel', () => {
   test('M12.16: the band of the treasury is the one picture that waits, and only under .reveal', async () => {
     for (const [name, , page] of await drawnPages()) {
       assert.equal((page.match(/\sdata-reveal(?=[\s>])/g) ?? []).length, 1, name);
-      assert.match(page, /<img\s+class="sk-scene"\s+data-reveal\s/, name);
+      // Prototype A of M14: kept in place between the views of Säckel (data-turbo-permanent).
+      assert.match(
+        page,
+        /<img\s+id="sk-scene"\s+class="sk-scene"\s+data-turbo-permanent\s+data-reveal\s/,
+        name,
+      );
     }
     const css = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
     const rules = [...css.matchAll(/([^{}]*)\{([^{}]*)\}/g)]

@@ -333,6 +333,7 @@ async function openChambers({
   elements = {},
   fetching = true,
   blocked = false,
+  drive,
 }: {
   settings?: Settings | null;
   phone?: boolean;
@@ -345,6 +346,9 @@ async function openChambers({
   elements?: Record<string, FakeElement>;
   fetching?: boolean;
   blocked?: boolean;
+  // Prototype A of M14: the document has Turbo and drive.js, which opens every address in it and
+  // keeps the waits fx.js asks for.
+  drive?: { holds: number[] };
 } = {}) {
   FakeAudio.made = [];
   FakeAudio.refuse = false;
@@ -393,22 +397,24 @@ async function openChambers({
   const on = { document: new Map<string, Listener[]>(), window: new Map<string, Listener[]>() };
   const listen = (where: Map<string, Listener[]>) => (type: string, listener: Listener) =>
     void where.set(type, [...(where.get(type) ?? []), listener]);
+  // The view now shown: a view Turbo puts in place may be another one (render()).
+  let view = court;
   const doc = {
     hidden: false,
     readyState: 'loading',
     documentElement: root,
-    getElementById: (id: string) => (id === 'fx-settings' ? (court ? null : block) : null),
+    getElementById: (id: string) => (id === 'fx-settings' ? (view ? null : block) : null),
     addEventListener: listen(on.document),
     querySelector: (selector: string) =>
       elements[selector] ??
-      { '.fx-fountain': court?.fountain, '.fx-birds': court?.flock }[selector] ??
+      { '.fx-fountain': view?.fountain, '.fx-birds': view?.flock }[selector] ??
       null,
     querySelectorAll: (selector: string): unknown[] => {
-      if (selector === '.fx-leaves') return court?.leaves ?? [];
+      if (selector === '.fx-leaves') return view?.leaves ?? [];
       if (selector === '.fx-fountain, .fx-banner, .door') {
-        return court ? [court.fountain, ...court.banners, ...court.doors] : [];
+        return view ? [view.fountain, ...view.banners, ...view.doors] : [];
       }
-      if (selector === '.court-inner') return court ? [court.inner] : [];
+      if (selector === '.court-inner') return view ? [view.inner] : [];
       const all = Object.values(elements);
       if (selector === '.cat.meow') return all.filter((e) => e.classList.contains('meow'));
       if (selector === '.sniffing') return all.filter((e) => e.classList.contains('sniffing'));
@@ -417,13 +423,13 @@ async function openChambers({
       }
       return [
         ...forms.map((form) => form.frames),
-        ...(court?.doors ?? []),
-        ...(court?.gates ?? []),
+        ...(view?.doors ?? []),
+        ...(view?.gates ?? []),
         ...all,
       ].filter((element) => element.classList.contains('open'));
     },
     getElementsByClassName: (name: string) =>
-      [...(court?.doors ?? []), ...(court?.gates ?? [])].filter((door) =>
+      [...(view?.doors ?? []), ...(view?.gates ?? [])].filter((door) =>
         door.classList.contains(name),
       ),
   };
@@ -438,6 +444,10 @@ async function openChambers({
   });
   Object.assign(globalThis, {
     window: {
+      hofDrive:
+        drive === undefined
+          ? undefined
+          : { drives: () => true, hold: (ms: number) => void drive.holds.push(ms) },
       get localStorage() {
         if (blocked) throw new Error('SecurityError');
         return local;
@@ -566,6 +576,13 @@ async function openChambers({
     motion.reduced = on_;
     for (const listener of media) listener({ type: 'change' });
   };
+  // Turbo (drive.js): another view put in place — with a courtyard of its own or none — and a
+  // visit of Back or Forward.
+  const render = (next?: Court) => {
+    view = next;
+    fire(on.document, { type: 'turbo:render' });
+  };
+  const restore = () => fire(on.document, { type: 'turbo:visit', detail: { action: 'restore' } });
   return {
     inputs,
     change,
@@ -584,6 +601,8 @@ async function openChambers({
     local,
     net,
     replaced,
+    render,
+    restore,
   };
 }
 
@@ -1895,5 +1914,134 @@ describe('fx.js in a page: the cats on a new device (M13.8)', () => {
     assert.deepEqual([...page.root.classList.names], []);
     page.poke(cat);
     assert.ok(!cat.classList.contains('meow'));
+  });
+});
+
+// Prototype A of M14 (Issue #165): drive.js opens the views of Двор and Säckel in one document.
+// The way away by a link does not wait for the next page: the link is left to Turbo at once, its
+// render waits (hold) as long as the animation; the view comes in as its link says; the music goes
+// on in the same player; the courtyard of the view gone lets go of its water and timers.
+describe('fx.js in a page: the views of one document (Turbo, M14)', () => {
+  test('a page turned: the request goes at once, the render waits 0,5 s, the view comes in', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 });
+    const drive = { holds: [] as number[] };
+    const { press, root, flag, assigned, render } = await openChambers({
+      settings: { anim: true, sound: true },
+      drive,
+    });
+    const history = new FakeLink('/saeckel/history', 'flip-fwd');
+    assert.equal(press(history).defaultPrevented, false, 'Turbo follows the link at once');
+    assert.ok(root.classList.contains('go-left'));
+    assert.deepEqual(drive.holds, [500]);
+    assert.equal(flag('hof.arrive'), null, 'no flag: the next page is not loaded by the browser');
+    t.mock.timers.tick(1000);
+    assert.deepEqual(assigned, [], 'nothing followed by the script');
+    render();
+    assert.ok(!root.classList.contains('go-left'));
+    assert.ok(root.classList.contains('from-right'));
+    assert.equal(sounds('page').length, 1, 'the rustle of the page that came');
+  });
+
+  test('a second press while it goes away: no wait; a link without an effect comes plain', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 });
+    const drive = { holds: [] as number[] };
+    const { press, root, render } = await openChambers({ settings: { anim: true }, drive });
+    press(new FakeLink('/saeckel/history', 'flip-fwd'));
+    press(new FakeLink('/saeckel/', 'flip-back'));
+    assert.deepEqual(drive.holds, [500, 0]);
+    render();
+    assert.ok(root.classList.contains('from-left'), 'as the link pressed last says');
+    assert.ok(!root.classList.contains('go-left'));
+
+    press(new FakeLink('/saeckel/pouches/1'));
+    assert.deepEqual(drive.holds, [500, 0, 0]);
+    root.classList.remove('from-left');
+    render();
+    assert.deepEqual([...root.classList.names], ['fx-on'], 'no arrival');
+  });
+
+  test('a door to a view: the zoom while Turbo asks, 1,7 s of render held, out of the dark', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 });
+    const drive = { holds: [] as number[] };
+    const court = courtyard();
+    const { press, root, render } = await openChambers({
+      settings: { anim: true },
+      court,
+      drive,
+    });
+    const link = new FakeLink('/saeckel/', 'door');
+    link.dataset.door = 'treasury';
+    assert.equal(press(link).defaultPrevented, false);
+    assert.ok(root.classList.contains('go-door'));
+    assert.deepEqual(drive.holds, [1700]);
+    render();
+    assert.ok(root.classList.contains('from-door'));
+    assert.ok(!root.classList.contains('go-door'));
+  });
+
+  test('Back while the page goes away: no arrival of the link', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 });
+    const drive = { holds: [] as number[] };
+    const { press, root, render, restore } = await openChambers({
+      settings: { anim: true },
+      drive,
+    });
+    press(new FakeLink('/saeckel/history', 'flip-fwd'));
+    restore();
+    assert.ok(!root.classList.contains('go-left'));
+    render();
+    assert.deepEqual([...root.classList.names], ['fx-on']);
+  });
+
+  test('one player of music through the views; no place kept in a storage', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 });
+    const drive = { holds: [] as number[] };
+    const { press, render, hide } = await openChambers({
+      settings: { music: true },
+      active: true,
+      drive,
+    });
+    await settle();
+    assert.equal(playing().length, 1);
+    for (const href of ['/saeckel/', '/saeckel/history', '/']) {
+      press(new FakeLink(href, 'flip-fwd'));
+      render();
+      await settle();
+    }
+    assert.equal(pieces().length, 1, 'no new player');
+    assert.equal(playing().length, 1);
+    hide();
+    assert.equal(
+      (
+        globalThis as unknown as { window: { sessionStorage: { getItem: (k: string) => unknown } } }
+      ).window.sessionStorage.getItem('hof.music'),
+      null,
+    );
+  });
+
+  test('the courtyard of the view gone lets go of its water and its timers', async (t: TestContext) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 });
+    const drive = { holds: [] as number[] };
+    const court = courtyard();
+    const { render, seen } = await openChambers({
+      settings: { anim: true, sound: true },
+      court,
+      active: true,
+      drive,
+    });
+    const [water] = sounds('fountain');
+    assert.equal(water?.paused, false);
+    render();
+    assert.equal(water?.paused, true, 'the water of the courtyard stops with its view');
+    // The timers of the wind and the birds are let go: nothing gusts or flies on the next view.
+    seen(false);
+    seen(true);
+    t.mock.timers.tick(200_000);
+    assert.ok(court.leaves.every((leaf) => !leaf.classList.contains('gust')));
+    assert.ok(!court.flock.classList.contains('fly'));
+
+    // Back to a courtyard: the next loop of the water.
+    render(courtyard());
+    assert.equal(sounds('fountain').filter((audio) => !audio.paused).length, 1);
   });
 });

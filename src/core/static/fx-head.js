@@ -309,11 +309,20 @@
     if (waiting) requestAnimationFrame(ready);
   };
   requestAnimationFrame(ready);
-  setTimeout(() => {
+  const last = () => {
     frames = false;
     for (const scene of document.querySelectorAll('[data-reveal]:not(.shown)')) {
       const img = pictureOf(scene);
       if (img === null || img.complete) scene.classList.add('shown');
     }
-  }, 3000);
+  };
+  let lastCheck = setTimeout(last, 3000);
+  // Prototype A of M14 (drive.js): a view Turbo puts in place has pictures of its own, checked the
+  // same way from its first frame.
+  document.addEventListener('turbo:render', () => {
+    frames = true;
+    requestAnimationFrame(ready);
+    clearTimeout(lastCheck);
+    lastCheck = setTimeout(last, 3000);
+  });
 })();

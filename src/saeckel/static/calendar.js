@@ -189,8 +189,11 @@ export function moveByKey(date, key, shift, earliest, latest) {
 /** A date field of a form that the server gave its dates. */
 const DATE_FIELD = 'input[name="date"][data-today][data-earliest][data-latest]';
 
-/** @param {HTMLInputElement} input */
-function attach(input) {
+/**
+ * @param {HTMLInputElement} input
+ * @param {AbortSignal} signal lets go of the listeners of the page when the view goes
+ */
+function attach(input, signal) {
   const today = input.dataset.today ?? '';
   const earliest = input.dataset.earliest ?? '';
   const latest = input.dataset.latest ?? '';
@@ -378,15 +381,31 @@ function attach(input) {
       close(false);
     }
   };
-  document.addEventListener('pointerdown', away);
-  document.addEventListener('focusin', away);
-  window.addEventListener('resize', place);
+  document.addEventListener('pointerdown', away, { signal });
+  document.addEventListener('focusin', away, { signal });
+  window.addEventListener('resize', place, { signal });
 }
 
+// The date fields of the view now shown. Prototype A of M14 (drive.js of Core): Turbo puts the
+// views into one document, so a view just put in place gets its own calendars, and the listeners
+// of the view gone are let go.
 function start() {
-  document.querySelectorAll(DATE_FIELD).forEach((input) => {
-    if (input instanceof HTMLInputElement) attach(input);
-  });
+  /** @type {AbortController | null} */
+  let views = null;
+  /** @type {HTMLElement | null} */
+  let shown = null;
+  const mount = () => {
+    if (shown === document.body) return;
+    views?.abort();
+    const now = new AbortController();
+    views = now;
+    shown = document.body;
+    document.querySelectorAll(DATE_FIELD).forEach((input) => {
+      if (input instanceof HTMLInputElement) attach(input, now.signal);
+    });
+  };
+  mount();
+  document.addEventListener('turbo:render', mount);
 }
 
 if (typeof document !== 'undefined') start();

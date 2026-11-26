@@ -9,7 +9,7 @@ const boundary = (files, group, message) => ({
 });
 
 export default defineConfig(
-  globalIgnores(['design/', '_discard/', '_reserve/']),
+  globalIgnores(['design/', '_discard/', '_reserve/', 'src/core/static/vendor/']),
   {
     files: ['**/*.ts'],
     extends: [tseslint.configs.recommendedTypeChecked],
@@ -38,18 +38,22 @@ export default defineConfig(
     languageOptions: {
       sourceType: 'module',
       globals: {
+        AbortController: 'readonly',
         AudioContext: 'readonly',
         Audio: 'readonly',
         Element: 'readonly',
         Event: 'readonly',
         HTMLAnchorElement: 'readonly',
+        HTMLBodyElement: 'readonly',
         HTMLButtonElement: 'readonly',
         HTMLElement: 'readonly',
         HTMLFormElement: 'readonly',
         HTMLImageElement: 'readonly',
         HTMLInputElement: 'readonly',
+        HTMLLinkElement: 'readonly',
         HTMLMediaElement: 'readonly',
         Image: 'readonly',
+        MutationObserver: 'readonly',
         Node: 'readonly',
         URL: 'readonly',
         URLSearchParams: 'readonly',
