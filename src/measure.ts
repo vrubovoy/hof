@@ -1,37 +1,69 @@
 // Page speed of Hof on a local server, to compare versions (docs/OPERATIONS.md, «Замер скорости
 // страниц»). Run by hand, never by CI: the numbers depend on the computer.
 //
-//   node src/measure.ts --label <версия> [--gate-key <ключ>] [--runs 3] [--origin <адрес>]
+//   node src/measure.ts --label <версия> --out <файл.json> [--gate-key <ключ>] [--runs 10]
+//                       [--parts loads,chain,music,memory] [--origin <адрес>] [--chrome <путь>]
+//   node src/measure.ts --report <база.json> [<серия.json> …]
 //
 // Headless Chrome is driven over the DevTools protocol with the WebSocket and fetch of Node, so
-// nothing is installed. Two profiles, each with its screen, network and CPU, and «Анимации» off
-// and on. Every page is opened with the cache of the browser emptied (cold) and once more (warm).
-// Two transitions are measured from the press of the link to the first paint of the next page,
-// with the long frames of both pages (requestAnimationFrame and, M12.9, long animation frames).
-// The medians of all runs go to stdout as Markdown tables, the progress to stderr.
+// nothing is installed. Two profiles, each with its screen, network and CPU. Four parts (M14.1):
+// - loads — the load of a document, cold (empty cache) and warm (the same address again);
+// - chain — the scenario of M14 in one tab: the sign-in, the way through Säckel with an expense,
+//   and the sign-out, each step from the press to the new view and to the end of its animations;
+// - music — the same way with the music on: when it was silent;
+// - memory — the way repeated 50 times in one tab: nodes, listeners and the heap of JavaScript.
+// Every series goes to a JSON file; --report turns files into Markdown tables, the first file
+// being the base the others are compared with. Statistics and tables live in measure-stats.ts.
 //
 // Data: the script founds a court on an empty development database (the gate key comes from the
-// server log) or signs in to the court it founded before, with its own test login. A server that
-// is not on this computer is refused.
+// server log) and fills it with a fixed budget, or signs in to the court it founded before. The
+// one record a run writes is deleted after it, so every run sees the same data. A server that is
+// not on this computer is refused.
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
+import { gzipSync } from 'node:zlib';
+import {
+  layoutShift,
+  longFrames,
+  normalizeText,
+  arrivedAt,
+  playingNow,
+  recordIds,
+  requestStats,
+  seedExpenses,
+  silence,
+  slowestInput,
+  type NetRequest,
+  type Probe,
+  type Window,
+} from './measure-stats.ts';
+import { report } from './measure-report.ts';
 
 const USAGE =
-  'Использование: node src/measure.ts --label <версия> [--gate-key <ключ>] [--runs 3] ' +
-  '[--origin http://localhost:3000] [--chrome <путь к Chrome>]';
+  'Использование: node src/measure.ts --label <версия> --out <файл.json> [--gate-key <ключ>] ' +
+  '[--runs 10] [--parts loads,chain,music,memory] [--origin http://localhost:3000] ' +
+  '[--chrome <путь к Chrome>]\n       node src/measure.ts --report <база.json> [<серия.json> …]';
 
 // The test court of the measurement. Local data only, so the password may be written here.
 const LOGIN = 'measure';
 const MEMBER = 'measure-member';
 const PASSWORD = 'measure-local-only-password';
 const POUCHES = ['Еда', 'Дом', 'Дети', 'Отпуск'];
+// The fixed budget (M14.1): one income laid out evenly, 56 expenses on fixed dates. 61 records:
+// Летопись has 50 on its first page and 11 on the second; a run adds one, its note is NOTE.
+const INCOME = { amount: '100000', date: '2026-10-01', note: 'Жалованье' };
+const LAID_OUT = '25000';
+const EXPENSES = seedExpenses(56, POUCHES.length);
+const SEEDED = 1 + POUCHES.length + EXPENSES.length;
+const PAGE_SIZE = 50;
+const NOTE = 'Замер';
 
-const PROFILES = [
+export const PROFILES = [
   {
     name: 'Телефон',
     about: '390×844 @3, RTT 150 мс, 1,6 Мбит/с, CPU ×4',
@@ -47,103 +79,236 @@ const PROFILES = [
     network: { latency: 40, megabits: 10, uploadMegabits: 5 },
   },
 ] as const;
+type Profile = (typeof PROFILES)[number];
 
-const PAGES = [
+// The documents of the scenario, loaded by their address.
+export const PAGES = [
   { path: '/login', signedIn: false },
   { path: '/', signedIn: true },
-  { path: '/account', signedIn: true },
-  { path: '/admin/users', signedIn: true },
   { path: '/saeckel/', signedIn: true },
   { path: '/saeckel/pouches/1', signedIn: true },
   { path: '/saeckel/history', signedIn: true },
   { path: '/measure-404', signedIn: true },
 ] as const;
 
-// The link is the first visible element of the list: the phone and the computer show different
-// ones (the signs under the map, the sign on the map).
-const TRANSITIONS = [
+// One step of the way. A press of the first visible element of `press` (the phone and the
+// computer show different ones), or a form filled and sent, or Back of the browser. `to` — the
+// addresses (path and query) the step may end on: a refused form of M13 stays on the address of
+// its action, a page drawn without a reload may keep its own. `check` — what the view must show.
+export interface Step {
+  name: string;
+  press?: readonly string[];
+  fill?: Readonly<Record<string, string>>;
+  back?: true;
+  to: readonly string[];
+  check?: 'fingerprint' | 'refused' | 'written' | 'first-page' | 'second-page' | 'blots';
+}
+
+const TO_SAECKEL = ['nav.court-places a[href="/saeckel/"]', 'a.place[href="/saeckel/"] > .sign'];
+const AMOUNT = 'form.expense input[name="amount"]';
+const SEND_EXPENSE = 'form.expense button[type="submit"]';
+
+export const SIGN_IN: Step = {
+  name: 'Вход → Двор (документ)',
+  fill: {
+    'form[action="/login"] input[name="username"]': LOGIN,
+    'form[action="/login"] input[name="password"]': PASSWORD,
+  },
+  press: ['form[action="/login"] button[type="submit"]'],
+  to: ['/'],
+};
+
+// The way inside the court, the same for every variant: what M14 compares.
+export const WAY: readonly Step[] = [
+  { name: 'Двор → Мешки', press: TO_SAECKEL, to: ['/saeckel/'], check: 'fingerprint' },
   {
-    name: 'Двор → Säckel',
-    from: '/',
-    to: '/saeckel/',
-    links: ['nav.court-places a[href="/saeckel/"]', 'a.place[href="/saeckel/"] > .sign'],
+    name: 'Мешки → мешок',
+    press: ['.sk-list a.pouch[href="/saeckel/pouches/1"]'],
+    to: ['/saeckel/pouches/1'],
+  },
+  {
+    name: 'Трата с ошибкой (400)',
+    fill: { [AMOUNT]: '12,345' },
+    press: [SEND_EXPENSE],
+    to: ['/saeckel/pouches/1/expense', '/saeckel/pouches/1'],
+    check: 'refused',
+  },
+  {
+    name: 'Трата (303)',
+    fill: { [AMOUNT]: '123,45', 'form.expense input[name="note"]': NOTE },
+    press: [SEND_EXPENSE],
+    to: ['/saeckel/pouches/1'],
+    check: 'written',
+  },
+  {
+    name: 'Мешок → Мешки',
+    press: ['a.sk-back', 'nav.tabs a[href="/saeckel/"]'],
+    to: ['/saeckel/'],
+    check: 'blots',
   },
   {
     name: 'Мешки → Летопись',
-    from: '/saeckel/',
-    to: '/saeckel/history',
-    links: ['a[href="/saeckel/history"]'],
+    press: ['nav.tabs a[href="/saeckel/history"]'],
+    to: ['/saeckel/history'],
+    check: 'first-page',
   },
-] as const;
+  {
+    name: 'Летопись: следующие 50',
+    press: ['nav.pages a[href$="page=2"]'],
+    to: ['/saeckel/history?page=2'],
+    check: 'second-page',
+  },
+  { name: 'Назад браузера', back: true, to: ['/saeckel/history'], check: 'first-page' },
+  {
+    name: 'Летопись → Мешки',
+    press: ['nav.tabs a[href="/saeckel/"]'],
+    to: ['/saeckel/'],
+    check: 'blots',
+  },
+  { name: 'Мешки → Двор', press: ['a.sk-court'], to: ['/'] },
+];
 
-// After the load event: late images and the last LCP entry.
-const SETTLE_MS = 1000;
-// Before a press: fx.js has set itself up. After the next page has loaded: its arrival animation.
+export const SIGN_OUT: Step = {
+  name: 'Выход → Вход (документ)',
+  press: [
+    'form.place-form[action="/logout"] .sign.at-gate',
+    'nav.court-places form[action="/logout"] button',
+  ],
+  to: ['/login'],
+};
+
+// The views visited once after the sign-in, so that the measured way finds the files in the cache:
+// the sign-in forgets them (/forget.css), the way is that of a person already in the court.
+const WARM = [
+  '/saeckel/',
+  '/saeckel/pouches/1',
+  '/saeckel/history',
+  '/saeckel/history?page=2',
+  '/',
+];
+
+// Before a press: fx.js has set itself up. After a step: late entries of LoAF, CLS and inputs.
 const BEFORE_PRESS_MS = 1500;
-const AFTER_ARRIVAL_MS = 1500;
-const LONG_FRAME_MS = 50;
+const AFTER_STEP_MS = 1000;
+const ARRIVAL_MS = 30_000;
+const SETTLE_MS = 15_000;
+// The music part waits for the music to play again after a step, at most so long.
+const MUSIC_BACK_MS = 15_000;
+const MEMORY_CYCLES = 50;
+const MEMORY_AT = [0, 1, 10, 25, 50];
+const FRAME_MS_MAX = 25;
 
-// Put into every page before its own scripts. It keeps the LCP entries and, only around a press
-// of a link, the frames: on the page left from the press to pagehide, on the next page for its
-// first 4 s. The click time and the frames of the page left go through sessionStorage. Frames are
-// [start as epoch ms, length ms].
-//
-// M12.9: and the long animation frames (LoAF) of the whole page, where the browser has them: every
-// frame of 50 ms or more with all the work in it — the scripts, the style, the layout, the paint.
-// The frames of requestAnimationFrame do not see the work before the first frame of a page, and
-// that is where the long frames of a transition were. The entries are kept here as they come, from
-// the start of the page, so the limited buffer of the browser loses none; what it could not give is
-// counted. Without the API the page says so, and the table shows no number.
+export const CHROME_FLAGS = [
+  '--headless',
+  '--no-first-run',
+  '--no-default-browser-check',
+  '--mute-audio',
+  '--hide-scrollbars',
+  // Music without a gesture of a person: the automatic run cannot give one (docs: limitations).
+  '--autoplay-policy=no-user-gesture-required',
+];
+
+// The living decor of the court, which moves on its own and is not part of a step: the leaves in a
+// gust, the birds, the fountain, the banners and smoke, the cats and the chest pressed.
+export const DECOR = '.fx, .cat, .cat-frame, [data-poke]';
+
+// Put into every document before its own scripts: it sends what the page measures through the
+// binding hofMeasure as it happens, so nothing is lost when the document goes. Times are epoch
+// milliseconds of the page clock. A view drawn without a new document (a prototype of M14) says
+// so with performance.mark('hof:view'); a document says so with its load; a page back from the
+// back/forward cache with pageshow. After each, «settled» is the moment no finite animation runs
+// any more (the loops of the courtyard run for ever and are not counted, nor is DECOR), for 200 ms. The music:
+// every media element that plays, and the gain ramps of fx.js (Web Audio).
 const PROBE = `(() => {
-  const lcp = [];
-  try {
-    new PerformanceObserver((list) => lcp.push(...list.getEntries()))
-      .observe({ type: 'largest-contentful-paint', buffered: true });
-  } catch {}
-  const long = { known: false, dropped: 0, list: [] };
-  try {
-    long.known = PerformanceObserver.supportedEntryTypes.includes('long-animation-frame');
-    if (long.known) {
-      new PerformanceObserver((list, observer, options) => {
-        for (const e of list.getEntries()) long.list.push([performance.timeOrigin + e.startTime, e.duration]);
-        long.dropped += options?.droppedEntriesCount ?? 0;
-      }).observe({ type: 'long-animation-frame', buffered: true });
-    }
-  } catch {
-    long.known = false;
-  }
-  const frames = [];
-  let running = false;
-  let last = null;
-  let until = 0;
-  const tick = (t) => {
-    if (last !== null) frames.push([performance.timeOrigin + last, t - last]);
-    last = t;
-    if (performance.now() < until) requestAnimationFrame(tick);
-    else running = false;
+  const doc = Math.random().toString(36).slice(2, 10);
+  const now = () => performance.timeOrigin + performance.now();
+  const send = (kind, fields = {}) => {
+    try {
+      window.hofMeasure(JSON.stringify({ kind, at: now(), doc, path: location.pathname + location.search, ...fields }));
+    } catch {}
   };
-  const record = (ms) => {
-    until = performance.now() + ms;
-    if (running) return;
-    running = true;
-    last = null;
+  const t = (start) => performance.timeOrigin + start;
+  const watch = (type, each, options = {}) => {
+    try {
+      new PerformanceObserver((list) => { for (const e of list.getEntries()) each(e); })
+        .observe({ type, buffered: true, ...options });
+    } catch {}
+  };
+  let settling = 0;
+  const settle = (after) => {
+    const token = ++settling;
+    const start = performance.now();
+    let quiet = null;
+    const tick = (frame) => {
+      if (token !== settling) return;
+      const busy = document.getAnimations().some((a) => {
+        const timing = a.effect && a.effect.getComputedTiming ? a.effect.getComputedTiming() : null;
+        const target = a.effect && a.effect.target;
+        if (target instanceof Element && target.closest(${JSON.stringify(DECOR)})) return false;
+        return timing !== null && timing.iterations !== Infinity && (a.playState === 'running' || a.playState === 'pending');
+      });
+      if (busy) quiet = null;
+      else if (quiet === null) quiet = frame;
+      if (quiet !== null && frame - quiet >= 200) return send('settled', { at: Math.max(t(quiet), after), after });
+      if (frame - start > ${SETTLE_MS - 1000}) return send('settled', { timeout: true, after });
+      requestAnimationFrame(tick);
+    };
     requestAnimationFrame(tick);
   };
-  if (sessionStorage.getItem('hof-measure.click') !== null) record(4000);
-  addEventListener('click', () => {
-    sessionStorage.setItem('hof-measure.click', String(performance.timeOrigin + performance.now()));
-    record(10000);
-  }, true);
-  addEventListener('pagehide', () => {
-    sessionStorage.setItem('hof-measure.frames', JSON.stringify(frames));
-    sessionStorage.setItem('hof-measure.long', JSON.stringify(long));
+  const viewed = (fields) => {
+    const at = fields.at ?? now();
+    send('view', { ...fields, at });
+    requestAnimationFrame(() => send('viewFrame'));
+    settle(at);
+  };
+  watch('paint', (e) => send('paint', { at: t(e.startTime), start: e.startTime, name: e.name }));
+  watch('largest-contentful-paint', (e) => {
+    const what = e.url ? e.url.split('/').pop().split('?')[0]
+      : e.element ? e.element.tagName.toLowerCase() + (e.element.classList[0] ? '.' + e.element.classList[0] : '') : '';
+    send('lcp', { at: t(e.startTime), start: e.startTime, what });
   });
-  window.__hofMeasure = { lcp, frames, long };
+  watch('long-animation-frame', (e) => send('loaf', { at: t(e.startTime), dur: e.duration }));
+  watch('event', (e) => send('input', { at: t(e.startTime), dur: e.duration, id: e.interactionId, name: e.name }), { durationThreshold: 16 });
+  watch('layout-shift', (e) => send('shift', { at: t(e.startTime), value: e.value, input: e.hadRecentInput }));
+  watch('mark', (e) => { if (e.name === 'hof:view') viewed({ at: t(e.startTime) }); });
+  // The answer to a press: from the event to the next frame after its handlers. Event Timing
+  // reports only answers of 16 ms or more, and a document that goes at once may report none.
+  addEventListener('click', (e) => {
+    send('press');
+    const from = t(e.timeStamp);
+    requestAnimationFrame(() => send('inputFrame', { dur: now() - from }));
+  }, true);
+  addEventListener('load', () => { const at = now(); send('load', { at }); settle(at); });
+  addEventListener('pageshow', (e) => { if (e.persisted) viewed({ restored: true }); });
+  addEventListener('pagehide', () => send('hide'));
+  const media = new WeakSet();
+  let count = 0;
+  const play = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function (...args) {
+    if (!media.has(this)) {
+      media.add(this);
+      const el = doc + ':' + (count += 1);
+      for (const type of ['playing', 'pause', 'waiting', 'ended', 'error', 'emptied']) {
+        this.addEventListener(type, () => send('media', { type, el, t: this.currentTime, src: String(this.currentSrc || this.src).split('/').pop().split('?')[0] }));
+      }
+    }
+    return play.apply(this, args);
+  };
+  if (typeof AudioParam !== 'undefined') {
+    const from = new WeakMap();
+    const set = AudioParam.prototype.setValueAtTime;
+    const ramp = AudioParam.prototype.linearRampToValueAtTime;
+    AudioParam.prototype.setValueAtTime = function (value, time) { from.set(this, time); return set.call(this, value, time); };
+    AudioParam.prototype.linearRampToValueAtTime = function (value, end) {
+      const start = from.get(this);
+      send('gain', { target: value, seconds: start === undefined ? 0 : Math.max(0, end - start) });
+      return ramp.call(this, value, end);
+    };
+  }
 })();`;
 
-// M12.9: the frames of a page before a press, 30 of them: the median length. On battery Chrome may
-// draw at most 30 frames a second (its energy saver); then every frame and animation is measured
-// at half the rate, so the press is refused rather than measured.
+// The frames of a page before the first press, 30 of them: the median length. On battery Chrome
+// may draw at most 30 frames a second (its energy saver); then the run is refused.
 const FRAME_RATE = `new Promise((done) => {
   const at = [];
   const tick = (now) => {
@@ -154,91 +319,6 @@ const FRAME_RATE = `new Promise((done) => {
   };
   requestAnimationFrame(tick);
 })`;
-const FRAME_MS_MAX = 25;
-
-const READ_PAGE = `(() => {
-  const fcp = performance.getEntriesByName('first-contentful-paint')[0];
-  const lcp = window.__hofMeasure.lcp.at(-1);
-  const element = lcp?.element;
-  const what = !lcp ? '' : lcp.url ? lcp.url.split('/').pop()
-    : element ? element.tagName.toLowerCase() + (element.classList[0] ? '.' + element.classList[0] : '') : '';
-  return { path: location.pathname, fcp: fcp?.startTime ?? null, lcp: lcp?.startTime ?? null, what };
-})()`;
-
-const READ_TRANSITION = `(() => {
-  const click = Number(sessionStorage.getItem('hof-measure.click'));
-  const left = JSON.parse(sessionStorage.getItem('hof-measure.frames') ?? '[]');
-  const leftLong = JSON.parse(sessionStorage.getItem('hof-measure.long') ?? 'null');
-  sessionStorage.removeItem('hof-measure.click');
-  sessionStorage.removeItem('hof-measure.frames');
-  sessionStorage.removeItem('hof-measure.long');
-  const t0 = performance.timeOrigin;
-  const nav = performance.getEntriesByType('navigation')[0];
-  const paint = performance.getEntriesByName('first-paint')[0] ?? performance.getEntriesByName('first-contentful-paint')[0];
-  const firstPaint = paint === undefined ? null : t0 + paint.startTime;
-  const old = left.filter(([at]) => at >= click).map(([, length]) => length);
-  const fresh = window.__hofMeasure.frames
-    .filter(([at]) => firstPaint !== null && at >= firstPaint && at < firstPaint + ${AFTER_ARRIVAL_MS})
-    .map(([, length]) => length);
-  // LoAF: on the page left, the frames that end after the press; on the next page, from its start
-  // (the frames before its first paint too) to the end of the window of its frames.
-  const here = window.__hofMeasure.long;
-  const oldLoaf = leftLong?.known
-    ? leftLong.list.filter(([at, length]) => at + length >= click).map(([, length]) => length)
-    : null;
-  const newLoaf = here.known && firstPaint !== null
-    ? here.list.filter(([at]) => at < firstPaint + ${AFTER_ARRIVAL_MS}).map(([, length]) => length)
-    : null;
-  return {
-    path: location.pathname,
-    toRequest: t0 + nav.requestStart - click,
-    toPaint: firstPaint === null ? null : firstPaint - click,
-    oldLong: old.filter((length) => length > ${LONG_FRAME_MS}).length,
-    oldMax: Math.max(0, ...old),
-    newFrames: fresh.length,
-    newLong: fresh.filter((length) => length > ${LONG_FRAME_MS}).length,
-    newMax: Math.max(0, ...fresh),
-    oldLoaf: oldLoaf?.length ?? null,
-    oldLoafMax: oldLoaf === null ? null : Math.max(0, ...oldLoaf),
-    newLoaf: newLoaf?.length ?? null,
-    newLoafMax: newLoaf === null ? null : Math.max(0, ...newLoaf),
-    loafDropped: (leftLong?.dropped ?? 0) + here.dropped,
-  };
-})()`;
-
-interface PageRead {
-  path: string;
-  fcp: number | null;
-  lcp: number | null;
-  what: string;
-}
-
-interface TransitionRead {
-  path: string;
-  toRequest: number;
-  toPaint: number | null;
-  oldLong: number;
-  oldMax: number;
-  newFrames: number;
-  newLong: number;
-  newMax: number;
-  // null: the browser has no long animation frames.
-  oldLoaf: number | null;
-  oldLoafMax: number | null;
-  newLoaf: number | null;
-  newLoafMax: number | null;
-  loafDropped: number;
-}
-
-interface Load {
-  fcp: number;
-  lcp: number;
-  what: string;
-  kb: number;
-  imageKb: number;
-  requests: number;
-  notModified: number;
-}
 
 class Refusal extends Error {}
 
@@ -292,15 +372,15 @@ async function courtSession(origin: string, gateKey: string | undefined) {
     for (const name of POUCHES) {
       await expectRedirect(post(origin, '/saeckel/pouches/new', { name }, cookie), 'Мешок');
     }
-    await expectRedirect(
-      post(
-        origin,
-        '/saeckel/income',
-        { amount: '1000', date: '2026-11-01', note: 'Жалованье' },
-        cookie,
-      ),
-      'Доход',
-    );
+    await expectRedirect(post(origin, '/saeckel/income', INCOME, cookie), 'Доход');
+    const laidOut = Object.fromEntries(POUCHES.map((_, i) => [`amount_${i + 1}`, LAID_OUT]));
+    await expectRedirect(post(origin, '/saeckel/assign', laidOut, cookie), 'Раскладка');
+    for (const { pouch, amount, date, note } of EXPENSES) {
+      await expectRedirect(
+        post(origin, `/saeckel/pouches/${pouch}/expense`, { amount, date, note }, cookie),
+        'Трата',
+      );
+    }
   } else {
     const login = await post(origin, '/login', {
       username: LOGIN,
@@ -321,6 +401,17 @@ async function courtSession(origin: string, gateKey: string | undefined) {
   return cookie.slice('__Host-hof='.length);
 }
 
+// The records a run wrote are deleted by the ordinary form of a record, so that the next run sees
+// the same budget.
+async function deleteRecords(origin: string, token: string, ids: readonly number[]) {
+  for (const id of ids) {
+    await expectRedirect(
+      post(origin, `/saeckel/operations/${id}/delete`, {}, `__Host-hof=${token}`),
+      `Удаление записи ${id}`,
+    );
+  }
+}
+
 // --- Chrome over the DevTools protocol --------------------------------------------------------
 
 type Params = Record<string, unknown>;
@@ -333,11 +424,35 @@ interface Message {
   error?: { message: string };
 }
 
+// The tab of a new Chrome. Its port file may be written before it answers on that port, so the
+// list of tabs is asked again for a few seconds.
+async function connect(port: string): Promise<WebSocket> {
+  let targets: { type: string; webSocketDebuggerUrl: string }[] | undefined;
+  for (let i = 0; targets === undefined; i += 1) {
+    try {
+      targets = (await (
+        await fetch(`http://127.0.0.1:${port}/json/list`)
+      ).json()) as typeof targets;
+    } catch (error) {
+      if (i >= 50) throw error;
+      await sleep(100);
+    }
+  }
+  const target = targets.find((t) => t.type === 'page');
+  if (target === undefined) throw new Refusal('В Chrome нет вкладки.');
+  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => {
+    socket.addEventListener('open', resolve, { once: true });
+    socket.addEventListener('error', reject, { once: true });
+  });
+  return socket;
+}
+
 async function startChrome(path: string) {
   const profile = mkdtempSync(join(tmpdir(), 'hof-measure-'));
-  // M12.9: the energy saver of Chrome off in the new profile (the setting of Local State, checked
-  // in Chrome 157: on battery at 19 % the frames stay 16.7 ms). In a new profile it turns on at 20 %
-  // of the battery and halves the frames; the frame rate is checked before each press as well.
+  // M12.9: the energy saver of Chrome off in the new profile (the setting of Local State). In a
+  // new profile it turns on at 20 % of the battery and halves the frames; the frame rate is
+  // checked before each way as well.
   writeFileSync(
     join(profile, 'Local State'),
     JSON.stringify({ performance_tuning: { battery_saver_mode: { state: 0 } } }),
@@ -345,14 +460,10 @@ async function startChrome(path: string) {
   const chrome = spawn(
     path,
     [
-      '--headless',
+      ...CHROME_FLAGS,
       `--user-data-dir=${profile}`,
       // Chrome takes a free port and writes it into the profile.
       '--remote-debugging-port=0',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--mute-audio',
-      '--hide-scrollbars',
       'about:blank',
     ],
     { stdio: 'ignore' },
@@ -374,17 +485,16 @@ async function startChrome(path: string) {
     rmSync(profile, { recursive: true, force: true });
     throw new Refusal(`Chrome не запустился: ${path} (--chrome).`);
   }
-  const targets = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as {
-    type: string;
-    webSocketDebuggerUrl: string;
-  }[];
-  const target = targets.find((t) => t.type === 'page');
-  if (target === undefined) throw new Refusal('В Chrome нет вкладки.');
-  const socket = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => {
-    socket.addEventListener('open', resolve, { once: true });
-    socket.addEventListener('error', reject, { once: true });
-  });
+  let socket: WebSocket;
+  try {
+    socket = await connect(port);
+  } catch (error) {
+    // A Chrome left running would keep this process alive after the error.
+    chrome.kill();
+    await exited;
+    rmSync(profile, { recursive: true, force: true });
+    throw error;
+  }
 
   let lastId = 0;
   const waiting = new Map<number, (message: Message) => void>();
@@ -413,23 +523,6 @@ async function startChrome(path: string) {
     return message.result as T;
   }
 
-  // The next event `method` from now on.
-  function next(method: string, timeoutMs: number) {
-    return new Promise<Params>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        listeners.delete(listener);
-        reject(new Refusal(`Страница не загрузилась за ${timeoutMs / 1000} с.`));
-      }, timeoutMs);
-      const listener = (name: string, params: Params) => {
-        if (name !== method) return;
-        clearTimeout(timer);
-        listeners.delete(listener);
-        resolve(params);
-      };
-      listeners.add(listener);
-    });
-  }
-
   async function evaluate<T>(expression: string): Promise<T> {
     const answer = await send<{ result: { value: T }; exceptionDetails?: { text: string } }>(
       'Runtime.evaluate',
@@ -447,60 +540,106 @@ async function startChrome(path: string) {
     rmSync(profile, { recursive: true, force: true });
   }
 
-  return { send, next, evaluate, listeners, close };
+  return { send, evaluate, listeners, close };
 }
 
 type Chrome = Awaited<ReturnType<typeof startChrome>>;
 
-// --- One page, one transition -----------------------------------------------------------------
-
-interface Request {
-  type: string;
-  status: number;
-  bytes: number;
+// What one tab has sent and asked for since it was opened.
+interface Tab {
+  chrome: Chrome;
+  events: Probe[];
+  requests: NetRequest[];
+  // The JS and CSS answered, by request id: their bodies are read for the weight with gzip.
+  code: Map<string, { url: string; type: string }>;
 }
 
-type Profile = (typeof PROFILES)[number];
-
-// The requests of the page now being measured, by the id Chrome gives them.
-let requests = new Map<string, Request>();
-
-function track(method: string, params: Params) {
-  const id = params.requestId as string;
-  if (method === 'Network.requestWillBeSent') {
-    const { request, type } = params as { request: { url: string }; type?: string };
-    // Headless Chrome asks for /favicon.ico by itself; the page never does.
-    if (!request.url.endsWith('/favicon.ico')) {
-      requests.set(id, { type: type ?? 'Other', status: 0, bytes: 0 });
+function record(tab: Tab) {
+  const open = new Map<string, NetRequest>();
+  tab.chrome.listeners.add((method, params) => {
+    if (method === 'Runtime.bindingCalled' && params.name === 'hofMeasure') {
+      tab.events.push(JSON.parse(params.payload as string) as Probe);
+      return;
     }
-  }
-  const request = requests.get(id);
-  if (request === undefined) return;
-  if (method === 'Network.responseReceived') {
-    request.status = (params as { response: { status: number } }).response.status;
-  }
-  if (method === 'Network.loadingFinished') {
-    request.bytes = (params as { encodedDataLength: number }).encodedDataLength;
-  }
+    // A new document committed in the tab: the one before is gone, its music with it. Its own
+    // pagehide does not reach the binding any more, so the time is taken here (the clock of the
+    // computer, as the page clock is).
+    if (method === 'Page.frameNavigated') {
+      const frame = (params as { frame: { parentId?: string } }).frame;
+      if (frame.parentId === undefined) {
+        tab.events.push({ kind: 'commit', at: Date.now(), doc: '', path: '' });
+      }
+      return;
+    }
+    const id = params.requestId as string;
+    if (method === 'Network.requestWillBeSent') {
+      const p = params as {
+        request: { url: string; method: string };
+        type?: string;
+        wallTime: number;
+        redirectResponse?: { status: number };
+      };
+      const before = open.get(id);
+      if (before !== undefined && p.redirectResponse !== undefined) {
+        before.status = p.redirectResponse.status;
+      }
+      // Headless Chrome asks for /favicon.ico by itself; the page never does.
+      if (p.request.url.endsWith('/favicon.ico')) return;
+      const request: NetRequest = {
+        method: p.request.method,
+        url: p.request.url,
+        type: p.type ?? 'Other',
+        at: p.wallTime * 1000,
+        status: 0,
+        bytes: 0,
+        canceled: false,
+        failed: false,
+      };
+      open.set(id, request);
+      tab.requests.push(request);
+      return;
+    }
+    const request = open.get(id);
+    if (request === undefined) return;
+    if (method === 'Network.responseReceived') {
+      request.status = (params as { response: { status: number } }).response.status;
+      if (request.status === 200 && (request.type === 'Script' || request.type === 'Stylesheet')) {
+        tab.code.set(id, { url: request.url, type: request.type });
+      }
+    } else if (method === 'Network.loadingFinished') {
+      request.bytes = (params as { encodedDataLength: number }).encodedDataLength;
+    } else if (method === 'Network.loadingFailed') {
+      request.failed = true;
+      request.canceled = (params as { canceled?: boolean }).canceled === true;
+    }
+  });
 }
 
 let product = '';
 
-// A new Chrome for every page and every transition: its cache is empty, and nothing a page before
-// left loading takes the bandwidth of the next one. «Звуки и движение» live in localStorage of the
-// site, so they are set on a plain file of it; then the session cookie, if any.
+interface FxSettings {
+  anim: boolean;
+  music: boolean;
+}
+
+// A new Chrome for every measurement: its cache is empty, and nothing a page before left loading
+// takes the bandwidth of the next one. «Звуки и движение» live in localStorage of the site, so they
+// are set on a plain file of it; then the session cookie, if any.
 async function browser(
   path: string,
   profile: Profile,
-  anim: boolean,
+  fx: FxSettings,
   origin: string,
   token: string | null,
-) {
+): Promise<Tab> {
   const chrome = await startChrome(path);
+  const tab: Tab = { chrome, events: [], requests: [], code: new Map() };
   try {
-    chrome.listeners.add(track);
+    record(tab);
     await chrome.send('Page.enable');
     await chrome.send('Network.enable');
+    await chrome.send('Runtime.enable');
+    await chrome.send('Runtime.addBinding', { name: 'hofMeasure' });
     await chrome.send('Page.addScriptToEvaluateOnNewDocument', { source: PROBE });
     await chrome.send('Emulation.setEmulatedMedia', {
       features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }],
@@ -514,8 +653,8 @@ async function browser(
       uploadThroughput: (profile.network.uploadMegabits * 1e6) / 8,
     });
     product ||= (await chrome.send<{ product: string }>('Browser.getVersion')).product;
-    await open(chrome, `${origin}/static/fonts/OFL.txt`);
-    const settings = { anim, sound: false, soundVol: 80, music: false, musicVol: 50 };
+    await open(tab, `${origin}/static/fonts/OFL.txt`, false);
+    const settings = { anim: fx.anim, sound: false, soundVol: 80, music: fx.music, musicVol: 50 };
     await chrome.evaluate(`localStorage.setItem('hof.fx', '${JSON.stringify(settings)}')`);
     if (token !== null) {
       await chrome.send('Network.setCookie', {
@@ -527,134 +666,544 @@ async function browser(
         sameSite: 'Lax',
       });
     }
-    return chrome;
+    return tab;
   } catch (error) {
     await chrome.close();
     throw error;
   }
 }
 
-async function open(chrome: Chrome, url: string) {
-  const loaded = chrome.next('Page.loadEventFired', 60_000);
-  await chrome.send('Page.navigate', { url });
-  await loaded;
+// The first event from index `since` on that `match` accepts, waited for.
+async function waitEvent(
+  tab: Tab,
+  since: number,
+  match: (e: Probe) => boolean,
+  timeoutMs: number,
+  what: string,
+): Promise<Probe> {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    const found = tab.events.slice(since).find(match);
+    if (found !== undefined) return found;
+    if (Date.now() > until) throw new Refusal(`${what}: нет события за ${timeoutMs / 1000} с.`);
+    await sleep(25);
+  }
 }
 
 // Without paint there is nothing to measure; a table of blanks would look like a result.
 const NO_PAINT = 'Chrome не рисовал страницу (погас экран, сон Mac?) — замер остановлен.';
 
-async function loadPage(chrome: Chrome, origin: string, path: string): Promise<Load> {
-  requests = new Map();
-  await open(chrome, origin + path);
-  await sleep(SETTLE_MS);
-  const page = await chrome.evaluate<PageRead>(READ_PAGE);
-  if (page.path !== path) {
-    throw new Refusal(`${path}: открылась ${page.path} — сессия или данные замера потеряны.`);
+// A document by its address: its load, then the end of its animations. The probe does not run in
+// a plain file (OFL.txt), so there only the load of Chrome is waited for.
+async function open(tab: Tab, url: string, probed = true) {
+  const since = tab.events.length;
+  if (!probed) {
+    const loaded = new Promise<void>((resolve) => {
+      const listener = (method: string) => {
+        if (method !== 'Page.loadEventFired') return;
+        tab.chrome.listeners.delete(listener);
+        resolve();
+      };
+      tab.chrome.listeners.add(listener);
+    });
+    await tab.chrome.send('Page.navigate', { url });
+    await loaded;
+    return null;
   }
-  if (page.fcp === null || page.lcp === null) throw new Refusal(`${path}: ${NO_PAINT}`);
-  const all = [...requests.values()];
-  const kb = (list: Request[]) => list.reduce((sum, r) => sum + r.bytes, 0) / 1024;
-  return {
-    fcp: page.fcp,
-    lcp: page.lcp,
-    what: page.what,
-    kb: kb(all),
-    imageKb: kb(all.filter((r) => r.type === 'Image')),
-    requests: all.length,
-    notModified: all.filter((r) => r.status === 304).length,
-  };
+  await tab.chrome.send('Page.navigate', { url });
+  const load = await waitEvent(tab, since, (e) => e.kind === 'load', ARRIVAL_MS, url);
+  const settled = await waitEvent(
+    tab,
+    since,
+    (e) => e.kind === 'settled' && e.doc === load.doc && e.after === load.at,
+    SETTLE_MS,
+    `${url}: анимации`,
+  );
+  return { load, settled };
 }
 
-async function press(chrome: Chrome, links: readonly string[]) {
-  const at = await chrome.evaluate<[number, number] | null>(`(() => {
-    for (const selector of ${JSON.stringify(links)}) {
-      const link = [...document.querySelectorAll(selector)].find((e) => e.getClientRects().length > 0);
-      if (!link) continue;
-      link.scrollIntoView({ block: 'center' });
-      const box = link.getBoundingClientRect();
+// The centre of the first visible element of the list, scrolled into view, pressed by the mouse.
+async function press(tab: Tab, selectors: readonly string[]) {
+  const at = await tab.chrome.evaluate<[number, number] | null>(`(() => {
+    for (const selector of ${JSON.stringify(selectors)}) {
+      const element = [...document.querySelectorAll(selector)].find((e) => e.getClientRects().length > 0);
+      if (!element) continue;
+      element.scrollIntoView({ block: 'center' });
+      const box = element.getBoundingClientRect();
       return [box.left + box.width / 2, box.top + box.height / 2];
     }
     return null;
   })()`);
-  if (at === null) throw new Refusal(`Нет ссылки ${links.join(' или ')}.`);
+  if (at === null) throw new Refusal(`Нет элемента ${selectors.join(' или ')}.`);
   const [x, y] = at;
   for (const type of ['mousePressed', 'mouseReleased']) {
-    await chrome.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
+    await tab.chrome.send('Input.dispatchMouseEvent', {
+      type,
+      x,
+      y,
+      button: 'left',
+      clickCount: 1,
+    });
   }
 }
 
-async function transition(
-  chrome: Chrome,
-  origin: string,
-  { from, to, links }: (typeof TRANSITIONS)[number],
-) {
-  // Both pages once before: the press comes with their files in the cache, as on a second visit.
-  await open(chrome, origin + to);
-  await open(chrome, origin + from);
+// A field: focused, its text selected and replaced by typing, as a person would.
+async function fill(tab: Tab, selector: string, text: string) {
+  const found = await tab.chrome.evaluate<boolean>(`(() => {
+    const field = [...document.querySelectorAll(${JSON.stringify(selector)})].find((e) => e.getClientRects().length > 0);
+    if (!field) return false;
+    field.focus();
+    field.select();
+    return true;
+  })()`);
+  if (!found) throw new Refusal(`Нет поля ${selector}.`);
+  await tab.chrome.send('Input.insertText', { text });
+}
+
+// What a view shows for the checks of a step.
+interface ViewRead {
+  rows: { href: string; text: string }[];
+  fingerprint: string | null;
+  refused: boolean;
+  blots: Blot[];
+}
+
+export interface Blot {
+  file: string;
+  place: string;
+  // Document coordinates, CSS px: left, top, width, height.
+  box: [number, number, number, number];
+}
+
+const READ_VIEW = `(() => ({
+  rows: [...document.querySelectorAll('a[href^="/saeckel/operations/"]')].map((a) => ({
+    href: a.getAttribute('href'),
+    text: (a.closest('tr, li') ?? a).textContent,
+  })),
+  fingerprint: document.querySelector('.sk-list')?.textContent ?? null,
+  refused: document.querySelector('.err-text') !== null,
+  blots: [...document.querySelectorAll('img.blot')].filter((img) => img.getClientRects().length > 0).map((img) => {
+    const box = img.getBoundingClientRect();
+    return {
+      file: img.getAttribute('src').split('/').pop().split('?')[0],
+      place: [...img.classList].filter((name) => name !== 'blot').join(' '),
+      box: [box.left + scrollX, box.top + scrollY, box.width, box.height].map((v) => Math.round(v)),
+    };
+  }),
+}))()`;
+
+// One step measured. The press is the click the page itself saw (or the moment Back was asked
+// for); the step arrives with the first new document loaded or view drawn after it, on one of its
+// addresses; it ends AFTER_STEP_MS after its animations have ended.
+export interface StepRead {
+  name: string;
+  // From the press, ms: the request of the next view (a document, a fetch, a form), its first
+  // frame, the end of its animations, and its LCP when it is a new document.
+  toRequest: number | null;
+  toView: number | null;
+  toSettled: number | null;
+  toLcp: number | null;
+  newDocument: boolean;
+  loaf: { count: number; max: number; total: number };
+  input: number | null;
+  shift: number;
+  requests: ReturnType<typeof requestStats>;
+  silence?: ReturnType<typeof silence>;
+  blots?: Blot[];
+}
+
+interface Context {
+  origin: string;
+  fingerprint: string;
+  music: boolean;
+}
+
+// The slowest answer to the press: Event Timing where the browser gave it, else the next frame.
+function answer(events: readonly Probe[], window: Window, since: number) {
+  const timing = slowestInput(events, window);
+  const frame = events.slice(since).find((e) => e.kind === 'inputFrame');
+  const values = [timing, frame === undefined ? null : (frame.dur as number)];
+  const known = values.filter((v): v is number => v !== null);
+  return known.length === 0 ? null : Math.max(...known);
+}
+
+async function step(
+  tab: Tab,
+  context: Context,
+  def: Step,
+): Promise<{ read: StepRead; ids: number[] }> {
   await sleep(BEFORE_PRESS_MS);
-  const frame = await chrome.evaluate<number>(FRAME_RATE);
+  for (const [selector, text] of Object.entries(def.fill ?? {})) await fill(tab, selector, text);
+  const since = tab.events.length;
+  if (def.back === true) {
+    await tab.chrome.evaluate(
+      `window.hofMeasure(JSON.stringify({ kind: 'press', at: performance.timeOrigin + performance.now(), doc: '', path: location.pathname + location.search })), history.back(), true`,
+    );
+  } else {
+    await press(tab, def.press!);
+  }
+  const pressed = await waitEvent(tab, since, (e) => e.kind === 'press', 5000, def.name);
+  const arrival = await waitEvent(
+    tab,
+    since,
+    (e) => (e.kind === 'load' || e.kind === 'view') && e.at >= pressed.at,
+    ARRIVAL_MS,
+    def.name,
+  );
+  if (!arrivedAt(arrival.path, def.to)) {
+    throw new Refusal(
+      `${def.name}: открылась ${arrival.path} — сессия или данные замера потеряны.`,
+    );
+  }
+  const settled = await waitEvent(
+    tab,
+    since,
+    (e) => e.kind === 'settled' && e.doc === arrival.doc && e.after === arrival.at,
+    SETTLE_MS,
+    `${def.name}: анимации`,
+  );
+  const settledAt = settled.timeout === true ? null : settled.at;
+  let end = Math.max(settledAt ?? settled.at, arrival.at) + AFTER_STEP_MS;
+  // With the music on, the step lasts until it plays again (a new document starts it anew).
+  if (context.music) {
+    const until = Date.now() + MUSIC_BACK_MS;
+    while (!playingNow(tab.events) && Date.now() < until) await sleep(50);
+    end = Math.max(end, Date.now());
+  }
+  while (Date.now() < end) await sleep(50);
+
+  const window: Window = { from: pressed.at, to: end };
+  const events = tab.events;
+  const newDocument = arrival.kind === 'load';
+  const viewAt = newDocument
+    ? events.find(
+        (e) => e.kind === 'paint' && e.name === 'first-contentful-paint' && e.doc === arrival.doc,
+      )?.at
+    : events.find((e, i) => i >= since && e.kind === 'viewFrame' && e.doc === arrival.doc)?.at;
+  if (viewAt === undefined) throw new Refusal(`${def.name}: ${NO_PAINT}`);
+  const lcp = newDocument
+    ? events.filter((e) => e.kind === 'lcp' && e.doc === arrival.doc).at(-1)
+    : undefined;
+  const firstRequest = tab.requests.find(
+    (r) =>
+      r.at >= pressed.at - 5 &&
+      (r.type === 'Document' || r.type === 'Fetch' || r.type === 'XHR' || r.method === 'POST'),
+  );
+  const read: StepRead = {
+    name: def.name,
+    toRequest: firstRequest === undefined ? null : firstRequest.at - pressed.at,
+    toView: viewAt - pressed.at,
+    // A document may fire its load before its first frame; the end is never before the view.
+    toSettled: settledAt === null ? null : Math.max(settledAt, viewAt) - pressed.at,
+    toLcp: lcp === undefined ? null : lcp.at - pressed.at,
+    newDocument,
+    loaf: longFrames(events, window),
+    input: def.back === true ? null : answer(events, window, since),
+    shift: layoutShift(events, window),
+    requests: requestStats(tab.requests, window),
+  };
+  if (context.music) {
+    const music = events.filter((e) => e.kind !== 'media' || String(e.src).startsWith('music-'));
+    read.silence = silence(music, window);
+  }
+
+  const view = await tab.chrome.evaluate<ViewRead>(READ_VIEW);
+  let ids: number[] = [];
+  const rows = view.rows.length;
+  if (
+    def.check === 'fingerprint' &&
+    normalizeText(view.fingerprint ?? '') !== context.fingerprint
+  ) {
+    throw new Refusal(`${def.name}: данные замера изменились — мешки не те, что в начале серии.`);
+  }
+  if (def.check === 'refused' && !view.refused) {
+    throw new Refusal(`${def.name}: форма не отказала.`);
+  }
+  if (def.check === 'written' && view.refused) throw new Refusal(`${def.name}: форма отказала.`);
+  if (def.check === 'first-page') {
+    ids = recordIds(view.rows, NOTE);
+    if (rows !== PAGE_SIZE || ids.length !== 1) {
+      throw new Refusal(`${def.name}: ${rows} строк и ${ids.length} записей «${NOTE}».`);
+    }
+  }
+  if (def.check === 'second-page' && rows !== SEEDED + 1 - PAGE_SIZE) {
+    throw new Refusal(`${def.name}: ${rows} строк на второй странице.`);
+  }
+  if (def.check === 'blots' || def.check === 'first-page' || def.check === 'fingerprint') {
+    read.blots = view.blots;
+  }
+  return { read, ids };
+}
+
+// The data before the series and after it, in a browser without throttling: the pouches as Мешки
+// show them, the number of records on both pages of Летопись. Records of NOTE left by a run that
+// was interrupted are deleted first.
+async function verify(chromePath: string, origin: string, token: string) {
+  const tab = await browser(chromePath, PROFILES[1], { anim: false, music: false }, origin, token);
+  try {
+    const rows = async (path: string) => {
+      await open(tab, origin + path);
+      return (await tab.chrome.evaluate<ViewRead>(READ_VIEW)).rows;
+    };
+    const left = [
+      ...recordIds(await rows('/saeckel/history'), NOTE),
+      ...recordIds(await rows('/saeckel/history?page=2'), NOTE),
+    ];
+    if (left.length > 0) {
+      process.stderr.write(
+        `удаляю ${left.length} записей «${NOTE}», оставшихся от прерванного прогона\n`,
+      );
+      await deleteRecords(origin, token, left);
+    }
+    const first = (await rows('/saeckel/history')).length;
+    const second = (await rows('/saeckel/history?page=2')).length;
+    if (first !== PAGE_SIZE || second !== SEEDED - PAGE_SIZE) {
+      throw new Refusal(
+        `В Летописи ${first} + ${second} записей вместо ${PAGE_SIZE} + ${SEEDED - PAGE_SIZE}: ` +
+          'база разработки не с данными замера M14 — пересоздайте её (README.md).',
+      );
+    }
+    await open(tab, `${origin}/saeckel/`);
+    const view = await tab.chrome.evaluate<ViewRead>(READ_VIEW);
+    if (view.fingerprint === null) throw new Refusal('На странице Мешков нет колонки мешков.');
+    return normalizeText(view.fingerprint);
+  } finally {
+    await tab.chrome.close();
+  }
+}
+
+// --- The parts --------------------------------------------------------------------------------
+
+export interface LoadRead {
+  fcp: number | null;
+  lcp: number | null;
+  what: string;
+  kb: number;
+  imageKb: number;
+  jsGzipKb: number;
+  cssGzipKb: number;
+  requests: number;
+  notModified: number;
+  loaf: { count: number; max: number; total: number };
+  shift: number;
+}
+
+// One document by its address. The weight of JS and CSS is that of their bodies compressed as
+// nginx does in production (gzip, level 1 — nginx's default); the local server does not compress.
+async function loadPage(tab: Tab, origin: string, path: string, weigh: boolean): Promise<LoadRead> {
+  const since = tab.events.length;
+  const firstRequest = tab.requests.length;
+  tab.code.clear();
+  const opened = (await open(tab, origin + path))!;
+  if (opened.load.path !== path) {
+    throw new Refusal(
+      `${path}: открылась ${opened.load.path} — сессия или данные замера потеряны.`,
+    );
+  }
+  const end = Math.max(opened.settled.at, opened.load.at) + AFTER_STEP_MS;
+  while (Date.now() < end) await sleep(50);
+  const events = tab.events.slice(since).filter((e) => e.doc === opened.load.doc);
+  const fcp = events.find((e) => e.kind === 'paint' && e.name === 'first-contentful-paint');
+  const lcp = events.filter((e) => e.kind === 'lcp').at(-1);
+  if (fcp === undefined || lcp === undefined) throw new Refusal(`${path}: ${NO_PAINT}`);
+  // The page clock counts from the start of the navigation (timeOrigin): FCP and LCP as the
+  // browser reports them.
+  const navigationStart = fcp.at - (fcp.start as number);
+  const all = tab.requests.slice(firstRequest);
+  const kb = (list: NetRequest[]) => list.reduce((sum, r) => sum + r.bytes, 0) / 1024;
+  let jsGzip = 0;
+  let cssGzip = 0;
+  if (weigh) {
+    for (const [id, { type }] of tab.code) {
+      const body = await tab.chrome
+        .send<{ body: string; base64Encoded: boolean }>('Network.getResponseBody', {
+          requestId: id,
+        })
+        .catch(() => null);
+      if (body === null) continue;
+      const bytes = Buffer.from(body.body, body.base64Encoded ? 'base64' : 'utf8');
+      const size = gzipSync(bytes, { level: 1 }).length / 1024;
+      if (type === 'Script') jsGzip += size;
+      else cssGzip += size;
+    }
+  }
+  const window: Window = { from: navigationStart, to: end };
+  return {
+    fcp: fcp.start as number,
+    lcp: lcp.start as number,
+    what: lcp.what as string,
+    kb: kb(all),
+    imageKb: kb(all.filter((r) => r.type === 'Image')),
+    jsGzipKb: jsGzip,
+    cssGzipKb: cssGzip,
+    requests: all.length,
+    notModified: all.filter((r) => r.status === 304).length,
+    loaf: longFrames(events, window),
+    shift: layoutShift(events, window),
+  };
+}
+
+export interface LoadRecord {
+  profile: string;
+  anim: boolean;
+  path: string;
+  run: number;
+  cold: LoadRead;
+  warm: LoadRead;
+}
+
+export interface ChainRecord {
+  profile: string;
+  anim: boolean;
+  run: number;
+  steps: StepRead[];
+}
+
+export interface MemoryRead {
+  cycle: number;
+  documents: number;
+  nodes: number;
+  listeners: number;
+  heapKb: number;
+}
+
+async function checkFrames(tab: Tab) {
+  const frame = await tab.chrome.evaluate<number>(FRAME_RATE);
   if (frame > FRAME_MS_MAX) {
     throw new Refusal(
       `Chrome рисует кадр раз в ${Math.round(frame)} мс, а не раз в 16,7 мс (энергосбережение?) — ` +
         'замер остановлен.',
     );
   }
-  const arrived = chrome.next('Page.loadEventFired', 60_000);
-  await press(chrome, links);
-  await arrived;
-  await sleep(AFTER_ARRIVAL_MS);
-  const read = await chrome.evaluate<TransitionRead>(READ_TRANSITION);
-  if (read.path !== to) throw new Refusal(`Переход в ${to}: открылась ${read.path}.`);
-  // The page left may go before its next frame; the page that came must have drawn some.
-  if (read.toPaint === null || read.newFrames === 0) throw new Refusal(`${to}: ${NO_PAINT}`);
-  return read;
 }
 
-// --- Runs and the table -----------------------------------------------------------------------
-
-function median(values: number[]) {
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
+// The scenario in one new Chrome: the sign-in by its form, the views of WARM once, the way, the
+// sign-out. The record the way wrote is deleted after it.
+async function chain(
+  chromePath: string,
+  profile: Profile,
+  fx: FxSettings,
+  context: Context,
+  token: string,
+): Promise<StepRead[]> {
+  const tab = await browser(chromePath, profile, fx, context.origin, null);
+  const ids: number[] = [];
+  try {
+    await open(tab, `${context.origin}/login`);
+    await checkFrames(tab);
+    const quiet = { ...context, music: false };
+    const reads = [(await step(tab, quiet, SIGN_IN)).read];
+    for (const path of WARM) await open(tab, context.origin + path);
+    if (fx.music) {
+      const until = Date.now() + 30_000;
+      while (!playingNow(tab.events)) {
+        if (Date.now() > until) throw new Refusal('Музыка не заиграла за 30 с.');
+        await sleep(100);
+      }
+    }
+    for (const def of WAY) {
+      const { read, ids: written } = await step(tab, context, def);
+      reads.push(read);
+      ids.push(...written);
+    }
+    reads.push((await step(tab, quiet, SIGN_OUT)).read);
+    return reads;
+  } finally {
+    await tab.chrome.close();
+    await deleteRecords(context.origin, token, [...new Set(ids)]);
+  }
 }
 
-const ms = (value: number) => String(Math.round(value));
-
-function spread(values: number[]) {
-  if (values.length < 2) return ms(median(values));
-  return `${ms(median(values))} (${ms(Math.min(...values))}–${ms(Math.max(...values))})`;
+// The way repeated in one tab, signed in by the cookie: what stays in memory. Before each count
+// the garbage is collected.
+async function memory(chromePath: string, context: Context, token: string) {
+  const fx = { anim: true, music: false };
+  const tab = await browser(chromePath, PROFILES[1], fx, context.origin, token);
+  const counts: MemoryRead[] = [];
+  const count = async (cycle: number) => {
+    await tab.chrome.send('HeapProfiler.collectGarbage');
+    const dom = await tab.chrome.send<{
+      documents: number;
+      nodes: number;
+      jsEventListeners: number;
+    }>('Memory.getDOMCounters');
+    const heap = await tab.chrome.send<{ usedSize: number }>('Runtime.getHeapUsage');
+    counts.push({
+      cycle,
+      documents: dom.documents,
+      nodes: dom.nodes,
+      listeners: dom.jsEventListeners,
+      heapKb: heap.usedSize / 1024,
+    });
+  };
+  try {
+    for (const path of WARM) await open(tab, context.origin + path);
+    await checkFrames(tab);
+    await count(0);
+    for (let cycle = 1; cycle <= MEMORY_CYCLES; cycle += 1) {
+      process.stderr.write(`память: круг ${cycle}/${MEMORY_CYCLES}\n`);
+      const ids: number[] = [];
+      for (const def of WAY) ids.push(...(await step(tab, context, def)).ids);
+      await deleteRecords(context.origin, token, [...new Set(ids)]);
+      if (MEMORY_AT.includes(cycle)) await count(cycle);
+    }
+    return counts;
+  } finally {
+    await tab.chrome.close();
+  }
 }
 
-// LoAF of one page over the runs: number / longest, the medians. A browser without the API gives
-// no number; entries it could not give are named.
-function longFrames(
-  list: TransitionRead[],
-  count: 'oldLoaf' | 'newLoaf',
-  longest: 'oldLoafMax' | 'newLoafMax',
-) {
-  if (list.some((read) => read[count] === null)) return 'нет API';
-  const cell =
-    `${ms(median(list.map((read) => read[count]!)))} / ` +
-    `${ms(median(list.map((read) => read[longest]!)))}`;
-  const lost = list.reduce((sum, read) => sum + read.loafDropped, 0);
-  return lost > 0 ? `${cell} (потеряно ${lost})` : cell;
+// --- The series -------------------------------------------------------------------------------
+
+export interface Series {
+  label: string;
+  date: string;
+  product: string;
+  flags: string[];
+  node: string;
+  power: { start: string; end: string };
+  // The addresses of the versioned files of the sign-in page: which build was measured.
+  build: string[];
+  fingerprint: string;
+  runs: number;
+  loads: LoadRecord[];
+  chain: ChainRecord[];
+  music: ChainRecord[];
+  memory: MemoryRead[];
 }
 
-async function main() {
-  const { values } = parseArgs({
-    options: {
-      label: { type: 'string' },
-      'gate-key': { type: 'string' },
-      runs: { type: 'string', default: '3' },
-      origin: { type: 'string', default: 'http://localhost:3000' },
-      chrome: {
-        type: 'string',
-        default: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      },
-    },
-  });
+const PARTS = ['loads', 'chain', 'music', 'memory'] as const;
+
+function power() {
+  if (process.platform !== 'darwin') return '';
+  const answer = spawnSync('pmset', ['-g', 'ps'], { encoding: 'utf8' });
+  return normalizeText(answer.stdout ?? '');
+}
+
+async function build(origin: string) {
+  const page = await (await fetch(`${origin}/login`)).text();
+  return [...new Set(page.match(/[\w./-]+\?v=[0-9a-f]{12}/g) ?? [])].sort();
+}
+
+async function measure(values: {
+  label?: string;
+  out?: string;
+  'gate-key'?: string;
+  runs: string;
+  parts: string;
+  origin: string;
+  chrome: string;
+}) {
   const runs = Number(values.runs);
-  if (values.label === undefined || !Number.isInteger(runs) || runs < 1 || runs > 10) {
+  const parts = values.parts.split(',');
+  if (
+    values.label === undefined ||
+    values.out === undefined ||
+    !Number.isInteger(runs) ||
+    runs < 1 ||
+    runs > 20 ||
+    parts.some((part) => !(PARTS as readonly string[]).includes(part))
+  ) {
     throw new Refusal(USAGE);
   }
   const origin = new URL(values.origin).origin;
@@ -669,99 +1218,135 @@ async function main() {
   }
 
   const token = await courtSession(origin, values['gate-key']);
-  const loads = new Map<string, { cold: Load[]; warm: Load[] }>();
-  const moves = new Map<string, TransitionRead[]>();
-  for (let run = 1; run <= runs; run += 1) {
-    for (const profile of PROFILES) {
-      for (const anim of [false, true]) {
-        process.stderr.write(`прогон ${run}/${runs}: ${profile.name}, анимации ${anim}\n`);
-        for (const { path, signedIn } of PAGES) {
-          const chrome = await browser(
-            values.chrome,
-            profile,
-            anim,
-            origin,
-            signedIn ? token : null,
-          );
-          try {
-            const key = `${profile.name}|${anim}|${path}`;
-            const entry = loads.get(key) ?? { cold: [], warm: [] };
-            entry.cold.push(await loadPage(chrome, origin, path));
-            entry.warm.push(await loadPage(chrome, origin, path));
-            loads.set(key, entry);
-          } finally {
-            await chrome.close();
-          }
-        }
-        for (const move of TRANSITIONS) {
-          const chrome = await browser(values.chrome, profile, anim, origin, token);
-          try {
-            const key = `${profile.name}|${anim}|${move.name}`;
-            moves.set(key, [...(moves.get(key) ?? []), await transition(chrome, origin, move)]);
-          } finally {
-            await chrome.close();
-          }
-        }
-      }
-    }
-  }
+  const fingerprint = await verify(values.chrome, origin, token);
+  const context: Context = { origin, fingerprint, music: false };
+  const series: Series = {
+    label: values.label,
+    date: new Date().toISOString(),
+    product,
+    flags: CHROME_FLAGS,
+    node: process.version,
+    power: { start: power(), end: '' },
+    build: await build(origin),
+    fingerprint,
+    runs,
+    loads: [],
+    chain: [],
+    music: [],
+    memory: [],
+  };
+  const save = () => {
+    series.product = product;
+    series.power.end = power();
+    writeFileSync(values.out!, `${JSON.stringify(series, null, 1)}\n`);
+  };
 
-  const out = [
-    `## Замер: ${values.label}, ${new Date().toISOString().slice(0, 10)}, ${product}, прогонов ${runs}`,
-    '',
-    'Медианы, мс; в скобках — разброс прогонов. Вес — по сети до load + 1 с.',
-  ];
-  for (const profile of PROFILES) {
-    out.push(
-      '',
-      `### ${profile.name}: ${profile.about}`,
-      '',
-      '| Страница | Анимации | FCP | LCP | Элемент LCP | КБ (картинки) | Запросов | Повторно: LCP | Повторно: 304 из |',
-      '|---|---|---|---|---|---|---|---|---|',
-    );
-    for (const anim of [false, true]) {
-      for (const { path } of PAGES) {
-        const { cold, warm } = loads.get(`${profile.name}|${anim}|${path}`)!;
-        const pick = (list: Load[], field: keyof Omit<Load, 'what'>) =>
-          list.map((load) => load[field]);
-        out.push(
-          `| ${path} | ${anim ? 'вкл' : 'выкл'} | ${ms(median(pick(cold, 'fcp')))} | ` +
-            `${spread(pick(cold, 'lcp'))} | ${cold.at(-1)!.what} | ` +
-            `${ms(median(pick(cold, 'kb')))} (${ms(median(pick(cold, 'imageKb')))}) | ` +
-            `${ms(median(pick(cold, 'requests')))} | ${ms(median(pick(warm, 'lcp')))} | ` +
-            `${ms(median(pick(warm, 'notModified')))} из ${ms(median(pick(warm, 'requests')))} |`,
-        );
+  // Run 0 warms the server and the computer up and is not kept. Inside a run every configuration
+  // comes once, so a slow drift of the computer falls on all of them alike.
+  if (parts.includes('loads')) {
+    for (let run = 0; run <= runs; run += 1) {
+      for (const profile of PROFILES) {
+        for (const anim of [false, true]) {
+          process.stderr.write(
+            `документы, прогон ${run}/${runs}: ${profile.name}, анимации ${anim}\n`,
+          );
+          for (const { path, signedIn } of PAGES) {
+            const tab = await browser(
+              values.chrome,
+              profile,
+              { anim, music: false },
+              origin,
+              signedIn ? token : null,
+            );
+            try {
+              const cold = await loadPage(tab, origin, path, true);
+              const warm = await loadPage(tab, origin, path, false);
+              if (run > 0)
+                series.loads.push({ profile: profile.name, anim, path, run, cold, warm });
+            } finally {
+              await tab.chrome.close();
+            }
+          }
+        }
       }
-    }
-    out.push(
-      '',
-      `Переходы (${profile.name.toLowerCase()}), кадры дольше ${LONG_FRAME_MS} мс: число / самый ` +
-        'длинный — по requestAnimationFrame (rAF) и long animation frames (LoAF).',
-      '',
-      '| Переход | Анимации | Нажатие → запрос | Нажатие → первая отрисовка | rAF старой страницы | rAF новой страницы | LoAF старой страницы | LoAF новой страницы |',
-      '|---|---|---|---|---|---|---|---|',
-    );
-    for (const anim of [false, true]) {
-      for (const { name } of TRANSITIONS) {
-        const list = moves.get(`${profile.name}|${anim}|${name}`)!;
-        const pick = (
-          field: 'toRequest' | 'toPaint' | 'oldLong' | 'oldMax' | 'newLong' | 'newMax',
-        ) => list.map((read) => read[field] ?? NaN);
-        out.push(
-          `| ${name} | ${anim ? 'вкл' : 'выкл'} | ${spread(pick('toRequest'))} | ` +
-            `${spread(pick('toPaint'))} | ${ms(median(pick('oldLong')))} / ${ms(median(pick('oldMax')))} | ` +
-            `${ms(median(pick('newLong')))} / ${ms(median(pick('newMax')))} | ` +
-            `${longFrames(list, 'oldLoaf', 'oldLoafMax')} | ${longFrames(list, 'newLoaf', 'newLoafMax')} |`,
-        );
-      }
+      save();
     }
   }
-  process.stdout.write(`${out.join('\n')}\n`);
+  if (parts.includes('chain')) {
+    for (let run = 0; run <= runs; run += 1) {
+      for (const profile of PROFILES) {
+        for (const anim of [false, true]) {
+          process.stderr.write(`путь, прогон ${run}/${runs}: ${profile.name}, анимации ${anim}\n`);
+          const steps = await chain(values.chrome, profile, { anim, music: false }, context, token);
+          if (run > 0) series.chain.push({ profile: profile.name, anim, run, steps });
+        }
+      }
+      save();
+    }
+  }
+  if (parts.includes('music')) {
+    for (let run = 0; run <= runs; run += 1) {
+      for (const profile of PROFILES) {
+        process.stderr.write(`музыка, прогон ${run}/${runs}: ${profile.name}\n`);
+        const steps = await chain(
+          values.chrome,
+          profile,
+          { anim: true, music: true },
+          { ...context, music: true },
+          token,
+        );
+        if (run > 0) series.music.push({ profile: profile.name, anim: true, run, steps });
+      }
+      save();
+    }
+  }
+  if (parts.includes('memory')) {
+    series.memory = await memory(values.chrome, context, token);
+    save();
+  }
+  // The data must be as they were before the series.
+  if ((await verify(values.chrome, origin, token)) !== fingerprint) {
+    throw new Refusal('После серии данные замера не те, что до неё.');
+  }
+  await post(origin, '/logout', {}, `__Host-hof=${token}`);
+  save();
 }
 
-try {
-  await main();
-} catch (error) {
-  process.stderr.write(`${error instanceof Refusal ? error.message : String(error)}\n`);
-  process.exitCode = 1;
+async function main() {
+  const { values, positionals } = parseArgs({
+    allowPositionals: true,
+    options: {
+      label: { type: 'string' },
+      out: { type: 'string' },
+      'gate-key': { type: 'string' },
+      runs: { type: 'string', default: '10' },
+      parts: { type: 'string', default: PARTS.join(',') },
+      origin: { type: 'string', default: 'http://localhost:3000' },
+      chrome: {
+        type: 'string',
+        default: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      },
+      report: { type: 'boolean', default: false },
+    },
+  });
+  if (values.report) {
+    if (positionals.length === 0) throw new Refusal(USAGE);
+    const series = positionals.map((file) => JSON.parse(readFileSync(file, 'utf8')) as Series);
+    process.stdout.write(report(series));
+    return;
+  }
+  if (positionals.length > 0) throw new Refusal(USAGE);
+  await measure(values);
+}
+
+if (import.meta.main) {
+  try {
+    await main();
+  } catch (error) {
+    process.stderr.write(
+      `${error instanceof Refusal ? error.message : error instanceof Error ? error.stack : String(error)}\n`,
+    );
+    // A browser or a socket still open must not keep a failed series running for hours.
+    process.exit(1);
+  }
 }
