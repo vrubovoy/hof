@@ -11,7 +11,7 @@ import { BrowserRouter, Route, Routes } from 'react-router';
 import type { ViewData } from '../saeckel/data.ts';
 import { queryClient, viewQuery } from './queries.ts';
 import { HistoryView, PouchesView, PouchView, type Pictures } from './saeckel.tsx';
-import { useShownLocation } from './way.tsx';
+import { listenForPresses, useShownLocation } from './way.tsx';
 
 function embedded<T>(id: string): T {
   return JSON.parse(document.getElementById(id)!.textContent) as T;
@@ -43,6 +43,7 @@ function Views({ pictures }: { pictures: Pictures }) {
   );
 }
 
+listenForPresses();
 const first = embedded<ViewData>('hof-data');
 const query = viewQuery(location.pathname, location.search);
 if (query !== null) queryClient.setQueryData(query.key, first.data);

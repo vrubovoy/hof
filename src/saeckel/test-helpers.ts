@@ -3,6 +3,8 @@
 // Database: hof_test as hof_saeckel. Nothing here registers a hook: each test file migrates,
 // empties the tables before each test and closes both pools itself.
 
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { Pool } from 'pg';
@@ -35,8 +37,58 @@ export const app = createSaeckelApp(pool, signedIn, SETTINGS, CORE_SCRIPTS);
 export const deadPool = new Pool({ host: '127.0.0.1', port: 1 });
 export const appWithoutDatabase = createSaeckelApp(deadPool, signedIn, SETTINGS, CORE_SCRIPTS);
 
-export function get(path: string, who?: string, target = app) {
-  return target.request(path, { headers: who === undefined ? {} : { 'x-test-user': who } });
+// Prototype B of M14: the views of the way (Мешки, a pouch, Летопись) come as a shell with their
+// data; the React components draw them in the browser. A shell asked for here is drawn by the
+// same components on the server side (src/web/render.tsx, bundled for Node by esbuild once), and
+// its markup put into the shell, so the tests read the page as the browser shows it.
+let renderView: ((url: string, data: unknown, pictures: unknown) => string) | undefined;
+
+async function drawView(url: string, page: string): Promise<string> {
+  const shell = /<div id="app" data-session><\/div>/;
+  const data = /<script type="application\/json" id="hof-data">([^<]*)<\/script>/.exec(page);
+  const pictures = /<script type="application\/json" id="hof-pictures">([^<]*)<\/script>/.exec(
+    page,
+  );
+  if (!shell.test(page) || data === null || pictures === null) return page;
+  if (renderView === undefined) {
+    const { build } = await import('esbuild');
+    // Written inside node_modules, so that the packages it imports resolve as for any module.
+    const outfile = join(
+      import.meta.dirname,
+      '..',
+      '..',
+      'node_modules',
+      '.cache',
+      'hof',
+      'render.mjs',
+    );
+    await build({
+      entryPoints: [join(import.meta.dirname, '..', 'web', 'render.tsx')],
+      outfile,
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      jsx: 'automatic',
+      packages: 'external',
+      logLevel: 'error',
+    });
+    const module = (await import(pathToFileURL(outfile).href)) as { renderView: typeof renderView };
+    renderView = module.renderView;
+  }
+  const view = renderView!(url, JSON.parse(data[1]!), JSON.parse(pictures[1]!));
+  return page.replace(shell, `<div id="app" data-session>${view}</div>`);
+}
+
+export async function get(path: string, who?: string, target = app) {
+  const response = await target.request(path, {
+    headers: who === undefined ? {} : { 'x-test-user': who },
+  });
+  if (!response.headers.get('Content-Type')?.startsWith('text/html')) return response;
+  const page = await response.text();
+  return new Response(await drawView(path, page), {
+    status: response.status,
+    headers: response.headers,
+  });
 }
 
 // A form as a browser sends it. A field given as a list is sent once for each value.
@@ -130,7 +182,7 @@ export function pouchLines(page: string): string[] {
 
 // The sum of «Казна» in the column of a page of Мешки, with whitespace folded.
 export function treasurySum(page: string): string | undefined {
-  return /<h2 class="title t-3">Казна<\/h2> <p class="money[^"]*">([^<]*)<\/p>/.exec(
+  return /<h2 class="title t-3">Казна<\/h2> ?<p class="money[^"]*">([^<]*)<\/p>/.exec(
     fold(page),
   )?.[1];
 }
@@ -151,7 +203,7 @@ export function currentTab(page: string): string | undefined {
 
 // The balance of the open pouch on a page, as it is shown under «Остаток».
 export function balanceOn(page: string): string | undefined {
-  return /<p class="balance"> <span class="caps">Остаток<\/span> <span class="money[^"]*">([^<]*)<\/span>/.exec(
+  return /<p class="balance"> ?<span class="caps">Остаток<\/span> ?<span class="money[^"]*">([^<]*)<\/span>/.exec(
     fold(page),
   )?.[1];
 }

@@ -18,28 +18,30 @@ import { freshView, queryClient, SessionOver, viewQuery } from './queries.ts';
 const SLIDE_MS = 500;
 const AWAY = { 'flip-fwd': 'go-left', 'flip-back': 'go-right' } as const;
 const ARRIVE = { 'go-left': 'from-right', 'go-right': 'from-left' } as const;
-const phone = matchMedia('(max-width: 1023.98px)');
 
 // The data-fx of the link pressed last, read when the address it leads to comes: a plain press on
 // a link of the views, caught before React Router takes it.
 let pressed: { fx: string | undefined; at: number } | null = null;
-document.addEventListener(
-  'click',
-  (event) => {
-    const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
-    if (link instanceof HTMLAnchorElement && event.button === 0) {
-      pressed = { fx: link.dataset.fx, at: performance.now() };
-    }
-  },
-  { capture: true },
-);
+export function listenForPresses() {
+  document.addEventListener(
+    'click',
+    (event) => {
+      const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (link instanceof HTMLAnchorElement && event.button === 0) {
+        pressed = { fx: link.dataset.fx, at: performance.now() };
+      }
+    },
+    { capture: true },
+  );
+}
 
 function awayClass(): 'go-left' | 'go-right' | null {
   const press = pressed;
   pressed = null;
   if (press === null || performance.now() - press.at > 1000) return null;
   if (!document.documentElement.classList.contains('fx-on')) return null;
-  const fx = press.fx === 'flip-fwd-phone' ? (phone.matches ? 'flip-fwd' : undefined) : press.fx;
+  const phone = matchMedia('(max-width: 1023.98px)').matches;
+  const fx = press.fx === 'flip-fwd-phone' ? (phone ? 'flip-fwd' : undefined) : press.fx;
   return fx === 'flip-fwd' || fx === 'flip-back' ? AWAY[fx] : null;
 }
 

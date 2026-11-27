@@ -3,8 +3,8 @@
 // Forms are still the browser's (M14.5): they post as before and the page of the server comes.
 
 import { useSuspenseQuery } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
-import { Link, NavLink, useParams, useSearchParams } from 'react-router';
+import type { AnchorHTMLAttributes, ReactNode } from 'react';
+import { useHref, useLinkClickHandler, useParams, useSearchParams } from 'react-router';
 import type {
   ColumnData,
   HistoryData,
@@ -27,6 +27,23 @@ export interface Pictures {
   corner: string;
   signs: { key: string; word: string; src: string; chosen: boolean }[];
   blots: Record<string, string>;
+}
+
+// A link of the views: the markup of M13 (class, href, then the rest), followed by React Router.
+// Link of React Router puts href after the other attributes; the pages keep their order.
+function Link({
+  to,
+  className,
+  children,
+  ...rest
+}: { to: string } & AnchorHTMLAttributes<HTMLAnchorElement> & Record<`data-${string}`, string>) {
+  const href = useHref(to);
+  const follow = useLinkClickHandler(to);
+  return (
+    <a className={className} href={href} {...rest} onClick={follow}>
+      {children}
+    </a>
+  );
 }
 
 // The data of a view: the way has put it in the cache before the view is shown.
@@ -63,9 +80,9 @@ function Frame({ pictures, tab, back, column, children }: FrameProps) {
   const below = back !== undefined;
   const tabLink = (to: string, name: 'pouches' | 'history', text: string) =>
     name === tab ? (
-      <NavLink className="tab" to={to} aria-current="page">
+      <Link className="tab" to={to} aria-current="page">
         {text}
-      </NavLink>
+      </Link>
     ) : (
       <Link className="tab" to={to} data-fx={name === 'history' ? 'flip-fwd' : 'flip-back'}>
         {text}

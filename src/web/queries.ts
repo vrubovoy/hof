@@ -20,14 +20,13 @@ export class NotFound extends Error {}
 // the next page whole, with the new bundle.
 export class Outdated extends Error {}
 
-const ownBundle = document
-  .querySelector<HTMLScriptElement>('script[src*="/build/app.js"]')
-  ?.getAttribute('src');
+const ownBundle = () =>
+  document.querySelector('script[src*="/build/app.js"]')?.getAttribute('src') ?? null;
 
 async function readJson<T>(url: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
   const bundle = response.headers.get('Hof-Bundle');
-  if (bundle !== null && bundle !== ownBundle) throw new Outdated();
+  if (bundle !== null && bundle !== ownBundle()) throw new Outdated();
   if (response.status === 401) throw new SessionOver();
   if (response.status === 404) throw new NotFound();
   if (!response.ok) throw new Error(`${url}: ${response.status}`);
