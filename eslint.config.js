@@ -1,4 +1,5 @@
 import { defineConfig, globalIgnores } from 'eslint/config';
+import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 // ARCHITECTURE.md §2: Core and Säckel do not import each other; only src/main.ts knows both. The
@@ -9,7 +10,7 @@ const boundary = (files, group, message) => ({
 });
 
 export default defineConfig(
-  globalIgnores(['design/', '_discard/', '_reserve/']),
+  globalIgnores(['design/', '_discard/', '_reserve/', 'src/core/static/build/']),
   {
     files: ['**/*.ts'],
     extends: [tseslint.configs.recommendedTypeChecked],
@@ -81,6 +82,15 @@ export default defineConfig(
     },
   },
   { files: ['src/**/static/fx-head.js'], languageOptions: { sourceType: 'script' } },
+  // Prototype B of M14: the React views (src/web), type-checked by their own tsconfig with the
+  // DOM, and the rules of hooks.
+  {
+    files: ['src/web/**/*.{ts,tsx}'],
+    extends: [tseslint.configs.recommendedTypeChecked, reactHooks.configs.flat.recommended],
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+  },
   boundary(['src/core/**'], ['**/saeckel/**'], 'Core does not import Säckel (ARCHITECTURE.md §2).'),
   boundary(
     ['src/saeckel/**'],

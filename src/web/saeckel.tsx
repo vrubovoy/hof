@@ -21,16 +21,21 @@ export interface Pictures {
   scene2x: string;
   mark: string;
   chest: string;
+  emptySaeckel: string;
+  emptyHistory: string;
+  sprig: string;
+  corner: string;
+  signs: { key: string; word: string; src: string; chosen: boolean }[];
   blots: Record<string, string>;
 }
 
 // The data of a view: the way has put it in the cache before the view is shown.
 function useView<T>(pathname: string, search = ''): T {
   const query = viewQuery(pathname, search)!;
-  return useSuspenseQuery({
+  return useSuspenseQuery<T>({
     queryKey: query.key,
     queryFn: () => Promise.reject(new Error('not loaded')),
-  }).data as T;
+  }).data;
 }
 
 function Blot({ pictures, file, place }: { pictures: Pictures; file: string; place: string }) {
@@ -223,6 +228,8 @@ function Column({
 // The open pouch (pouchPane): name, links, balance, «Записать трату», the last records.
 function PouchPane({ pane, heading }: { pane: PouchPaneData; heading: 1 | 2 }) {
   const { pouch, form } = pane;
+  const [params] = useSearchParams();
+  const fresh = params.get('fresh');
   const Name = heading === 1 ? 'h1' : 'h2';
   const Form = heading === 1 ? 'h2' : 'h3';
   const transfer = `/saeckel/transfer?from=${pouch.id}${heading === 1 ? `&back=${pouch.id}` : ''}`;
@@ -299,16 +306,27 @@ function PouchPane({ pane, heading }: { pane: PouchPaneData; heading: 1 | 2 }) {
       )}
       {pane.movements.length > 0 && (
         <ul className="moves">
-          {pane.movements.map((movement) => (
-            <li key={movement.id}>
-              <span className={movement.expense ? 'move move-expense' : 'move'}>
+          {pane.movements.map((movement) => {
+            const row = movement.expense ? 'move move-expense' : 'move';
+            const cells = (
+              <>
                 <span className="move-date">{movement.date}</span>
                 <span className="move-kind">{movement.kind}</span>
                 <span className="move-note">{movement.note}</span>
                 <span className="move-sum">{movement.amount}</span>
-              </span>
-            </li>
-          ))}
+              </>
+            );
+            // The record just written (?fresh=<id> after «Записать трату»), marked as in M13.
+            return (
+              <li key={movement.id}>
+                {String(movement.id) === fresh ? (
+                  <mark className={row}>{cells}</mark>
+                ) : (
+                  <span className={row}>{cells}</span>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -331,12 +349,7 @@ export function PouchesView({ pictures }: { pictures: Pictures }) {
         column={<Column pictures={pictures} column={data.column} open={data.first?.pouch.id} />}
       >
         {data.first === null ? (
-          // The empty Мешки with the form of the first pouch: still the page of the server.
-          <div className="sk-main sk-empty">
-            <p className="muted">
-              Мешков пока нет. <a href="/saeckel/pouches/new">Завести первый мешок</a>
-            </p>
-          </div>
+          <EmptyPouches pictures={pictures} />
         ) : (
           <>
             <div className="sk-main sk-first">
@@ -382,17 +395,13 @@ export function HistoryView({ pictures }: { pictures: Pictures }) {
   return (
     <ViewPlace title="Säckel — летопись">
       <Frame pictures={pictures} tab="history">
-        {data.empty ? (
-          <div className="sk-empty history-empty">
-            <div className="sk-empty-text">
-              <h2 className="title">Летопись пока пуста</h2>
-            </div>
-          </div>
-        ) : (
-          <HistoryTable data={data} />
+        {data.empty ? <EmptyHistory pictures={pictures} /> : <HistoryTable data={data} />}
+        {!data.empty && (
+          <>
+            <Blot pictures={pictures} file="ink-blot-medium" place="blot-history-medium" />
+            <Blot pictures={pictures} file="ink-splatter-b" place="blot-history-splatter" />
+          </>
         )}
-        <Blot pictures={pictures} file="ink-blot-medium" place="blot-history-medium" />
-        <Blot pictures={pictures} file="ink-splatter-b" place="blot-history-splatter" />
       </Frame>
     </ViewPlace>
   );
@@ -481,6 +490,79 @@ function HistoryTable({ data }: { data: HistoryData }) {
           )}
         </nav>
       )}
+    </>
+  );
+}
+
+// Мешки without an active pouch (pouchesPage of M13): the picture with the cat, the text and the
+// form of the first pouch, sent by the browser (M14.5).
+function EmptyPouches({ pictures }: { pictures: Pictures }) {
+  return (
+    <>
+      <div className="sk-main sk-empty">
+        <span className="vignette sniff" aria-hidden="true">
+          <img src={pictures.emptySaeckel} alt="" draggable="false" />
+          <span className="cat" data-poke="sniff"></span>
+        </span>
+        <div className="sk-empty-text">
+          <h2 className="title">Мешков пока нет</h2>
+          <img className="sprig" src={pictures.sprig} alt="" draggable="false" />
+          <p className="muted">
+            Заведите первый мешок: «Продукты», «Квартира», «Транспорт». Траты берутся из мешка, а
+            остаток переходит дальше сам.
+          </p>
+          <form className="new-pouch" method="post" action="/saeckel/pouches/new">
+            <div className="field">
+              <label htmlFor="name">Название</label>
+              <input id="name" className="input" name="name" type="text" required defaultValue="" />
+            </div>
+            <fieldset className="signs">
+              <legend>Знак мешка</legend>
+              <div className="icons">
+                {pictures.signs.map((sign) => (
+                  <label key={sign.key} className="icon-pick">
+                    <input type="radio" name="icon" value={sign.key} defaultChecked={sign.chosen} />
+                    <img src={sign.src} alt="" draggable="false" /> {sign.word}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <button type="submit" className="btn btn-ochre">
+              Завести мешок
+            </button>
+          </form>
+        </div>
+      </div>
+      <img className="sk-corner" src={pictures.corner} alt="" draggable="false" loading="lazy" />
+      <Blot pictures={pictures} file="ink-blot-medium" place="blot-empty-medium" />
+    </>
+  );
+}
+
+// Летопись without a record (historyPage of M13): the closed book and the ways to begin.
+function EmptyHistory({ pictures }: { pictures: Pictures }) {
+  return (
+    <>
+      <div className="sk-empty history-empty">
+        <img className="vignette" src={pictures.emptyHistory} alt="" draggable="false" />
+        <div className="sk-empty-text">
+          <h2 className="title">Летопись пока пуста</h2>
+          <img className="sprig" src={pictures.sprig} alt="" draggable="false" />
+          <p className="muted">
+            Сюда ляжет каждый доход, трата и перекладывание — по порядку, с датой и заметкой.
+          </p>
+          <p className="empty-actions">
+            <a className="btn btn-ochre" href="/saeckel/income">
+              Записать доход
+            </a>{' '}
+            <Link className="link" to="/saeckel/">
+              К мешкам
+            </Link>
+          </p>
+        </div>
+      </div>
+      <img className="sk-corner" src={pictures.corner} alt="" draggable="false" loading="lazy" />
+      <Blot pictures={pictures} file="ink-blot-small" place="blot-history-empty" />
     </>
   );
 }

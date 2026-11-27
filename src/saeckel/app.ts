@@ -369,12 +369,26 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
 // Prototype B of M14 (Issue #167): the shell of an address of the way — Мешки, a pouch, Летопись.
 // No markup of the view: the React bundle draws it from the data embedded here (data.ts,
 // embedJson), with the pictures it names. The picture of the treasury is preloaded, so that it
-// comes while the bundle does.
+// comes while the bundle does. fx-head.js and fx.js of Hof are those of every page: the music,
+// the sounds, «Анимации», the cat and the chest live in this document outside React, so the way
+// between the views keeps one player. data-session: fx.js asks whether the session is still there
+// (M11.6); it looks for the attribute when it starts, before React has drawn anything.
 const PICTURES = {
   scene: asset('img/scene-treasury-band.webp'),
   scene2x: asset('img/scene-treasury-band@2x.webp'),
   mark: asset('img/hof-mark.svg'),
   chest: asset('img/emblem-chest-closed.webp'),
+  emptySaeckel: asset('img/empty-saeckel.webp'),
+  emptyHistory: asset('img/empty-history-closed.webp'),
+  sprig: asset('img/sprig-divider.webp'),
+  corner: asset('img/sprig-corner.webp'),
+  // The signs of a pouch for the form of the first one, the default one first chosen.
+  signs: (Object.keys(ICONS) as Icon[]).map((icon) => ({
+    key: icon,
+    word: ICONS[icon],
+    src: asset(`img/${SIGN_FILES[icon]}.webp`),
+    chosen: icon === DEFAULT_ICON,
+  })),
   blots: Object.fromEntries(
     ['ink-blot-medium', 'ink-blot-small', 'ink-splatter-a', 'ink-splatter-b', 'ink-drip'].map(
       (file) => [file, asset(`img/${file}.webp`)],
@@ -400,10 +414,11 @@ function shellPage(title: string, data: ViewData) {
           fetchpriority="high"
         />
         <script src="${coreScripts.head}"></script>
+        <script type="module" src="${coreScripts.effects}"></script>
         <script type="module" src="${coreScripts.app}"></script>
       </head>
       <body>
-        <div id="app"></div>
+        <div id="app" data-session></div>
         <script type="application/json" id="hof-data">
           ${raw(embedJson(data))}
         </script>
@@ -672,65 +687,6 @@ function pouchColumn(column: PouchColumn, money: MoneyFormat, place: ColumnPlace
       <a class="link-plain" href="/saeckel/pouches/new">+ Новый мешок</a>
       ${storeroom(column.stored)}
     </div>`;
-}
-
-// Мешки, texts from the prototypes Saeckel, SaeckelMobile, SaeckelEmpty and
-// SaeckelEmptyMobile. The treasury is always there; the empty state is about the active
-// pouches, beside the treasury and the storeroom (M6.1: SaeckelEmpty has no treasury); on a
-// computer the picture and the form of the first pouch stand to the right of them; the cat of the
-// picture is decor of Hof (data-poke, M10.5) and sniffs at the pouches when pressed. With pouches,
-// the first of the list is open on the right of a computer, as in Saeckel; the phone has only
-// the list, its pouches open on their own pages (SaeckelMobile).
-function pouchesPage(
-  column: PouchColumn,
-  money: MoneyFormat,
-  first: { pouch: Pouch; view: PouchView } | null,
-) {
-  if (first !== null) {
-    return saeckelPage(
-      {
-        title: 'Säckel — мешки',
-        tab: 'pouches',
-        column: pouchColumn(column, money, { open: first.pouch.id, buttons: true }),
-      },
-      html`<div class="sk-main sk-first">${pouchPane(first.pouch, first.view, money, 2)}</div>
-        ${blot('ink-blot-medium', 'blot-pouches-medium')}
-        ${blot('ink-splatter-a', 'blot-pouches-splatter')} ${blot('ink-drip', 'blot-pouches-drip')}
-        ${blot('ink-blot-small', 'blot-pouches-small')}`,
-    );
-  }
-  return saeckelPage(
-    {
-      title: 'Säckel — мешки',
-      tab: 'pouches',
-      column: pouchColumn(column, money, { buttons: true }),
-    },
-    html`<div class="sk-main sk-empty">
-        <span class="vignette sniff" aria-hidden="true"
-          ><img src="${asset('img/empty-saeckel.webp')}" alt="" draggable="false" /><span
-            class="cat"
-            data-poke="sniff"
-          ></span
-        ></span>
-        <div class="sk-empty-text">
-          <h2 class="title">Мешков пока нет</h2>
-          <img class="sprig" src="${asset('img/sprig-divider.webp')}" alt="" draggable="false" />
-          <p class="muted">
-            Заведите первый мешок: «Продукты», «Квартира», «Транспорт». Траты берутся из мешка, а
-            остаток переходит дальше сам.
-          </p>
-          ${newPouchForm({ name: '', icon: DEFAULT_ICON })}
-        </div>
-      </div>
-      <img
-        class="sk-corner"
-        src="${asset('img/sprig-corner.webp')}"
-        alt=""
-        draggable="false"
-        loading="lazy"
-      />
-      ${blot('ink-blot-medium', 'blot-empty-medium')}`,
-  );
 }
 
 // «Новый мешок» (no picture of its own): the form on the right, in a frame drawn by pen, like the
@@ -1178,157 +1134,6 @@ function placeFields(place: HistoryPlace | null) {
   return html`<input type="hidden" name="page" value="${place.page}" />${
       place.pouch === null ? '' : html`<input type="hidden" name="pouch" value="${place.pouch}" />`
     }`;
-}
-
-// One record of «Летопись» (the prototype SaeckelHistory): a row of the table — the date,
-// the pouches, the kind, the note, the amount and «›» to the record. On the phone the same row is a
-// line of HistoryMobile — the date and the amount, «pouch · kind», the note — and its link covers
-// the whole line: one link a record, named as before, described by its row. The kind is in its
-// own cell on a computer and after the pouches on the phone, where a transfer is «Переложено», as
-// HistoryMobile has it; CSS shows one of the two. An expense is red on the phone only, as the two
-// prototypes have it.
-function historyRow(operation: Operation, money: MoneyFormat, place: HistoryPlace) {
-  const kind = KIND_LABELS[operation.kind];
-  const phoneKind = operation.kind === 'transfer' ? 'Переложено' : kind;
-  return html`<tr id="op-${operation.id}">
-    <td class="h-date">${dateForField(operation.date)}</td>
-    <td class="h-pouch">
-      ${operationPouches(operation)}<span class="h-kind-phone"> · ${phoneKind}</span>
-    </td>
-    <td class="h-kind">${kind}</td>
-    <td class="h-note">${operation.note}</td>
-    <td class="${operation.kind === 'expense' ? 'h-sum neg' : 'h-sum'}">
-      ${signedAmount(operation, money)}
-    </td>
-    <td class="h-go">
-      <a
-        class="link-plain"
-        href="${recordHref(operation.id, place)}"
-        aria-label="Открыть запись"
-        aria-describedby="op-${operation.id}"
-        >›</a
-      >
-    </td>
-  </tr>`;
-}
-
-// «Летопись», texts from the prototypes SaeckelHistory, HistoryMobile and
-// SaeckelHistoryEmpty: the whole width under the tabs, no column of pouches. A filter by
-// pouch with «Показать» — without a script the list does not send the form itself — 50 records a
-// page, «Назад» and «Следующие 50». With no record at all, the empty page: the closed book, on the
-// phone above the text, as in SaeckelEmptyMobile. A pouch without records and a page past the
-// last one say so under the filter (no picture of their own). «Назад» and «Следующие 50» do not
-// turn the page: with «Звуки» the next one only rustles (data-fx="page").
-function historyPage(view: HistoryView, money: MoneyFormat) {
-  if (view.operations.length === 0 && view.page === 1 && view.pouch === null) {
-    return saeckelPage(
-      { title: 'Säckel — летопись', tab: 'history' },
-      html`<div class="sk-empty history-empty">
-          <img
-            class="vignette"
-            src="${asset('img/empty-history-closed.webp')}"
-            alt=""
-            draggable="false"
-          />
-          <div class="sk-empty-text">
-            <h2 class="title">Летопись пока пуста</h2>
-            <img class="sprig" src="${asset('img/sprig-divider.webp')}" alt="" draggable="false" />
-            <p class="muted">
-              Сюда ляжет каждый доход, трата и перекладывание — по порядку, с датой и заметкой.
-            </p>
-            <p class="empty-actions">
-              <a class="btn btn-ochre" href="/saeckel/income">Записать доход</a>
-              <a class="link" href="/saeckel/">К мешкам</a>
-            </p>
-          </div>
-        </div>
-        <img
-          class="sk-corner"
-          src="${asset('img/sprig-corner.webp')}"
-          alt=""
-          draggable="false"
-          loading="lazy"
-        />
-        ${blot('ink-blot-small', 'blot-history-empty')}`,
-    );
-  }
-  const none = view.page === 1 ? EMPTY_POUCH_HISTORY : PAST_LAST_PAGE;
-  const back = view.page > 1;
-  return saeckelPage(
-    { title: 'Säckel — летопись', tab: 'history' },
-    html`<div class="history-head">
-        <h2 class="title t-2 visually-hidden-phone">Летопись</h2>
-        <form class="history-filter" method="get" action="/saeckel/history">
-          <div class="field">
-            <label for="pouch">Мешок</label>
-            <span class="select">
-              <select id="pouch" name="pouch" class="input slim">
-                <option value="">Все мешки</option>
-                ${view.pouches.map(
-                  (pouch) =>
-                    html`<option
-                      value="${pouch.id}"
-                      ${pouch.id === view.pouch ? html`selected` : ''}
-                    >
-                      ${pouch.is_archived ? `${pouch.name} (в Кладовой)` : pouch.name}
-                    </option>`,
-                )}
-              </select>
-            </span>
-          </div>
-          <button type="submit" class="btn">Показать</button>
-        </form>
-      </div>
-      ${
-        view.operations.length > 0
-          ? html`<table class="table history">
-              <thead>
-                <tr>
-                  <th class="h-date">Дата</th>
-                  <th class="h-pouch">Мешок</th>
-                  <th class="h-kind">Запись</th>
-                  <th class="h-note">Заметка</th>
-                  <th class="h-sum">Сумма</th>
-                  <th class="h-go"></th>
-                </tr>
-              </thead>
-              <tbody>
-                ${view.operations.map((operation) =>
-                  historyRow(operation, money, { page: view.page, pouch: view.pouch }),
-                )}
-              </tbody>
-            </table>`
-          : html`<p class="muted history-none">${none}</p>`
-      }
-      ${
-        back || view.hasNext
-          ? html`<nav class="pages" aria-label="Страницы летописи">
-              ${
-                back
-                  ? html`<a
-                      class="btn"
-                      href="${historyHref(view.pouch, view.page - 1)}"
-                      data-fx="page"
-                      >Назад</a
-                    >`
-                  : ''
-              }
-              ${
-                view.hasNext
-                  ? html`<a
-                      class="btn"
-                      href="${historyHref(view.pouch, view.page + 1)}"
-                      data-fx="page"
-                      >Следующие 50</a
-                    >`
-                  : ''
-              }
-            </nav>`
-          : ''
-      }
-      ${blot('ink-blot-medium', 'blot-history-medium')}
-      ${blot('ink-splatter-b', 'blot-history-splatter')}`,
-  );
 }
 
 // Whether a pouch of the record is in the storeroom: then the record is not changed (§5.4).
