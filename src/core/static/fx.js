@@ -10,10 +10,11 @@
 //
 // Prototype A of M14 (Issue #165, drive.js): Turbo puts the views of Двор and Säckel into one
 // document, so the music, the sounds and this module live through the whole way, and what belongs
-// to a view — the living courtyard, «Звуки и движение», the question about the session — is set up
-// when the view comes (turbo:load) and let go before the next one is put in place
-// (turbo:before-render). The way away by a link to such a view does not wait for the next page:
-// Turbo asks for it at once, and its render waits for the animation.
+// to a view — the living courtyard, «Звуки и движение», the question about the session — is let go
+// and set up again when Turbo has put the next view in place (turbo:render): turbo:before-render
+// comes with the answer of the server, still during the way away. The way away by a link to such
+// a view does not wait for the next page: Turbo asks for it at once, and its render waits for the
+// animation.
 //
 // Kept in the browser, nothing else: in localStorage `hof.fx` — the settings of this device, and
 // `hof.fountain` — which loop of the fountain the next visit of the courtyard plays; in

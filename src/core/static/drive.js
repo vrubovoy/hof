@@ -9,7 +9,7 @@
 // AudioContext and every script stay alive between the views; fx.js keeps the effects of a view
 // to its view (turbo:render) and asks for the render to wait for the animation of the way away.
 //
-// The glue (the journal of Turbo in docs/OPERATIONS.md, «Прототип A»):
+// The glue (the journal of Turbo: docs/m14-prototype-a.md):
 // - the views of DRIVEN only: turbo:click of any other address is let go to the browser, and a
 //   response that ends on one (a redirect to the sign-in when the session is over) is loaded by
 //   the browser;
