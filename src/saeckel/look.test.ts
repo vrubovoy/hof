@@ -369,12 +369,9 @@ describe('the pages of Säckel', () => {
   test('M12.16: the band of the treasury is the one picture that waits, and only under .reveal', async () => {
     for (const [name, , page] of await drawnPages()) {
       assert.equal((page.match(/\sdata-reveal(?=[\s>])/g) ?? []).length, 1, name);
-      // Prototype A of M14: kept in place between the views of Säckel (data-turbo-permanent).
-      assert.match(
-        page,
-        /<img\s+id="sk-scene"\s+class="sk-scene"\s+data-turbo-permanent\s+data-reveal\s/,
-        name,
-      );
+      // Prototype A of M14: not data-turbo-permanent. The copy Turbo leaves in the view that goes
+      // stays a viewport listener of the document (srcset, sizes) and keeps that view in memory.
+      assert.match(page, /<img\s+class="sk-scene"\s+data-reveal\s/, name);
     }
     const css = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
     const rules = [...css.matchAll(/([^{}]*)\{([^{}]*)\}/g)]

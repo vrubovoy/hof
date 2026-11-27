@@ -410,9 +410,7 @@ function saeckelPage(place: Place, body: HtmlEscapedString | Promise<HtmlEscaped
     html`<div class="${below ? 'sk sk-below' : 'sk'}" data-session>
       <header class="sk-head">
         <img
-          id="sk-scene"
           class="sk-scene"
-          data-turbo-permanent
           data-reveal
           src="${asset('img/scene-treasury-band.webp')}"
           srcset="
