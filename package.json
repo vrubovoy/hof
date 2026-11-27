@@ -17,10 +17,18 @@
     "pg": "^8.23.1"
   },
   "devDependencies": {
+    "@tanstack/react-query": "^5.108.4",
     "@types/node": "^24.19.1",
     "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.3",
+    "@types/react-dom": "^19.3.0",
+    "esbuild": "^0.28.2",
     "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "prettier": "^3.9.9",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^7.18.7",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.1"
   }

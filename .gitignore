@@ -5,3 +5,4 @@ node_modules/
 /_reserve/
 /request
 .claude/
+/src/core/static/build/

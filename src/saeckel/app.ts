@@ -10,11 +10,21 @@
 // Säckel. Paths that are not routes of Säckel end in the common 404, with or without a session.
 
 import { Hono, type MiddlewareHandler } from 'hono';
-import { html } from 'hono/html';
+import { html, raw } from 'hono/html';
 import type { HtmlEscapedString } from 'hono/utils/html';
 import { join } from 'node:path';
 import { DatabaseError, type Pool, type PoolClient } from 'pg';
 import { staticFolder } from '../static.ts';
+import {
+  embedJson,
+  type ViewData,
+  type ColumnData,
+  type HistoryData,
+  type MovementData,
+  type PouchData,
+  type PouchesData,
+  type PouchPaneData,
+} from './data.ts';
 import { EARLIEST, dateForField, dateForList, parseDate, today, yearLater } from './dates.ts';
 import {
   AMOUNT_MAX_CENTS,
@@ -46,6 +56,8 @@ export interface SaeckelSettings {
 export interface CoreScripts {
   head: string;
   effects: string;
+  // Prototype B of M14: the bundle of the React views (src/build.ts).
+  app: string;
 }
 
 type SaeckelEnv = { Variables: { user: SaeckelUser } };
@@ -56,7 +68,7 @@ export const saeckelStatic = staticFolder('/saeckel/static/', join(import.meta.d
 const asset = saeckelStatic.url;
 
 // The scripts of Core on every page: set once, by createSaeckelApp.
-let coreScripts: CoreScripts = { head: '', effects: '' };
+let coreScripts: CoreScripts = { head: '', effects: '', app: '' };
 // The time zone of the installation, for the calendar of a date field (M13.5): set once, by
 // createSaeckelApp.
 let installationTimeZone = 'UTC';
@@ -350,6 +362,54 @@ function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString
       </head>
       <body>
         ${body}
+      </body>
+    </html>`;
+}
+
+// Prototype B of M14 (Issue #167): the shell of an address of the way — Мешки, a pouch, Летопись.
+// No markup of the view: the React bundle draws it from the data embedded here (data.ts,
+// embedJson), with the pictures it names. The picture of the treasury is preloaded, so that it
+// comes while the bundle does.
+const PICTURES = {
+  scene: asset('img/scene-treasury-band.webp'),
+  scene2x: asset('img/scene-treasury-band@2x.webp'),
+  mark: asset('img/hof-mark.svg'),
+  chest: asset('img/emblem-chest-closed.webp'),
+  blots: Object.fromEntries(
+    ['ink-blot-medium', 'ink-blot-small', 'ink-splatter-a', 'ink-splatter-b', 'ink-drip'].map(
+      (file) => [file, asset(`img/${file}.webp`)],
+    ),
+  ),
+};
+
+function shellPage(title: string, data: ViewData) {
+  return html`<!doctype html>
+    <html lang="ru">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>${title}</title>
+        <link rel="stylesheet" href="${asset('saeckel.css')}" />
+        <link rel="icon" href="${asset('img/hof-mark.svg')}" type="image/svg+xml" />
+        <link
+          rel="preload"
+          as="image"
+          href="${PICTURES.scene}"
+          imagesrcset="${PICTURES.scene} 1536w, ${PICTURES.scene2x} 3072w"
+          imagesizes="100vw"
+          fetchpriority="high"
+        />
+        <script src="${coreScripts.head}"></script>
+        <script type="module" src="${coreScripts.app}"></script>
+      </head>
+      <body>
+        <div id="app"></div>
+        <script type="application/json" id="hof-data">
+          ${raw(embedJson(data))}
+        </script>
+        <script type="application/json" id="hof-pictures">
+          ${raw(embedJson(PICTURES))}
+        </script>
       </body>
     </html>`;
 }
@@ -1869,23 +1929,174 @@ export function createSaeckelApp(
   // of this user with the smallest id, the list is in that order — is open on the right, as in
   // Saeckel: its balance is the one the column has, only its last movements are read besides.
   // No choice is kept anywhere: no cookie, no address, nothing written.
-  saeckel.get('/saeckel/', signedIn, async (c) => {
-    const userId = c.get('user').id;
+  // Prototype B of M14 (Issue #167): the data of the views of the way as JSON (data.ts), read by
+  // the same queries as the HTML pages above and below, formatted by the same functions.
+  const sign = (stored: string) =>
+    asset(`img/${SIGN_FILES[parseIcon(stored) ?? DEFAULT_ICON]}.webp`);
+
+  const columnData = (column: PouchColumn): ColumnData => ({
+    treasury: money.format(column.treasury),
+    treasuryDebt: column.treasury < 0,
+    pouches: column.pouches.map((pouch) => ({
+      id: pouch.id,
+      name: pouch.name,
+      sign: sign(pouch.icon),
+      note: pouchNote(pouch, money),
+      balance: money.format(pouch.balance),
+      debt: pouch.balance < 0,
+    })),
+    stored: column.stored.map((pouch) => ({
+      id: pouch.id,
+      name: pouch.name,
+      sign: sign(pouch.icon),
+    })),
+  });
+
+  const movementData = (movement: Operation, pouchId: number): MovementData => {
+    const incoming = movement.toPouchId === pouchId;
+    return {
+      id: movement.id,
+      date: dateForList(movement.date),
+      kind:
+        movement.kind === 'expense'
+          ? 'Трата'
+          : movement.kind === 'assign'
+            ? 'из казны'
+            : incoming
+              ? `из мешка «${movement.fromName}»`
+              : `в мешок «${movement.toName}»`,
+      note: movement.note,
+      amount: incoming ? `+${money.format(movement.cents)}` : money.format(-movement.cents),
+      expense: movement.kind === 'expense',
+    };
+  };
+
+  const paneData = (
+    pouch: Pouch,
+    state: { balance: number; movements: readonly Operation[] },
+  ): PouchPaneData => {
+    const todayDate = today(settings.timeZone, new Date());
+    return {
+      pouch: {
+        id: pouch.id,
+        name: pouch.name,
+        sign: sign(pouch.icon),
+        archived: pouch.is_archived,
+      },
+      balance: money.format(state.balance),
+      debt: state.balance < 0,
+      movements: state.movements.map((movement) => movementData(movement, pouch.id)),
+      form: {
+        symbol: money.symbol,
+        date: dateForField(todayDate),
+        today: todayDate,
+        earliest: EARLIEST,
+        latest: yearLater(todayDate),
+      },
+    };
+  };
+
+  async function pouchesData(userId: number): Promise<PouchesData> {
     const column = await columnOf(userId);
     const listed = column.pouches[0];
     const first =
       listed === undefined
         ? null
-        : {
-            pouch: { id: listed.id, name: listed.name, icon: listed.icon, is_archived: false },
-            view: {
-              balance: listed.balance,
-              movements: await recentMovements(listed.id, userId),
-              form: emptyEntryForm(),
-            },
-          };
-    return c.html(pouchesPage(column, money, first));
+        : paneData(
+            { id: listed.id, name: listed.name, icon: listed.icon, is_archived: false },
+            { balance: listed.balance, movements: await recentMovements(listed.id, userId) },
+          );
+    return { column: columnData(column), first };
+  }
+
+  async function pouchData(idInPath: string, userId: number): Promise<PouchData | null> {
+    const pouch = await findPouch(idInPath, userId);
+    if (pouch === null) return null;
+    const state = await pouchState(pouch.id, userId);
+    return { column: columnData(await columnOf(userId)), pane: paneData(pouch, state) };
+  }
+
+  async function historyView(
+    pageQuery: string | undefined,
+    pouchQuery: string | undefined,
+    userId: number,
+  ): Promise<HistoryView | null> {
+    const page = parsePage(pageQuery);
+    if (page === null) return null;
+    const pouches = await pool.query<FilterPouch>(
+      'SELECT id, name, is_archived FROM pouches WHERE user_id = $1 ORDER BY is_archived, id',
+      [userId],
+    );
+    const wanted = pouchQuery ?? '';
+    const pouch = wanted === '' ? null : parseId(wanted);
+    if (wanted !== '' && !pouches.rows.some((own) => own.id === pouch)) return null;
+    // One more than a page: whether there is a next one.
+    const { rows } = await pool.query<OperationRow>(
+      `${OPERATIONS} AND ($2::int IS NULL OR o.from_pouch_id = $2 OR o.to_pouch_id = $2)
+        ORDER BY o.date DESC, o.id DESC
+        LIMIT ${HISTORY_PAGE_SIZE + 1} OFFSET $3`,
+      [userId, pouch, HISTORY_PAGE_SIZE * (page - 1)],
+    );
+    return {
+      operations: rows.slice(0, HISTORY_PAGE_SIZE).map(operationFrom),
+      page,
+      pouch,
+      pouches: pouches.rows,
+      hasNext: rows.length > HISTORY_PAGE_SIZE && page < HISTORY_LAST_PAGE,
+    };
+  }
+
+  const historyData = (view: HistoryView): HistoryData => ({
+    empty: view.operations.length === 0 && view.page === 1 && view.pouch === null,
+    page: view.page,
+    pouch: view.pouch,
+    pouches: view.pouches.map((pouch) => ({
+      id: pouch.id,
+      label: pouch.is_archived ? `${pouch.name} (в Кладовой)` : pouch.name,
+    })),
+    rows: view.operations.map((operation) => ({
+      id: operation.id,
+      date: dateForField(operation.date),
+      pouches: operationPouches(operation),
+      kind: KIND_LABELS[operation.kind],
+      phoneKind: operation.kind === 'transfer' ? 'Переложено' : KIND_LABELS[operation.kind],
+      note: operation.note,
+      sum: signedAmount(operation, money),
+      expense: operation.kind === 'expense',
+      href: recordHref(operation.id, { page: view.page, pouch: view.pouch }),
+    })),
+    none: view.page === 1 ? EMPTY_POUCH_HISTORY : PAST_LAST_PAGE,
+    previous: view.page > 1 ? historyHref(view.pouch, view.page - 1) : null,
+    next: view.hasNext ? historyHref(view.pouch, view.page + 1) : null,
   });
+
+  // JSON of a signed-in person only: without a session 401, never the redirect to the sign-in
+  // a page gets — the view decides (a full load of the sign-in). no-store as for a page.
+  const signedInJson: MiddlewareHandler<SaeckelEnv> = async (c, next) => {
+    const user = await currentUser(c.req.raw);
+    c.header('Cache-Control', 'no-store');
+    if (user === null) return c.json({ error: 'session' }, 401);
+    c.set('user', user);
+    await next();
+  };
+
+  saeckel.get('/saeckel/data/pouches', signedInJson, async (c) =>
+    c.json(await pouchesData(c.get('user').id)),
+  );
+  saeckel.get('/saeckel/data/pouches/:id', signedInJson, async (c) => {
+    const data = await pouchData(c.req.param('id'), c.get('user').id);
+    return data === null ? c.json({ error: 'not found' }, 404) : c.json(data);
+  });
+  saeckel.get('/saeckel/data/history', signedInJson, async (c) => {
+    const view = await historyView(c.req.query('page'), c.req.query('pouch'), c.get('user').id);
+    return view === null ? c.json({ error: 'not found' }, 404) : c.json(historyData(view));
+  });
+
+  saeckel.get('/saeckel/', signedIn, async (c) =>
+    c.html(
+      shellPage('Säckel — мешки', { view: 'pouches', data: await pouchesData(c.get('user').id) }),
+    ),
+  );
 
   // Registered before /saeckel/pouches/:id, which would match it too.
   saeckel.get('/saeckel/pouches/new', signedIn, async (c) => {
@@ -1929,12 +2140,10 @@ export function createSaeckelApp(
   // A pouch. `fresh` is the id of the record just written (§4.1): it is only compared with the
   // records shown, so a strange or foreign one marks nothing.
   saeckel.get('/saeckel/pouches/:id', signedIn, async (c) => {
-    const userId = c.get('user').id;
-    const pouch = await findPouch(c.req.param('id'), userId);
-    if (pouch === null) return c.notFound();
-    const state = await pouchState(pouch.id, userId);
-    const view = { ...state, fresh: c.req.query('fresh'), form: emptyEntryForm() };
-    return c.html(pouchPage(pouch, view, money, await columnOf(userId)));
+    const data = await pouchData(c.req.param('id'), c.get('user').id);
+    if (data === null) return c.notFound();
+    const id = data.pane.pouch.id;
+    return c.html(shellPage(`Säckel — ${data.pane.pouch.name}`, { view: 'pouch', id, data }));
   });
 
   // An expense (§4.1, §4.8): the pouch, then the form, then one transaction that locks the row
@@ -2235,31 +2444,12 @@ export function createSaeckelApp(
   // under both of its pouches, no income. Somebody else's pouch, a missing one and a wrong id
   // are the same 404, as is a page outside 1–1000. A page past the last one is empty, not 404.
   saeckel.get('/saeckel/history', signedIn, async (c) => {
-    const userId = c.get('user').id;
-    const page = parsePage(c.req.query('page'));
-    if (page === null) return c.notFound();
-    const pouches = await pool.query<FilterPouch>(
-      'SELECT id, name, is_archived FROM pouches WHERE user_id = $1 ORDER BY is_archived, id',
-      [userId],
+    const view = await historyView(c.req.query('page'), c.req.query('pouch'), c.get('user').id);
+    if (view === null) return c.notFound();
+    const search = new URL(c.req.url).search;
+    return c.html(
+      shellPage('Säckel — летопись', { view: 'history', search, data: historyData(view) }),
     );
-    const wanted = c.req.query('pouch') ?? '';
-    const pouch = wanted === '' ? null : parseId(wanted);
-    if (wanted !== '' && !pouches.rows.some((own) => own.id === pouch)) return c.notFound();
-    // One more than a page: whether there is a next one.
-    const { rows } = await pool.query<OperationRow>(
-      `${OPERATIONS} AND ($2::int IS NULL OR o.from_pouch_id = $2 OR o.to_pouch_id = $2)
-        ORDER BY o.date DESC, o.id DESC
-        LIMIT ${HISTORY_PAGE_SIZE + 1} OFFSET $3`,
-      [userId, pouch, HISTORY_PAGE_SIZE * (page - 1)],
-    );
-    const view: HistoryView = {
-      operations: rows.slice(0, HISTORY_PAGE_SIZE).map(operationFrom),
-      page,
-      pouch,
-      pouches: pouches.rows,
-      hasNext: rows.length > HISTORY_PAGE_SIZE && page < HISTORY_LAST_PAGE,
-    };
-    return c.html(historyPage(view, money));
   });
 
   // The place in «Летопись» a record was opened from (M13.6), as the address or a form of the

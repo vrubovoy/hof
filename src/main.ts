@@ -44,6 +44,7 @@ const SERVICES: readonly Service[] = [
 const CORE_SCRIPTS: CoreScripts = {
   head: coreStatic.url('fx-head.js'),
   effects: coreStatic.url('fx.js'),
+  app: coreStatic.url('build/app.js'),
 };
 
 // §4.9: explicit header values, not Hono's secureHeaders preset. connect-src: fx.js asks
