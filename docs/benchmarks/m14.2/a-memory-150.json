@@ -1,0 +1,118 @@
+{
+ "label": "A b0b2747 heap 150",
+ "scenario": "navigation",
+ "date": "2026-11-27T11:26:30.597Z",
+ "product": "Chrome/158.0.8127.88",
+ "flags": [
+  "--headless",
+  "--no-first-run",
+  "--no-default-browser-check",
+  "--mute-audio",
+  "--hide-scrollbars",
+  "--autoplay-policy=no-user-gesture-required"
+ ],
+ "node": "v24.22.1",
+ "power": {
+  "start": "сеть 100 %",
+  "end": "сеть 100 %"
+ },
+ "build": [
+  "/static/drive.js?v=36d2af8bb612",
+  "/static/fx-head.js?v=0be9234dc746",
+  "/static/fx.js?v=214512899ab6",
+  "/static/hof.css?v=ba39726e8b2c",
+  "/static/img/hof-mark.svg?v=7c4d56e9aed5",
+  "/static/img/ink-blot-small.webp?v=401b2ef1e3d2",
+  "/static/img/ink-drip.webp?v=1549d14679d7",
+  "/static/img/ink-splatter-b.webp?v=2a0cb85ec275",
+  "/static/img/login-desktop-v2.webp?v=aaa908aebda6",
+  "/static/vendor/turbo-8.0.23.js?v=b9d35d123a07",
+  "2x.webp?v=578c38be99cf",
+  "2x.webp?v=a08dae9a59f1",
+  "3x.webp?v=1d595be56c1e"
+ ],
+ "fingerprint": "Казна 0,00 ₽ Разложить + Доход Еда последняя трата −474,76 ₽ 20 226,68 ₽ Дом последняя трата −511,89 ₽ 20 106,86 ₽ Дети последняя трата −548,02 ₽ 19 988,04 ₽ Отпуск последняя трата −185,15 ₽ 20 271,22 ₽ + Новый мешок",
+ "runs": 1,
+ "loads": [],
+ "chain": [],
+ "music": [],
+ "memory": [
+  {
+   "cycle": 0,
+   "documents": 22,
+   "nodes": 3166,
+   "listeners": 281,
+   "heapKb": 2473.02734375
+  },
+  {
+   "cycle": 1,
+   "documents": 17,
+   "nodes": 348,
+   "listeners": 60,
+   "heapKb": 1255.4609375
+  },
+  {
+   "cycle": 5,
+   "documents": 17,
+   "nodes": 348,
+   "listeners": 60,
+   "heapKb": 1440.25
+  },
+  {
+   "cycle": 10,
+   "documents": 17,
+   "nodes": 348,
+   "listeners": 60,
+   "heapKb": 1462.796875
+  },
+  {
+   "cycle": 20,
+   "documents": 17,
+   "nodes": 348,
+   "listeners": 60,
+   "heapKb": 1480.4375
+  },
+  {
+   "cycle": 25,
+   "documents": 17,
+   "nodes": 348,
+   "listeners": 60,
+   "heapKb": 1507.38671875
+  },
+  {
+   "cycle": 50,
+   "documents": 18,
+   "nodes": 381,
+   "listeners": 60,
+   "heapKb": 1611.953125
+  },
+  {
+   "cycle": 75,
+   "documents": 18,
+   "nodes": 381,
+   "listeners": 60,
+   "heapKb": 1783.18359375
+  },
+  {
+   "cycle": 100,
+   "documents": 18,
+   "nodes": 381,
+   "listeners": 60,
+   "heapKb": 1819.9609375
+  },
+  {
+   "cycle": 125,
+   "documents": 18,
+   "nodes": 381,
+   "listeners": 60,
+   "heapKb": 1855.32421875
+  },
+  {
+   "cycle": 150,
+   "documents": 18,
+   "nodes": 381,
+   "listeners": 60,
+   "heapKb": 1877.08203125
+  }
+ ]
+}
