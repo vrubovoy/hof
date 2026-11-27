@@ -76,7 +76,9 @@ async function drawView(url: string, page: string): Promise<string> {
     renderView = module.renderView;
   }
   const view = renderView!(url, JSON.parse(data[1]!), JSON.parse(pictures[1]!));
-  return page.replace(shell, `<div id="app" data-session>${view}</div>`);
+  // React closes an empty element as «…"/>», the templates of M13 as «…" />».
+  const markup = view.replaceAll('"/>', '" />');
+  return page.replace(shell, `<div id="app" data-session>${markup}</div>`);
 }
 
 export async function get(path: string, who?: string, target = app) {

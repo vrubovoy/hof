@@ -944,12 +944,17 @@ function assignPage(
 // larger than one record can hold is left out, and the form then asks for the amount. Only a
 // hint for the form: the debt may change before it is sent. M13.11: from the page of the pouch
 // and from «Изменить» it also names this pouch as the way back (`back`).
-function coverLink(pouchId: number, balance: number, back: boolean) {
-  if (balance >= 0) return '';
+function coverHref(pouchId: number, balance: number, back: boolean): string | null {
+  if (balance >= 0) return null;
   const debt = -balance;
   const amount =
     debt <= AMOUNT_MAX_CENTS ? `&amount=${encodeURIComponent(amountForField(debt))}` : '';
-  const href = `/saeckel/transfer?to=${pouchId}${amount}${back ? `&back=${pouchId}` : ''}`;
+  return `/saeckel/transfer?to=${pouchId}${amount}${back ? `&back=${pouchId}` : ''}`;
+}
+
+function coverLink(pouchId: number, balance: number, back: boolean) {
+  const href = coverHref(pouchId, balance, back);
+  if (href === null) return '';
   return html`<p class="cover">
     <a class="link" href="${href}">Покрыть из другого мешка</a>
   </p>`;
@@ -1779,6 +1784,7 @@ export function createSaeckelApp(
   const paneData = (
     pouch: Pouch,
     state: { balance: number; movements: readonly Operation[] },
+    back: boolean,
   ): PouchPaneData => {
     const todayDate = today(settings.timeZone, new Date());
     return {
@@ -1790,6 +1796,7 @@ export function createSaeckelApp(
       },
       balance: money.format(state.balance),
       debt: state.balance < 0,
+      cover: pouch.is_archived ? null : coverHref(pouch.id, state.balance, back),
       movements: state.movements.map((movement) => movementData(movement, pouch.id)),
       form: {
         symbol: money.symbol,
@@ -1810,6 +1817,7 @@ export function createSaeckelApp(
         : paneData(
             { id: listed.id, name: listed.name, icon: listed.icon, is_archived: false },
             { balance: listed.balance, movements: await recentMovements(listed.id, userId) },
+            false,
           );
     return { column: columnData(column), first };
   }
@@ -1818,7 +1826,7 @@ export function createSaeckelApp(
     const pouch = await findPouch(idInPath, userId);
     if (pouch === null) return null;
     const state = await pouchState(pouch.id, userId);
-    return { column: columnData(await columnOf(userId)), pane: paneData(pouch, state) };
+    return { column: columnData(await columnOf(userId)), pane: paneData(pouch, state, true) };
   }
 
   async function historyView(

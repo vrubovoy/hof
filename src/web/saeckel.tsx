@@ -270,6 +270,13 @@ function PouchPane({ pane, heading }: { pane: PouchPaneData; heading: 1 | 2 }) {
         <span className="caps">Остаток</span>
         <span className={pane.debt ? 'money neg' : 'money'}>{pane.balance}</span>
       </p>
+      {pane.cover !== null && (
+        <p className="cover">
+          <a className="link" href={pane.cover}>
+            Покрыть из другого мешка
+          </a>
+        </p>
+      )}
       {pouch.archived ? (
         <form className="restore" method="post" action={`/saeckel/pouches/${pouch.id}/restore`}>
           <button type="submit" className="btn btn-ochre">

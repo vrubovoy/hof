@@ -44,6 +44,8 @@ export interface PouchPaneData {
   pouch: SignedPouch & { archived: boolean };
   balance: string;
   debt: boolean;
+  // «Покрыть из другого мешка» below zero: the address of «Переложить» with the debt filled in.
+  cover: string | null;
   movements: MovementData[];
   form: ExpenseFormData;
 }
