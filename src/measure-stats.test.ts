@@ -8,6 +8,7 @@ import {
   isMark,
   isTestCourt,
   markIds,
+  nginxGzips,
   notWorse,
   tolerance,
   type HistoryRow,
@@ -374,8 +375,11 @@ test('the report compares series and names the noise', () => {
   const text = report([
     series('M13', [200, 210, 220]),
     series('M13 повтор', [205, 212, 225]),
-    series('A', [100, 101, 102]),
+    { ...series('A', [100, 101, 102]), transport: 'gzip' },
   ]);
+  // The series of M14.1 were not compressed; --gzip says so in the table of series.
+  assert.match(text, /\| M13 \| полный \| нет \|/);
+  assert.match(text, /\| A \| полный \| gzip, как nginx \|/);
   assert.match(text, /\| Телефон \| выкл \| Двор → Мешки \| 210 \[205–215\] \(200–220\) \|/);
   assert.match(text, /\| ≈ \| -52 % \|/);
   assert.match(text, /\| M13 повтор \| \d+ из \d+ \|/);
@@ -471,4 +475,33 @@ test('Back is not compared with a page from the cache but with the way forward t
     text,
     /\| Телефон \| выкл \| A 230 \| 230 \[[^|]+\| 0\/3\/0 \| 1,1,1 \| 222 \| нет \|/,
   );
+});
+
+test('--gzip compresses what nginx of production compresses, and nothing else', () => {
+  const js = {
+    path: '/static/vendor/turbo-8.0.23.js',
+    status: 200,
+    type: 'text/javascript; charset=utf-8',
+    length: 203_701,
+    encoding: undefined,
+    accept: 'gzip, deflate, br, zstd',
+  };
+  assert.equal(nginxGzips(js), true);
+  assert.equal(nginxGzips({ ...js, path: '/saeckel/static/saeckel.css', type: 'text/css' }), true);
+  assert.equal(
+    nginxGzips({ ...js, path: '/static/img/hof-mark.svg', type: 'image/svg+xml' }),
+    true,
+  );
+  assert.equal(nginxGzips({ ...js, status: 404 }), true);
+  assert.equal(nginxGzips({ ...js, length: null }), true);
+  // Pages, pictures and sounds, other answers, tiny or compressed bodies, a browser without gzip.
+  assert.equal(nginxGzips({ ...js, path: '/saeckel/', type: 'text/html; charset=utf-8' }), false);
+  assert.equal(nginxGzips({ ...js, path: '/login', type: 'text/javascript' }), false);
+  assert.equal(nginxGzips({ ...js, path: '/static/img/a.webp', type: 'image/webp' }), false);
+  assert.equal(nginxGzips({ ...js, path: '/static/music-1.mp3', type: 'audio/mpeg' }), false);
+  assert.equal(nginxGzips({ ...js, status: 304 }), false);
+  assert.equal(nginxGzips({ ...js, length: 19 }), false);
+  assert.equal(nginxGzips({ ...js, encoding: 'br' }), false);
+  assert.equal(nginxGzips({ ...js, accept: 'br, zstd' }), false);
+  assert.equal(nginxGzips({ ...js, accept: '' }), false);
 });

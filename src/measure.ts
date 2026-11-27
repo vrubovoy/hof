@@ -3,7 +3,7 @@
 //
 //   node src/measure.ts --label <версия> --out <файл.json> [--gate-key <ключ>] [--runs 10]
 //                       [--parts loads,chain,music,memory] [--scenario full|navigation]
-//                       [--origin <адрес>] [--chrome <путь>]
+//                       [--origin <адрес>] [--gzip] [--chrome <путь>]
 //   node src/measure.ts --report <база.json> [<серия.json> …]
 //
 // Headless Chrome is driven over the DevTools protocol with the WebSocket and fetch of Node, so
@@ -15,6 +15,8 @@
 // - memory — the way repeated 50 times in one tab: nodes, listeners and the heap of JavaScript.
 // Two scenarios: full — the way with its two expenses; navigation — the way without them, for a
 // prototype whose forms still reload the page (M14.2, M14.4).
+// --gzip (M14.2): Chrome talks to a proxy in front of the server that compresses the static files
+// as nginx does in production (nginxGzips); the local server does not compress.
 // Every series goes to a JSON file; --report turns files into Markdown tables, the first file
 // being the base the others are compared with. Statistics and tables live in measure-stats.ts.
 //
@@ -29,7 +31,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
-import { gzipSync } from 'node:zlib';
+import { createServer, request } from 'node:http';
+import { createGzip, gzipSync } from 'node:zlib';
 import {
   BACK_STEP,
   BACK_REFERENCE,
@@ -37,6 +40,7 @@ import {
   freshId,
   isTestCourt,
   layoutShift,
+  nginxGzips,
   longFrames,
   markIds,
   normalizeText,
@@ -59,7 +63,7 @@ import { report } from './measure-report.ts';
 const USAGE =
   'Использование: node src/measure.ts --label <версия> --out <файл.json> [--gate-key <ключ>] ' +
   '[--runs 10] [--parts loads,chain,music,memory] [--scenario full|navigation] ' +
-  '[--origin http://localhost:3000] ' +
+  '[--origin http://localhost:3000] [--gzip] ' +
   '[--chrome <путь к Chrome>]\n       node src/measure.ts --report <база.json> [<серия.json> …]';
 
 // The test court of the measurement. Local data only, so the password may be written here.
@@ -500,7 +504,9 @@ async function startChrome(path: string) {
   for (let i = 0; i < 100 && port === undefined; i += 1) {
     await sleep(100);
     try {
-      port = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0];
+      // Read while Chrome writes it, the file may still be empty: no port yet, not port 80.
+      const [first = ''] = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n');
+      if (/^[1-9]\d*$/.test(first)) port = first;
     } catch {
       // Not written yet.
     }
@@ -1257,6 +1263,8 @@ export interface Series {
   build: string[];
   fingerprint: string;
   runs: number;
+  // Static files compressed as nginx does (--gzip); absent in the series of M14.1, which are not.
+  transport?: 'gzip';
   loads: LoadRecord[];
   chain: ChainRecord[];
   music: ChainRecord[];
@@ -1285,6 +1293,7 @@ async function measure(values: {
   parts: string;
   scenario: string;
   origin: string;
+  gzip: boolean;
   chrome: string;
 }) {
   const runs = Number(values.runs);
@@ -1301,11 +1310,13 @@ async function measure(values: {
   ) {
     throw new Refusal(USAGE);
   }
-  const origin = new URL(values.origin).origin;
+  const server = new URL(values.origin).origin;
   // Measuring signs in and writes test data: only a server on this computer.
-  if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(origin).hostname)) {
-    throw new Refusal(`Только локальный сервер, не ${origin}.`);
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(server).hostname)) {
+    throw new Refusal(`Только локальный сервер, не ${server}.`);
   }
+  const proxy = values.gzip ? await gzipProxy(server) : null;
+  const origin = proxy?.origin ?? server;
   // When the display of a Mac goes dark, Chrome without a window stops drawing frames. The
   // display stays on while this process lives.
   if (process.platform === 'darwin') {
@@ -1326,6 +1337,7 @@ async function measure(values: {
     build: await build(origin),
     fingerprint,
     runs,
+    ...(values.gzip ? { transport: 'gzip' as const } : {}),
     loads: [],
     chain: [],
     music: [],
@@ -1406,6 +1418,69 @@ async function measure(values: {
   }
   await post(origin, '/logout', {}, `__Host-hof=${token}`);
   save();
+  proxy?.close();
+}
+
+// --gzip: a proxy on localhost in front of the server, which compresses as nginx does in
+// production. The Host of the browser goes to the server as it is: the server checks the Origin of
+// a POST against it, and a page names its addresses without the host.
+async function gzipProxy(server: string): Promise<{ origin: string; close: () => void }> {
+  const target = new URL(server);
+  // Hop-by-hop: this proxy has its own connections.
+  const HOP = ['connection', 'keep-alive', 'transfer-encoding'];
+  const proxy = createServer((incoming, outgoing) => {
+    const upstream = request(
+      {
+        hostname: target.hostname,
+        port: target.port,
+        method: incoming.method,
+        path: incoming.url,
+        headers: incoming.headers,
+      },
+      (answer) => {
+        const headers = { ...answer.headers };
+        for (const name of HOP) delete headers[name];
+        const length = headers['content-length'];
+        const status = answer.statusCode ?? 502;
+        const gzip = nginxGzips({
+          path: new URL(incoming.url ?? '/', 'http://localhost').pathname,
+          status,
+          type: String(headers['content-type'] ?? ''),
+          length: length === undefined ? null : Number(length),
+          encoding: headers['content-encoding'],
+          accept: String(incoming.headers['accept-encoding'] ?? ''),
+        });
+        if (!gzip) {
+          outgoing.writeHead(status, headers);
+          answer.pipe(outgoing);
+          return;
+        }
+        delete headers['content-length'];
+        headers['content-encoding'] = 'gzip';
+        headers.vary =
+          headers.vary === undefined ? 'Accept-Encoding' : `${headers.vary}, Accept-Encoding`;
+        // nginx weakens a strong ETag of what it compresses.
+        if (typeof headers.etag === 'string' && !headers.etag.startsWith('W/')) {
+          headers.etag = `W/${headers.etag}`;
+        }
+        outgoing.writeHead(status, headers);
+        answer.pipe(createGzip({ level: 1 })).pipe(outgoing);
+      },
+    );
+    upstream.on('error', () => outgoing.destroy());
+    incoming.pipe(upstream);
+  });
+  // Both localhost addresses, as the server listens: the browser may take either.
+  await new Promise<void>((resolve) => proxy.listen(0, '::', resolve));
+  const address = proxy.address();
+  if (address === null || typeof address === 'string') throw new Refusal('Прокси без порта.');
+  return {
+    origin: `http://localhost:${address.port}`,
+    close: () => {
+      proxy.closeAllConnections();
+      proxy.close();
+    },
+  };
 }
 
 async function main() {
@@ -1419,6 +1494,7 @@ async function main() {
       parts: { type: 'string', default: PARTS.join(',') },
       scenario: { type: 'string', default: 'full' },
       origin: { type: 'string', default: 'http://localhost:3000' },
+      gzip: { type: 'boolean', default: false },
       chrome: {
         type: 'string',
         default: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -1443,6 +1519,13 @@ if (import.meta.main) {
     process.stderr.write(
       `${error instanceof Refusal ? error.message : error instanceof Error ? error.stack : String(error)}\n`,
     );
+    // A failed fetch says why only in its cause (the refused address, the reset socket).
+    if (error instanceof Error && error.cause !== undefined) {
+      const { cause } = error;
+      process.stderr.write(
+        `cause: ${cause instanceof Error ? cause.stack : JSON.stringify(cause)}\n`,
+      );
+    }
     // A browser or a socket still open must not keep a failed series running for hours.
     process.exit(1);
   }
