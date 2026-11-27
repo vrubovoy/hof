@@ -46,6 +46,9 @@ export interface SaeckelSettings {
 export interface CoreScripts {
   head: string;
   effects: string;
+  // Prototype A of M14: Turbo (the file of its release) and its glue, drive.js of Core.
+  turbo: string;
+  drive: string;
 }
 
 type SaeckelEnv = { Variables: { user: SaeckelUser } };
@@ -56,7 +59,7 @@ export const saeckelStatic = staticFolder('/saeckel/static/', join(import.meta.d
 const asset = saeckelStatic.url;
 
 // The scripts of Core on every page: set once, by createSaeckelApp.
-let coreScripts: CoreScripts = { head: '', effects: '' };
+let coreScripts: CoreScripts = { head: '', effects: '', turbo: '', drive: '' };
 // The time zone of the installation, for the calendar of a date field (M13.5): set once, by
 // createSaeckelApp.
 let installationTimeZone = 'UTC';
@@ -334,21 +337,30 @@ interface PouchView {
 // (§4.1: Säckel names only files of its own static folder), the two scripts of the effects of
 // Hof — the only addresses of Core a page of Säckel names (§2), as main.ts gave them — and its own
 // scripts: the groups of an amount (M13.4) and the calendar of a date field (M13.5).
+//
+// Prototype A of M14 (drive.js of Core): Turbo opens Мешки, a pouch and Летопись in the document
+// of the view before; the scripts of Core it tracks (data-turbo-track) are the same as on the
+// pages of Core, so going between the two is no reload. The stylesheet changes with the <body>
+// that names it (data-css). No snapshot cache and no prefetch: Back and Forward ask the server.
 function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString>) {
   return html`<!doctype html>
     <html lang="ru">
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="turbo-cache-control" content="no-cache" />
+        <meta name="turbo-prefetch" content="false" />
         <title>${title}</title>
         <link rel="stylesheet" href="${asset('saeckel.css')}" />
         <link rel="icon" href="${asset('img/hof-mark.svg')}" type="image/svg+xml" />
-        <script src="${coreScripts.head}"></script>
-        <script type="module" src="${coreScripts.effects}"></script>
+        <script src="${coreScripts.head}" data-turbo-track="reload"></script>
+        <script type="module" src="${coreScripts.turbo}" data-turbo-track="reload"></script>
+        <script type="module" src="${coreScripts.drive}" data-turbo-track="reload"></script>
+        <script type="module" src="${coreScripts.effects}" data-turbo-track="reload"></script>
         <script type="module" src="${asset('amount.js')}"></script>
         <script type="module" src="${asset('calendar.js')}"></script>
       </head>
-      <body>
+      <body data-css="${asset('saeckel.css')}">
         ${body}
       </body>
     </html>`;

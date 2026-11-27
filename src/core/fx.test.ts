@@ -22,7 +22,6 @@ import {
   GUST,
   LINK_FX,
   MONEY,
-  MUSIC_KEY,
   PIECES,
   SESSION_EVERY,
   SETTINGS_KEY,
@@ -47,13 +46,11 @@ import {
   plainPress,
   poked,
   poseTime,
-  readMusic,
   SNIFFS,
   readSettings,
   soundFiles,
   tryNextPiece,
   writeFlag,
-  writeMusic,
   writeSettings,
 } from './static/fx.js';
 
@@ -191,31 +188,10 @@ describe('fx: variants of a sound', () => {
   });
 });
 
-describe('fx: the place of the music', () => {
-  test('kept and read back', () => {
-    const storage = memory();
-    writeMusic(storage, { piece: 7, time: 83.25, at: 1_700_000_000_000 });
-    assert.deepEqual(readMusic(storage), { piece: 7, time: 83.25, at: 1_700_000_000_000 });
-  });
-
-  test('nothing kept or something broken: null, and the visit starts a piece of its own', () => {
-    const broken = [
-      '{',
-      'null',
-      '[]',
-      JSON.stringify({ piece: 0, time: 1, at: 1 }),
-      JSON.stringify({ piece: PIECES + 1, time: 1, at: 1 }),
-      JSON.stringify({ piece: 2.5, time: 1, at: 1 }),
-      JSON.stringify({ piece: 2, time: -1, at: 1 }),
-      JSON.stringify({ piece: 2, time: 'x', at: 1 }),
-      JSON.stringify({ piece: 2, time: 1 }),
-    ];
-    for (const stored of broken) {
-      assert.equal(readMusic(memory({ [MUSIC_KEY]: stored })), null, stored);
-    }
-    assert.equal(readMusic(memory()), null);
-    assert.equal(readMusic(refusing), null);
-    assert.doesNotThrow(() => writeMusic(refusing, { piece: 1, time: 0, at: 0 }));
+describe('fx: the first piece of the music', () => {
+  // Prototype A of M14 (Issue #165): one player in the document, no place kept in a storage (the
+  // tests of the kept place went with it).
+  test('a new document starts a piece at random', () => {
     for (const random of [0, 0.5, 0.999]) {
       const piece = firstPiece(() => random);
       assert.ok(piece >= 1 && piece <= PIECES, String(piece));

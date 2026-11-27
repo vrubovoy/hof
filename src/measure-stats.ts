@@ -403,3 +403,26 @@ export function arrivedAt(path: string, to: readonly string[]): boolean {
   const [bare] = path.split('?');
   return to.some((address) => (address.includes('?') ? path === address : bare === address));
 }
+
+// What nginx compresses in production (deploy/nginx.conf, M14.2 --gzip): the static files of
+// Core and Säckel only, CSS, JS and SVG (gzip_types), answers 200, 403 and 404 (nginx compresses
+// no others) not compressed already, at least 20 bytes (gzip_min_length), for a browser that
+// takes gzip. Pages and pictures go as they are.
+export function nginxGzips(answer: {
+  path: string;
+  status: number;
+  type: string;
+  length: number | null;
+  encoding: string | undefined;
+  accept: string;
+}): boolean {
+  const media = answer.type.split(';', 1)[0]!.trim().toLowerCase();
+  return (
+    (answer.path.startsWith('/static/') || answer.path.startsWith('/saeckel/static/')) &&
+    [200, 403, 404].includes(answer.status) &&
+    ['text/css', 'text/javascript', 'image/svg+xml'].includes(media) &&
+    (answer.length === null || answer.length >= 20) &&
+    (answer.encoding === undefined || answer.encoding === '' || answer.encoding === 'identity') &&
+    /(^|[\s,])gzip($|[\s,;])/i.test(answer.accept)
+  );
+}

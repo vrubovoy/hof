@@ -458,6 +458,7 @@ export function report(all: readonly Series[]): string {
       [
         'Серия',
         'Сценарий',
+        'Сжатие статики',
         'Дата, UTC',
         'Chrome',
         'Node',
@@ -468,6 +469,7 @@ export function report(all: readonly Series[]): string {
       all.map((s) => [
         s.label,
         (s.scenario ?? 'full') === 'full' ? 'полный' : 'навигация',
+        s.transport === 'gzip' ? 'gzip, как nginx' : 'нет',
         s.date.slice(0, 16).replace('T', ' '),
         s.product,
         s.node,

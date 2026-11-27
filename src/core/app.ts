@@ -42,6 +42,9 @@ import { parseUsername } from './username.ts';
 // only by asset(), the address with the version of the file.
 export const coreStatic = staticFolder('/static/', join(import.meta.dirname, 'static'));
 const asset = coreStatic.url;
+// Prototype A of M14: the file of the Turbo release kept in static/vendor (its version in the
+// name; src/core/drive.test.ts checks it is that file).
+export const TURBO = 'vendor/turbo-8.0.23.js';
 
 // One entry of «Службы двора»: the name, the address and the emblem, which the service keeps
 // among its own static files.
@@ -173,20 +176,29 @@ interface LoginUser {
 // Every page of Core: the CSS of Hof (§6), the mark of Hof as the icon of the tab and the two
 // scripts of the effects — without them every page works the same. `forget` — the sign-in page
 // asks the browser to forget the pages it kept (/forget.css).
+//
+// Prototype A of M14: Turbo (vendor/, the file of its release) and its glue drive.js open the
+// courtyard and the views of Säckel in one document; the tracked scripts (data-turbo-track) are
+// the same on the pages of Säckel. The stylesheet changes with the <body> that names it
+// (data-css). No snapshot cache and no prefetch: Back and Forward ask the server.
 function page(title: string, body: HtmlEscapedString | Promise<HtmlEscapedString>, forget = false) {
   return html`<!doctype html>
     <html lang="ru">
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="turbo-cache-control" content="no-cache" />
+        <meta name="turbo-prefetch" content="false" />
         <title>${title}</title>
         <link rel="stylesheet" href="${asset('hof.css')}" />
         ${forget ? html`<link rel="stylesheet" href="/forget.css" />` : ''}
         <link rel="icon" href="${asset('img/hof-mark.svg')}" type="image/svg+xml" />
-        <script src="${asset('fx-head.js')}"></script>
-        <script type="module" src="${asset('fx.js')}"></script>
+        <script src="${asset('fx-head.js')}" data-turbo-track="reload"></script>
+        <script type="module" src="${asset(TURBO)}" data-turbo-track="reload"></script>
+        <script type="module" src="${asset('drive.js')}" data-turbo-track="reload"></script>
+        <script type="module" src="${asset('fx.js')}" data-turbo-track="reload"></script>
       </head>
-      <body>
+      <body data-css="${asset('hof.css')}">
         ${body}
       </body>
     </html>`;

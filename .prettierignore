@@ -7,3 +7,5 @@ design/
 package-lock.json
 # Series files of the measurement, kept as the script wrote them (docs/benchmarks/*/README.md).
 docs/benchmarks/**/*.json
+# Prototype A of M14: the file of the Turbo release, kept as it was published.
+src/core/static/vendor/

@@ -7,7 +7,14 @@ import { bodyLimit } from 'hono/body-limit';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { Pool } from 'pg';
-import { coreStatic, createCoreApp, errorPage, requestUser, type Service } from './core/app.ts';
+import {
+  coreStatic,
+  createCoreApp,
+  errorPage,
+  requestUser,
+  TURBO,
+  type Service,
+} from './core/app.ts';
 import { startFirstRun, type FirstRun } from './core/gate-key.ts';
 import { hashPassword } from './core/password.ts';
 import { describeError, log } from './log.ts';
@@ -44,6 +51,8 @@ const SERVICES: readonly Service[] = [
 const CORE_SCRIPTS: CoreScripts = {
   head: coreStatic.url('fx-head.js'),
   effects: coreStatic.url('fx.js'),
+  turbo: coreStatic.url(TURBO),
+  drive: coreStatic.url('drive.js'),
 };
 
 // §4.9: explicit header values, not Hono's secureHeaders preset. connect-src: fx.js asks

@@ -14,7 +14,7 @@ import { html } from 'hono/html';
 import { Pool } from 'pg';
 import { createApp, newDummyPasswordHash } from '../main.ts';
 import { migrate } from '../migrate.ts';
-import { coreStatic, keyName } from './app.ts';
+import { TURBO, coreStatic, keyName } from './app.ts';
 import { startFirstRun } from './gate-key.ts';
 import { hashPassword, verifyPassword } from './password.ts';
 import { createSession, hashSessionToken, newSessionToken, sessionCookie } from './sessions.ts';
@@ -3008,17 +3008,20 @@ describe('the look of Hof: pages, CSS and static files', () => {
 
   // §6: every page has the two scripts of the effects in <head> — the one before the first
   // paint, then the module — and no other script, no inline code and no handler attribute.
+  // Prototype A of M14: Turbo and its glue drive.js between them, all four tracked by Turbo.
   function assertScripts(page: string, name: string) {
     const scripts = [...page.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/g)].map((m) => m[0]);
     assert.deepEqual(
       scripts,
       [
-        `<script src="${asset('fx-head.js')}"></script>`,
-        `<script type="module" src="${asset('fx.js')}"></script>`,
+        `<script src="${asset('fx-head.js')}" data-turbo-track="reload"></script>`,
+        `<script type="module" src="${asset(TURBO)}" data-turbo-track="reload"></script>`,
+        `<script type="module" src="${asset('drive.js')}" data-turbo-track="reload"></script>`,
+        `<script type="module" src="${asset('fx.js')}" data-turbo-track="reload"></script>`,
       ],
       name,
     );
-    assert.equal((page.match(/<script/g) ?? []).length, 2, name);
+    assert.equal((page.match(/<script/g) ?? []).length, 4, name);
     assert.ok(page.indexOf('<script type="module"') < page.indexOf('</head>'), name);
     assert.doesNotMatch(page, /\son[a-z]+=/i, name);
   }
@@ -3358,7 +3361,8 @@ describe('the look of Hof: pages, CSS and static files', () => {
     ]);
     for (const file of folderFiles()) {
       assert.equal((await get(app, `/static/${file}`)).status, 200, file);
-      if (file === 'fonts/OFL.txt' || file === 'sounds/LICENSE.txt') continue;
+      if (['fonts/OFL.txt', 'sounds/LICENSE.txt', 'vendor/turbo-LICENSE.txt'].includes(file))
+        continue;
       assert.ok(named.has(`/static/${file}`), `nothing names ${file}`);
     }
   });

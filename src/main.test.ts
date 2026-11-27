@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, test, type TestContext } from 'node:test';
 import { DatabaseError, Pool } from 'pg';
-import { coreStatic } from './core/app.ts';
+import { TURBO, coreStatic } from './core/app.ts';
 import type { FirstRun } from './core/gate-key.ts';
 import { hashSessionToken, newSessionToken } from './core/sessions.ts';
 import { applicationUser, createApp } from './main.ts';
@@ -633,7 +633,8 @@ describe('Säckel in the court', () => {
   });
 
   // §2: the only addresses of Core on a page of Säckel, given by main.ts with their versions; then
-  // the scripts of Säckel itself (M13.4, M13.5), which are served.
+  // the scripts of Säckel itself (M13.4, M13.5), which are served. Prototype A of M14: Turbo and
+  // its glue drive.js of Core as well.
   test('a page of Säckel names the scripts of the effects of Core with their versions', async () => {
     const { cookie } = await person('anna');
     const page = await (await get('/saeckel/', cookie)).text();
@@ -641,6 +642,8 @@ describe('Säckel in the court', () => {
       [...page.matchAll(/<script\b[^>]*src="([^"]*)"/g)].map((m) => m[1]),
       [
         coreStatic.url('fx-head.js'),
+        coreStatic.url(TURBO),
+        coreStatic.url('drive.js'),
         coreStatic.url('fx.js'),
         saeckelStatic.url('amount.js'),
         saeckelStatic.url('calendar.js'),
@@ -649,6 +652,32 @@ describe('Säckel in the court', () => {
     const script = await get(saeckelStatic.url('amount.js'));
     assert.equal(script.status, 200);
     assert.equal(script.headers.get('content-type'), 'text/javascript; charset=utf-8');
+  });
+
+  // Prototype A of M14: Turbo reloads the page when the tracked elements of the next one differ
+  // (data-turbo-track); the courtyard and the views of Säckel must track the same, or going
+  // between them would be a reload. Each page names its own stylesheet on <body> (drive.js).
+  test('the courtyard and Säckel track the same scripts and name their stylesheets', async () => {
+    const { cookie } = await person('anna');
+    const tracked = (page: string) =>
+      [...page.matchAll(/<[^>]*data-turbo-track[^>]*>/g)].map((m) => m[0]);
+    const court = await (await get('/', cookie)).text();
+    const saeckel = await (await get('/saeckel/', cookie)).text();
+    assert.equal(tracked(court).length, 4);
+    assert.deepEqual(tracked(saeckel), tracked(court));
+    assert.ok(tracked(court).every((tag) => tag.includes('data-turbo-track="reload"')));
+    assert.match(
+      court,
+      new RegExp(`<body data-css="${coreStatic.url('hof.css').replace(/[?.]/g, '\\$&')}">`),
+    );
+    assert.match(
+      saeckel,
+      new RegExp(`<body data-css="${saeckelStatic.url('saeckel.css').replace(/[?.]/g, '\\$&')}">`),
+    );
+    for (const page of [court, saeckel]) {
+      assert.match(page, /<meta name="turbo-cache-control" content="no-cache" \/>/);
+      assert.match(page, /<meta name="turbo-prefetch" content="false" \/>/);
+    }
   });
 
   // M11.6: fx.js asks GET /session only on the pages of a signed-in person, which carry
