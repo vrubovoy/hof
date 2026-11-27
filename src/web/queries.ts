@@ -16,9 +16,18 @@ export const queryClient = new QueryClient({
 // the server leads it to the sign-in.
 export class SessionOver extends Error {}
 export class NotFound extends Error {}
+// The server serves another bundle than this page runs (a new version is out): the browser loads
+// the next page whole, with the new bundle.
+export class Outdated extends Error {}
+
+const ownBundle = document
+  .querySelector<HTMLScriptElement>('script[src*="/build/app.js"]')
+  ?.getAttribute('src');
 
 async function readJson<T>(url: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+  const bundle = response.headers.get('Hof-Bundle');
+  if (bundle !== null && bundle !== ownBundle) throw new Outdated();
   if (response.status === 401) throw new SessionOver();
   if (response.status === 404) throw new NotFound();
   if (!response.ok) throw new Error(`${url}: ${response.status}`);

@@ -71,6 +71,14 @@ jobs:
       - name: TypeScript
         run: npx tsc --noEmit
 
+      # Prototype B of M14: the React views have a tsconfig of their own (the DOM), and the tests
+      # need the bundle, whose version the pages name.
+      - name: TypeScript of the React views
+        run: npx tsc --noEmit -p src/web
+
+      - name: Bundle
+        run: node src/build.ts
+
       # The one build of the image: the steps below check it, and a push to main publishes it.
       - name: Docker image
         run: docker compose build --build-arg HOF_REVISION="$GITHUB_SHA"

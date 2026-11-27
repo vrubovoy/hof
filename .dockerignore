@@ -10,3 +10,5 @@ request
 .claude/
 **/*.test.ts
 src/measure.ts
+# Prototype B of M14: the bundle is built in the image (Dockerfile, stage bundle).
+src/core/static/build/

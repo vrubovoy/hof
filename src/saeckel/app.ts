@@ -1880,6 +1880,8 @@ export function createSaeckelApp(
   const signedInJson: MiddlewareHandler<SaeckelEnv> = async (c, next) => {
     const user = await currentUser(c.req.raw);
     c.header('Cache-Control', 'no-store');
+    // The bundle this server serves: a view of an older one loads the next page whole.
+    c.header('Hof-Bundle', coreScripts.app);
     if (user === null) return c.json({ error: 'session' }, 401);
     c.set('user', user);
     await next();

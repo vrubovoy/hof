@@ -5,7 +5,7 @@
 // the courtyard, forms, records, the sign-in — the browser opens itself.
 
 import { QueryClientProvider } from '@tanstack/react-query';
-import { StrictMode } from 'react';
+import { Component, StrictMode, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes } from 'react-router';
 import type { ViewData } from '../saeckel/data.ts';
@@ -15,6 +15,21 @@ import { useShownLocation } from './way.tsx';
 
 function embedded<T>(id: string): T {
   return JSON.parse(document.getElementById(id)!.textContent) as T;
+}
+
+// A view that fails to draw: the browser loads the address itself, and the server draws its page
+// or its error page (500 «Попробовать ещё раз»). Nothing half drawn stays.
+class FullLoadOnError extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {
+    window.location.reload();
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
 }
 
 function Views({ pictures }: { pictures: Pictures }) {
@@ -36,7 +51,9 @@ createRoot(document.getElementById('app')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <Views pictures={embedded<Pictures>('hof-pictures')} />
+        <FullLoadOnError>
+          <Views pictures={embedded<Pictures>('hof-pictures')} />
+        </FullLoadOnError>
       </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>,

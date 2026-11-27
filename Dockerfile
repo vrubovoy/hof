@@ -1,5 +1,16 @@
-# Hof server image (ARCHITECTURE.md §7, §9). There is no build step: Node runs the .ts sources
-# directly, so the image holds runtime dependencies and src/, and the release configuration.
+# Hof server image (ARCHITECTURE.md §7, §9). Node runs the .ts sources of the server directly, so
+# the image holds runtime dependencies and src/, and the release configuration.
+#
+# Prototype B of M14 (Issue #167): one build stage — esbuild bundles the React views
+# (src/build.ts); the image takes only the bundle from it, not the build dependencies.
+FROM node:24.21.0-trixie-slim AS bundle
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci && npm cache clean --force
+COPY src ./src
+RUN node src/build.ts
+
 FROM node:24.21.0-trixie-slim
 
 WORKDIR /app
@@ -10,6 +21,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 # Application code. Files stay owned by root, so the server process cannot change them.
 COPY src ./src
+COPY --from=bundle /app/src/core/static/build ./src/core/static/build
 # Readable for the node user whatever umask the checkout had: with umask 077 git writes new files
 # with mode 600, and Node could read neither its code nor package.json ("type"). Nobody gets write
 # access.
